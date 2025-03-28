@@ -1,5 +1,5 @@
-const express = require('express');
-const admin = require('../firebase/admin');
+import express from 'express';
+import admin from '../firebase/admin.js'; // Note the .js extension
 const router = express.Router();
 
 // Create user with Firebase Auth
@@ -94,4 +94,5 @@ function generateMemorablePassword() {
          specialChar;
 }
 
-module.exports = router;
+// Export as default in ES Modules
+export default router;

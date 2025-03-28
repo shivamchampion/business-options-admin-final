@@ -1,5 +1,11 @@
-const admin = require('firebase-admin');
-const dotenv = require('dotenv');
+import admin from 'firebase-admin';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// Get current file path (ESM equivalent of __dirname)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Load environment variables
 dotenv.config();
@@ -23,4 +29,5 @@ if (!admin.apps.length) {
   console.log('Firebase Admin SDK initialized successfully');
 }
 
-module.exports = admin;
+// Export as default in ES Modules
+export default admin;
