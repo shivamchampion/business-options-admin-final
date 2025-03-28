@@ -31,6 +31,20 @@ router.post('/createUser', async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating user:', error);
+    
+    // Better error responses
+    if (error.code === 'auth/email-already-exists') {
+      return res.status(400).json({ error: 'A user with this login email already exists' });
+    }
+    
+    if (error.code === 'auth/invalid-email') {
+      return res.status(400).json({ error: 'The login email address is not valid' });
+    }
+    
+    if (error.code === 'auth/operation-not-allowed') {
+      return res.status(400).json({ error: 'Operation not allowed: Email/password accounts may be disabled' });
+    }
+    
     res.status(500).json({ error: error.message });
   }
 });
@@ -61,6 +75,65 @@ router.post('/resetPassword', async (req, res) => {
     });
   } catch (error) {
     console.error('Error resetting password:', error);
+    
+    // Better error responses
+    if (error.code === 'auth/user-not-found') {
+      return res.status(404).json({ error: 'No user found with this login email' });
+    }
+    
+    if (error.code === 'auth/invalid-email') {
+      return res.status(400).json({ error: 'The login email address is not valid' });
+    }
+    
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add new endpoint: Delete user from Firebase Auth
+router.post('/deleteAuthUser', async (req, res) => {
+  try {
+    const { loginEmail } = req.body;
+    
+    if (!loginEmail) {
+      return res.status(400).json({ error: 'Login email is required' });
+    }
+    
+    // First get the user by email
+    const userRecord = await admin.auth().getUserByEmail(loginEmail);
+    
+    // Then delete the user
+    await admin.auth().deleteUser(userRecord.uid);
+    
+    res.status(200).json({ 
+      message: 'Auth user deleted successfully',
+      uid: userRecord.uid
+    });
+  } catch (error) {
+    console.error('Error deleting auth user:', error);
+    
+    // Better error responses 
+    if (error.code === 'auth/user-not-found') {
+      return res.status(404).json({ 
+        error: 'No user found with this login email',
+        code: 'user_not_found'
+      });
+    }
+    
+    if (error.code === 'auth/invalid-email') {
+      return res.status(400).json({ 
+        error: 'The login email address is not valid',
+        code: 'invalid_email'
+      });
+    }
+    
+    // Return successful even if user not found - idempotent deletion
+    if (error.code === 'auth/user-not-found') {
+      return res.status(200).json({ 
+        message: 'User already deleted or does not exist',
+        code: 'user_not_found'
+      });
+    }
+    
     res.status(500).json({ error: error.message });
   }
 });

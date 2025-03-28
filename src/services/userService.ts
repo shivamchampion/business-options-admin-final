@@ -96,7 +96,7 @@ import {
       };
     } catch (error) {
       console.error('Error getting admin users:', error);
-      throw error;
+      throw new Error(`Failed to fetch admin users: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
   
@@ -114,7 +114,7 @@ import {
         where('role', '==', UserRole.USER)
       );
       
-      // Apply filters (similar to above)
+      // Apply filters
       if (filters) {
         if (filters.status && filters.status.length > 0) {
           baseQuery = query(baseQuery, where('status', 'in', filters.status));
@@ -161,8 +161,20 @@ import {
       };
     } catch (error) {
       console.error('Error getting website users:', error);
-      throw error;
+      throw new Error(`Failed to fetch website users: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  };
+  
+  // Environment-aware API URL configuration
+  const getApiUrl = () => {
+    const apiUrl = import.meta.env.VITE_API_URL;
+    if (!apiUrl) {
+      console.warn('VITE_API_URL is not defined, using default localhost:5000');
+      return process.env.NODE_ENV === 'production' 
+        ? 'https://api.businessoptions.in' 
+        : 'http://localhost:5000';
+    }
+    return apiUrl;
   };
   
   /**
@@ -213,7 +225,8 @@ import {
       }
       
       // Call the backend API to create the Firebase Auth user
-      const response = await fetch('/api/auth/createUser', {
+      const API_URL = getApiUrl();
+      const response = await fetch(`${API_URL}/api/auth/createUser`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -224,6 +237,7 @@ import {
           role: userData.role,
           loginEmail: loginEmail
         }),
+        credentials: 'include'
       });
       
       if (!response.ok) {
@@ -255,7 +269,11 @@ import {
       };
     } catch (error) {
       console.error('Error creating admin user:', error);
-      throw error;
+      if (error instanceof Error) {
+        throw error;
+      } else {
+        throw new Error('Unknown error occurred while creating user');
+      }
     }
   };
   
@@ -264,12 +282,14 @@ import {
    */
   export const resetUserPassword = async (loginEmail: string): Promise<string> => {
     try {
-      const response = await fetch('/api/auth/resetPassword', {
+      const API_URL = getApiUrl();
+      const response = await fetch(`${API_URL}/api/auth/resetPassword`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ loginEmail }),
+        credentials: 'include'
       });
       
       if (!response.ok) {
@@ -281,10 +301,10 @@ import {
       return password;
     } catch (error) {
       console.error('Error resetting password:', error);
-      throw error;
+      throw new Error(error instanceof Error ? error.message : 'Failed to reset password');
     }
   };
-  
+    
   /**
    * Update a user's status (active/inactive)
    */
@@ -298,10 +318,10 @@ import {
       return true;
     } catch (error) {
       console.error('Error updating user status:', error);
-      throw error;
+      throw new Error(`Failed to update user status: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
-  
+    
   /**
    * Bulk update user statuses
    */
@@ -317,20 +337,54 @@ import {
       return true;
     } catch (error) {
       console.error('Error bulk updating users:', error);
-      throw error;
+      throw new Error(`Failed to bulk update users: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
-  
+    
   /**
-   * Delete a user
+   * Delete a user completely (Firestore and Auth)
    */
   export const deleteUser = async (userId: string): Promise<boolean> => {
     try {
-      // In a real application, we'd also delete the Firebase Auth account
-      await deleteDoc(doc(db, USERS_COLLECTION, userId));
+      // First, get the user document to find the loginEmail
+      const userRef = doc(db, USERS_COLLECTION, userId);
+      const userSnap = await getDoc(userRef);
+      
+      if (!userSnap.exists()) {
+        throw new Error('User not found');
+      }
+      
+      const userData = userSnap.data() as UserDetails;
+      
+      // If this is an admin user with loginEmail, we need to delete the auth user
+      if (userData.loginEmail) {
+        try {
+          const API_URL = getApiUrl();
+          const response = await fetch(`${API_URL}/api/auth/deleteAuthUser`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ loginEmail: userData.loginEmail }),
+            credentials: 'include'
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json();
+            // We only log this error but continue with Firestore deletion
+            console.error('Error deleting auth user:', errorData.error);
+          }
+        } catch (authError) {
+          // Only log auth deletion errors, don't abort the process
+          console.error('Error deleting Firebase Auth user:', authError);
+        }
+      }
+      
+      // Delete the Firestore document
+      await deleteDoc(userRef);
       return true;
     } catch (error) {
       console.error('Error deleting user:', error);
-      throw error;
+      throw new Error(`Failed to delete user: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
