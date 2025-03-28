@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLoading } from '@/context/LoadingContext';
 import { Tab } from '@headlessui/react';
-import { Plus, RefreshCw, AlertTriangle, Info } from 'lucide-react';
+import { Plus, RefreshCw, AlertTriangle, Info, Key } from 'lucide-react';
 import usePageTitle from '@/hooks/usePageTitle';
 import Button from '@/components/ui/Button';
 import UserFilters from '@/components/users/UserFilters';
@@ -9,6 +9,7 @@ import UserTable from '@/components/users/UserTable';
 import UserForm from '@/components/users/UserForm';
 import UserBulkActions from '@/components/users/UserBulkActions';
 import VerificationCodeModal from '@/components/users/VerificationCodeModal';
+import CredentialsModal from '@/components/users/CredentialsModal';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { UserDetails, UserStatus, UserFilters as UserFiltersType } from '@/types/firebase';
 import { 
@@ -17,7 +18,8 @@ import {
   createAdminPanelUser, 
   updateUserStatus, 
   bulkUpdateUserStatus, 
-  deleteUser 
+  deleteUser,
+  resetUserPassword
 } from '@/services/userService';
 import { cn } from '@/lib/utils';
 
@@ -51,7 +53,10 @@ export default function AllUsers() {
   // Verification code modal
   const [verificationCode, setVerificationCode] = useState<string | null>(null);
   const [verificationEmail, setVerificationEmail] = useState<string>('');
-  const [loginEmail, setLoginEmail] = useState<string>(''); // New state for login email
+  const [loginEmail, setLoginEmail] = useState<string>(''); // For displaying login email
+  
+  // Credentials modal
+  const [credentialsModalUser, setCredentialsModalUser] = useState<UserDetails | null>(null);
   
   // Track which tabs have been initialized
   const [initializedTabs, setInitializedTabs] = useState<{[key: number]: boolean}>({});
@@ -180,25 +185,47 @@ export default function AllUsers() {
     }
   };
   
-  // Handle user creation - Updated to include loginEmail
-  const handleCreateUser = async (userData: Partial<UserDetails>) => {
+  // Handle user creation - Updated to return credentials
+  const handleCreateUser = async (userData: Partial<UserDetails>, profileImage?: File) => {
     try {
       startLoading('Creating user...');
       
-      const result = await createAdminPanelUser(userData);
-      
-      // Show verification code and loginEmail
-      setVerificationCode(result.verificationCode);
-      setVerificationEmail(userData.email!);
-      setLoginEmail(result.loginEmail); // Store the generated login email
+      const result = await createAdminPanelUser(userData, profileImage);
       
       // Reload admin users
       await loadAdminUsers(true);
       
-      // Close form
-      setIsFormOpen(false);
+      // Return credentials to show in UserForm
+      return {
+        loginEmail: result.loginEmail,
+        password: result.password
+      };
     } catch (error) {
       console.error('Error creating user:', error);
+      throw error;
+    } finally {
+      stopLoading();
+    }
+  };
+  
+  // Handle viewing credentials
+  const handleViewCredentials = (userId: string) => {
+    const user = adminUsers.find(user => user.id === userId);
+    if (user) {
+      setCredentialsModalUser(user);
+    }
+  };
+  
+  // Handle resetting password
+  const handleResetPassword = async () => {
+    if (!credentialsModalUser || !credentialsModalUser.loginEmail) return '';
+    
+    try {
+      startLoading('Resetting password...');
+      const newPassword = await resetUserPassword(credentialsModalUser.loginEmail);
+      return newPassword;
+    } catch (error) {
+      console.error('Error resetting password:', error);
       throw error;
     } finally {
       stopLoading();
@@ -483,8 +510,8 @@ export default function AllUsers() {
                     onDelete={handleDeleteUser}
                     onStatusChange={handleStatusChange}
                     onViewVerificationCode={handleViewVerificationCode}
+                    onViewCredentials={handleViewCredentials}
                     isAdminPanel={true}
-                    showLoginEmail={true} // New prop to show login email column
                   />
                 </div>
                 
@@ -555,16 +582,25 @@ export default function AllUsers() {
           />
         )}
         
-        {/* Verification code modal - Updated to include loginEmail */}
+        {/* Verification code modal */}
         {verificationCode && (
           <VerificationCodeModal
             code={verificationCode}
             email={verificationEmail}
-            loginEmail={loginEmail} // Pass the login email to the modal
+            loginEmail={loginEmail}
             onClose={() => {
               setVerificationCode(null);
               setLoginEmail('');
             }}
+          />
+        )}
+        
+        {/* Credentials modal */}
+        {credentialsModalUser && (
+          <CredentialsModal
+            loginEmail={credentialsModalUser.loginEmail}
+            onClose={() => setCredentialsModalUser(null)}
+            onResetPassword={handleResetPassword}
           />
         )}
         

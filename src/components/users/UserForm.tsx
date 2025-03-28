@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Mail, UserCheck, Upload, AlertCircle } from 'lucide-react';
+import { X, User, Mail, UserCheck, Upload, AlertCircle, Copy, CheckCircle } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { UserRole, UserDetails } from '@/types/firebase';
 import { z } from 'zod';
@@ -20,9 +20,14 @@ const userFormSchema = z.object({
 
 interface UserFormProps {
     onClose: () => void;
-    onSubmit: (userData: Partial<UserDetails>) => Promise<void>;
+    onSubmit: (userData: Partial<UserDetails>, profileImage?: File) => Promise<{loginEmail: string, password: string} | undefined>;
     user?: UserDetails;
     isEdit?: boolean;
+}
+
+interface CreatedCredentials {
+    loginEmail: string;
+    password: string;
 }
 
 const UserForm: React.FC<UserFormProps> = ({
@@ -38,6 +43,12 @@ const UserForm: React.FC<UserFormProps> = ({
     const [imagePreview, setImagePreview] = useState<string | null>(user?.profileImageUrl || null);
     const [errors, setErrors] = useState<{ name?: string, email?: string, role?: string }>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    // New states for showing created credentials
+    const [createdCredentials, setCreatedCredentials] = useState<CreatedCredentials | null>(null);
+    const [showCreatedUser, setShowCreatedUser] = useState(false);
+    const [copiedPassword, setCopiedPassword] = useState(false);
+    const [copiedEmail, setCopiedEmail] = useState(false);
 
     const validateForm = (): boolean => {
         try {
@@ -82,33 +93,127 @@ const UserForm: React.FC<UserFormProps> = ({
         setIsSubmitting(true);
 
         try {
-            // In a real app, would upload the image first and get URL
-            // For now, just assume image upload happened
-            const profileImageUrl = imagePreview || user?.profileImageUrl;
-
-            await onSubmit({
+            const result = await onSubmit({
                 id: user?.id,
                 name,
                 email,
                 role,
-                profileImageUrl
-            });
-
-            onClose();
+            }, profileImage || undefined);
+            
+            // If we have credentials returned, show them
+            if (result && result.loginEmail && result.password) {
+                setCreatedCredentials({
+                    loginEmail: result.loginEmail,
+                    password: result.password
+                });
+                setShowCreatedUser(true);
+            } else {
+                onClose();
+            }
         } catch (error: any) {
             console.error('Error submitting form:', error);
-            // Handle specific errors
             if (error.message.includes('email')) {
                 setErrors(prev => ({ ...prev, email: error.message }));
             } else {
-                // Show general error (in a real app, would have better error handling)
                 alert(`Error: ${error.message}`);
             }
         } finally {
             setIsSubmitting(false);
         }
     };
+    
+    const handleCopyEmail = () => {
+        if (createdCredentials) {
+            navigator.clipboard.writeText(createdCredentials.loginEmail);
+            setCopiedEmail(true);
+            setTimeout(() => setCopiedEmail(false), 3000);
+        }
+    };
+    
+    const handleCopyPassword = () => {
+        if (createdCredentials) {
+            navigator.clipboard.writeText(createdCredentials.password);
+            setCopiedPassword(true);
+            setTimeout(() => setCopiedPassword(false), 3000);
+        }
+    };
+    
+    // Render credentials view if user was created
+    if (showCreatedUser && createdCredentials) {
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+                    <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100">
+                        <h2 className="text-lg font-medium text-gray-900">
+                            User Created Successfully
+                        </h2>
+                        <button
+                            onClick={onClose}
+                            className="text-gray-400 hover:text-gray-500"
+                        >
+                            <X className="h-5 w-5" />
+                        </button>
+                    </div>
+                    
+                    <div className="p-6 space-y-6">
+                        <div className="bg-green-50 border border-green-100 rounded-lg p-4 flex items-start">
+                            <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 mr-2 flex-shrink-0" />
+                            <p className="text-sm text-green-700">
+                                User account has been created successfully. Please save these login credentials to share with the user.
+                            </p>
+                        </div>
+                        
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                            <div className="text-sm text-gray-500 mb-2">Login Email</div>
+                            <div className="flex items-center justify-between">
+                                <div className="font-mono text-sm tracking-wider bg-white py-2 px-4 border border-gray-300 rounded overflow-x-auto max-w-[220px]">
+                                    {createdCredentials.loginEmail}
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    leftIcon={copiedEmail ? <CheckCircle className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                                    onClick={handleCopyEmail}
+                                    className={copiedEmail ? "text-green-600" : ""}
+                                >
+                                    {copiedEmail ? "Copied" : "Copy"}
+                                </Button>
+                            </div>
+                        </div>
+                        
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                            <div className="text-sm text-gray-500 mb-2">Password</div>
+                            <div className="flex items-center justify-between">
+                                <div className="font-mono text-sm tracking-wider bg-white py-2 px-4 border border-gray-300 rounded">
+                                    {createdCredentials.password}
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    leftIcon={copiedPassword ? <CheckCircle className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                                    onClick={handleCopyPassword}
+                                    className={copiedPassword ? "text-green-600" : ""}
+                                >
+                                    {copiedPassword ? "Copied" : "Copy"}
+                                </Button>
+                            </div>
+                        </div>
+                        
+                        <div className="flex justify-end">
+                            <Button
+                                variant="primary"
+                                onClick={onClose}
+                            >
+                                Done
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
+    // Normal form view
     return (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
@@ -125,9 +230,7 @@ const UserForm: React.FC<UserFormProps> = ({
                 </div>
 
                 <form onSubmit={handleSubmit} className="p-6 space-y-6">
-                    
-
-                    {/* Profile image upload - COMPLETELY REBUILT */}
+                    {/* Profile image upload */}
                     <div className="text-center mb-6">
                         <div className="inline-block">
                             {/* Image container */}
@@ -262,7 +365,8 @@ const UserForm: React.FC<UserFormProps> = ({
                     {!isEdit && (
                         <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-sm text-blue-700">
                             <p>
-                                A verification code will be generated and an email will be sent to the user to complete their account setup.
+                                A random login email and password will be generated for the admin panel.
+                                You'll be able to share these credentials with the user.
                             </p>
                         </div>
                     )}

@@ -11,13 +11,12 @@ import {
     serverTimestamp, 
     orderBy, 
     limit, 
-    startAfter,
-    QuerySnapshot,
-    DocumentData
+    startAfter
   } from 'firebase/firestore';
   import { db } from '@/lib/firebase';
   import { UserDetails, UserRole, UserStatus, UserFilters } from '@/types/firebase';
   import { generateRandomCode } from '@/lib/utils';
+  import { uploadProfileImage } from './storageService';
   
   const USERS_COLLECTION = 'users';
   
@@ -86,7 +85,8 @@ import {
         const searchTerm = filters.search.toLowerCase();
         filteredUsers = users.filter(user => 
           user.name.toLowerCase().includes(searchTerm) || 
-          user.email.toLowerCase().includes(searchTerm)
+          user.email.toLowerCase().includes(searchTerm) ||
+          (user.loginEmail && user.loginEmail.toLowerCase().includes(searchTerm))
         );
       }
       
@@ -168,10 +168,10 @@ import {
   /**
    * Create a new admin panel user
    */
-  // Modify the createAdminPanelUser function
   export const createAdminPanelUser = async (
-    userData: Partial<UserDetails>
-  ): Promise<{userId: string, verificationCode: string, loginEmail: string}> => {
+    userData: Partial<UserDetails>,
+    profileImage?: File
+  ): Promise<{userId: string, loginEmail: string, password: string}> => {
     try {
       // Validation checks
       if (!userData.name || !userData.email || !userData.role) {
@@ -197,37 +197,61 @@ import {
         throw new Error('A user with this email already exists. Please use a different email.');
       }
       
-      // Generate verification code (6 digits)
-      const verificationCode = generateRandomCode(6);
-      const codeExpiry = new Date();
-      codeExpiry.setHours(codeExpiry.getHours() + 24); // Code valid for 24 hours
-      
       // Generate a random login email for admin panel users
       const namePart = userData.name.toLowerCase().replace(/\s+/g, '.').substring(0, 15);
       const randomPart = Math.floor(1000 + Math.random() * 9000);
       const loginEmail = `${namePart}.${randomPart}@businessoptions.in`;
       
-      // Create user document in Firestore
+      // Create user document in Firestore first (without uid)
       const userRef = doc(collection(db, USERS_COLLECTION));
+      const userId = userRef.id;
+      
+      // Upload profile image if provided
+      let profileImageUrl = userData.profileImageUrl || null;
+      if (profileImage) {
+        profileImageUrl = await uploadProfileImage(profileImage, userId);
+      }
+      
+      // Call the backend API to create the Firebase Auth user
+      const response = await fetch('/api/auth/createUser', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: userData.name,
+          email: userData.email,
+          role: userData.role,
+          loginEmail: loginEmail
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create user account');
+      }
+      
+      const { uid, password } = await response.json();
+      
+      // Now save the user document with the uid
       await setDoc(userRef, {
-        id: userRef.id,
+        id: userId,
+        uid: uid,
         name: userData.name,
         email: userData.email,
-        loginEmail: loginEmail, // Add the generated login email
+        loginEmail: loginEmail,
         role: userData.role,
-        status: UserStatus.VERIFICATION_PENDING,
-        emailVerified: false,
+        status: UserStatus.ACTIVE,
+        emailVerified: true,
         isWebsiteUser: false,
         createdAt: serverTimestamp(),
-        verificationCode,
-        verificationCodeExpiry: codeExpiry,
-        profileImageUrl: userData.profileImageUrl || null
+        profileImageUrl
       });
       
       return {
-        userId: userRef.id,
-        verificationCode,
-        loginEmail
+        userId,
+        loginEmail,
+        password
       };
     } catch (error) {
       console.error('Error creating admin user:', error);
@@ -236,46 +260,27 @@ import {
   };
   
   /**
-   * Verify a user's email and set password
+   * Reset user password
    */
-  export const verifyUserAndSetPassword = async (
-    userId: string, 
-    verificationCode: string,
-    password: string
-  ): Promise<boolean> => {
+  export const resetUserPassword = async (loginEmail: string): Promise<string> => {
     try {
-      const userRef = doc(db, USERS_COLLECTION, userId);
-      const userDoc = await getDoc(userRef);
-      
-      if (!userDoc.exists()) {
-        throw new Error('User not found');
-      }
-      
-      const userData = userDoc.data() as UserDetails;
-      
-      if (userData.verificationCode !== verificationCode) {
-        throw new Error('Invalid verification code');
-      }
-      
-      const now = new Date();
-      if (userData.verificationCodeExpiry && userData.verificationCodeExpiry < now) {
-        throw new Error('Verification code has expired');
-      }
-      
-      // In a real application, we'd create the Firebase Auth account here
-      // and set the password
-      
-      // Update user document
-      await updateDoc(userRef, {
-        status: UserStatus.ACTIVE,
-        emailVerified: true,
-        verificationCode: null,
-        verificationCodeExpiry: null
+      const response = await fetch('/api/auth/resetPassword', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ loginEmail }),
       });
       
-      return true;
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to reset password');
+      }
+      
+      const { password } = await response.json();
+      return password;
     } catch (error) {
-      console.error('Error verifying user:', error);
+      console.error('Error resetting password:', error);
       throw error;
     }
   };

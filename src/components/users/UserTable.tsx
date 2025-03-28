@@ -8,7 +8,8 @@ import {
   Clock,
   Eye,
   UserCheck,
-  UserX
+  UserX,
+  Key
 } from 'lucide-react';
 import { UserDetails, UserStatus, UserRole } from '@/types/firebase';
 import { formatDate, formatRelativeTime } from '@/lib/utils';
@@ -23,6 +24,7 @@ interface UserTableProps {
   onEdit: (user: UserDetails) => void;
   onDelete: (userId: string) => void;
   onStatusChange: (userId: string, status: UserStatus) => void;
+  onViewCredentials: (userId: string) => void; // New prop for viewing credentials
   onViewVerificationCode?: (userId: string) => void;
   isAdminPanel?: boolean;
 }
@@ -51,6 +53,7 @@ const UserTable: React.FC<UserTableProps> = ({
   onEdit,
   onDelete,
   onStatusChange,
+  onViewCredentials,
   onViewVerificationCode,
   isAdminPanel = true
 }) => {
@@ -162,8 +165,8 @@ const UserTable: React.FC<UserTableProps> = ({
               User
             </th>
             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-  Admin Login Email
-</th>
+              Admin Login Email
+            </th>
             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Role
             </th>
@@ -216,8 +219,8 @@ const UserTable: React.FC<UserTableProps> = ({
                 </div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
-  <div className="text-sm text-gray-900 font-mono">{user.loginEmail}</div>
-</td>
+                <div className="text-sm font-mono text-gray-900">{user.loginEmail}</div>
+              </td>
               <td className="px-6 py-4 whitespace-nowrap">
                 {getRoleBadge(user.role as UserRole)}
               </td>
@@ -239,6 +242,16 @@ const UserTable: React.FC<UserTableProps> = ({
                       className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
                     >
                       <Edit className="h-4 w-4" />
+                    </button>
+                  </Tooltip>
+                  
+                  {/* View Credentials Button */}
+                  <Tooltip content="View Login Credentials">
+                    <button
+                      onClick={() => onViewCredentials(user.id)}
+                      className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                    >
+                      <Key className="h-4 w-4" />
                     </button>
                   </Tooltip>
                   
