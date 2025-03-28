@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLoading } from '@/context/LoadingContext';
 import { Tab } from '@headlessui/react';
-import { Plus, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Plus, RefreshCw, AlertTriangle, Info } from 'lucide-react';
 import usePageTitle from '@/hooks/usePageTitle';
 import Button from '@/components/ui/Button';
 import UserFilters from '@/components/users/UserFilters';
@@ -51,6 +51,7 @@ export default function AllUsers() {
   // Verification code modal
   const [verificationCode, setVerificationCode] = useState<string | null>(null);
   const [verificationEmail, setVerificationEmail] = useState<string>('');
+  const [loginEmail, setLoginEmail] = useState<string>(''); // New state for login email
   
   // Track which tabs have been initialized
   const [initializedTabs, setInitializedTabs] = useState<{[key: number]: boolean}>({});
@@ -179,16 +180,17 @@ export default function AllUsers() {
     }
   };
   
-  // Handle user creation
+  // Handle user creation - Updated to include loginEmail
   const handleCreateUser = async (userData: Partial<UserDetails>) => {
     try {
       startLoading('Creating user...');
       
       const result = await createAdminPanelUser(userData);
       
-      // Show verification code
+      // Show verification code and loginEmail
       setVerificationCode(result.verificationCode);
       setVerificationEmail(userData.email!);
+      setLoginEmail(result.loginEmail); // Store the generated login email
       
       // Reload admin users
       await loadAdminUsers(true);
@@ -374,6 +376,7 @@ export default function AllUsers() {
     if (user && user.verificationCode) {
       setVerificationCode(user.verificationCode);
       setVerificationEmail(user.email);
+      setLoginEmail(user.loginEmail || ''); // Set the login email if available
     }
   };
   
@@ -398,6 +401,19 @@ export default function AllUsers() {
             >
               Add New User
             </Button>
+          </div>
+        </div>
+        
+        {/* Admin Login Info Banner */}
+        <div className="mb-6 p-4 border border-blue-200 bg-blue-50 rounded-lg flex items-start">
+          <Info className="h-5 w-5 text-blue-500 mr-3 mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-blue-700">
+            <p className="font-medium mb-1">Admin Panel Login Information</p>
+            <p>
+              Admin users log in using their <strong>Admin Login Email</strong> (@businessoptions.in) 
+              which is different from their regular email address. This separation helps maintain security 
+              and prevent conflicts between website accounts and admin accounts.
+            </p>
           </div>
         </div>
         
@@ -468,6 +484,7 @@ export default function AllUsers() {
                     onStatusChange={handleStatusChange}
                     onViewVerificationCode={handleViewVerificationCode}
                     isAdminPanel={true}
+                    showLoginEmail={true} // New prop to show login email column
                   />
                 </div>
                 
@@ -538,12 +555,16 @@ export default function AllUsers() {
           />
         )}
         
-        {/* Verification code modal */}
+        {/* Verification code modal - Updated to include loginEmail */}
         {verificationCode && (
           <VerificationCodeModal
             code={verificationCode}
             email={verificationEmail}
-            onClose={() => setVerificationCode(null)}
+            loginEmail={loginEmail} // Pass the login email to the modal
+            onClose={() => {
+              setVerificationCode(null);
+              setLoginEmail('');
+            }}
           />
         )}
         

@@ -30,9 +30,10 @@ export enum UserStatus {
  * Contains all user-related information stored in Firestore
  */
 export interface UserDetails {
-  id: string; // Document ID (from Firestore)
-  uid: string; // Firebase Authentication UID
-  email: string;
+  id: string;
+  uid: string;
+  email: string; // Regular email address
+  loginEmail: string; // Admin panel login email (for admin roles)
   name: string;
   role: UserRole;
   status: UserStatus;
@@ -42,8 +43,9 @@ export interface UserDetails {
   verificationCodeExpiry?: Date;
   emailVerified: boolean;
   profileImageUrl?: string;
-  isWebsiteUser: boolean; // To differentiate between website and admin panel users
+  isWebsiteUser: boolean;
 }
+
 
 /**
  * Auth state type

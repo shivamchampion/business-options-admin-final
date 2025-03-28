@@ -169,9 +169,9 @@ import {
    * Create a new admin panel user
    */
   // Modify the createAdminPanelUser function
-export const createAdminPanelUser = async (
+  export const createAdminPanelUser = async (
     userData: Partial<UserDetails>
-  ): Promise<{userId: string, verificationCode: string}> => {
+  ): Promise<{userId: string, verificationCode: string, loginEmail: string}> => {
     try {
       // Validation checks
       if (!userData.name || !userData.email || !userData.role) {
@@ -202,12 +202,18 @@ export const createAdminPanelUser = async (
       const codeExpiry = new Date();
       codeExpiry.setHours(codeExpiry.getHours() + 24); // Code valid for 24 hours
       
+      // Generate a random login email for admin panel users
+      const namePart = userData.name.toLowerCase().replace(/\s+/g, '.').substring(0, 15);
+      const randomPart = Math.floor(1000 + Math.random() * 9000);
+      const loginEmail = `${namePart}.${randomPart}@businessoptions.in`;
+      
       // Create user document in Firestore
       const userRef = doc(collection(db, USERS_COLLECTION));
       await setDoc(userRef, {
         id: userRef.id,
         name: userData.name,
         email: userData.email,
+        loginEmail: loginEmail, // Add the generated login email
         role: userData.role,
         status: UserStatus.VERIFICATION_PENDING,
         emailVerified: false,
@@ -220,7 +226,8 @@ export const createAdminPanelUser = async (
       
       return {
         userId: userRef.id,
-        verificationCode
+        verificationCode,
+        loginEmail
       };
     } catch (error) {
       console.error('Error creating admin user:', error);
