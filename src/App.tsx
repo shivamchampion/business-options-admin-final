@@ -9,13 +9,13 @@ import Login from "@/pages/Login";
 import Unauthorized from "@/pages/Unauthorized";
 import MainLayout from "@/components/layout/MainLayout";
 
-// Use React.lazy only for Dashboard as an example of code splitting
+// Use React.lazy for code splitting
 import React from 'react';
 const Dashboard = React.lazy(() => import("@/pages/Dashboard"));
+const AllUsers = React.lazy(() => import("@/pages/users/AllUsers"));
+const UserRoles = React.lazy(() => import("@/pages/users/UserRoles"));
 
 // Using placeholder components as requested
-const UsersPage = () => <div className="card"><h1 className="text-2xl font-bold">Users Page</h1></div>;
-const UserRolesPage = () => <div className="card"><h1 className="text-2xl font-bold">User Roles Page</h1></div>;
 const AdvisorsPage = () => <div className="card"><h1 className="text-2xl font-bold">Advisors Page</h1></div>;
 const ListingsPage = () => <div className="card"><h1 className="text-2xl font-bold">Listings Page</h1></div>;
 
@@ -60,9 +60,19 @@ export default function App() {
                   </SuspenseBoundary>
                 } />
                 
+                {/* User Management Routes */}
+                <Route path="/users" element={
+                  <SuspenseBoundary>
+                    <AllUsers />
+                  </SuspenseBoundary>
+                } />
+                <Route path="/users/roles" element={
+                  <SuspenseBoundary>
+                    <UserRoles />
+                  </SuspenseBoundary>
+                } />
+                
                 {/* Regular components without code splitting */}
-                <Route path="/users" element={<UsersPage />} />
-                <Route path="/users/roles" element={<UserRolesPage />} />
                 <Route path="/advisors" element={<AdvisorsPage />} />
                 <Route path="/listings" element={<ListingsPage />} />
               </Route>

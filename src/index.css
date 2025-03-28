@@ -84,3 +84,12 @@
     @apply hover:bg-gray-50;
   }
 }
+
+@layer utilities {
+  .dropdown-menu-fix {
+    position: absolute;
+    z-index: 50;
+    transform: translateY(-100%);
+    top: -10px;
+  }
+}

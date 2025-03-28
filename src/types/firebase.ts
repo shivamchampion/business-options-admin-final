@@ -7,7 +7,23 @@
  * User roles in the system
  * Defines the different permission levels in the admin panel
  */
-export type UserRole = 'user' | 'moderator' | 'advisor' | 'admin' | 'super_admin';
+export enum UserRole {
+  USER = 'user',
+  ADVISOR = 'advisor',
+  MODERATOR = 'moderator',
+  ADMIN = 'admin',
+  SUPER_ADMIN = 'super_admin'
+}
+
+/**
+ * User status in the system
+ */
+export enum UserStatus {
+  ACTIVE = 'active',
+  INACTIVE = 'inactive',
+  PENDING = 'pending',
+  VERIFICATION_PENDING = 'verification_pending'
+}
 
 /**
  * User details interface
@@ -19,9 +35,14 @@ export interface UserDetails {
   email: string;
   name: string;
   role: UserRole;
-  status: 'active' | 'inactive' | 'pending';
+  status: UserStatus;
   createdAt: Date;
   lastLogin?: Date;
+  verificationCode?: string;
+  verificationCodeExpiry?: Date;
+  emailVerified: boolean;
+  profileImageUrl?: string;
+  isWebsiteUser: boolean; // To differentiate between website and admin panel users
 }
 
 /**
@@ -33,4 +54,18 @@ export interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error?: Error;
+}
+
+/**
+ * User filter options
+ */
+export interface UserFilters {
+  search?: string;
+  status?: UserStatus[];
+  role?: UserRole[];
+  dateRange?: {
+    from: Date;
+    to: Date;
+  };
+  isVerified?: boolean;
 }
