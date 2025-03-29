@@ -36,11 +36,12 @@ import {
 /**
  * Get all industries
  */
-export const getAllIndustries = async (): Promise<Industry[]> => {
+export const getAllIndustries = async (currentUserId?: string): Promise<Industry[]> => {
     try {
-      // Verify authentication
-      if (!auth.currentUser) {
-        throw new Error('Authentication required to fetch industries');
+      // Check authentication without throwing
+      if (!auth.currentUser && !currentUserId) {
+        console.warn('Authentication not established for fetching industries');
+        return []; // Return empty array instead of throwing
       }
       
       const industriesQuery = query(
@@ -77,8 +78,13 @@ export const getAllIndustries = async (): Promise<Industry[]> => {
   /**
    * Get industry by ID
    */
-  export const getIndustryById = async (id: string): Promise<Industry> => {
+  export const getIndustryById = async (id: string, currentUserId?: string): Promise<Industry> => {
     try {
+      if (!auth.currentUser && !currentUserId) {
+        console.warn('Authentication not established for fetching industry');
+        throw new Error('Authentication required to fetch industry');
+      }
+      
       const industryRef = doc(db, INDUSTRIES_COLLECTION, id);
       const industrySnap = await getDoc(industryRef);
       
@@ -115,6 +121,10 @@ export const getAllIndustries = async (): Promise<Industry[]> => {
         throw new Error('Industry name is required');
       }
       
+      if (!auth.currentUser) {
+        throw new Error('Authentication required to create industry');
+      }
+      
       // Create a new document reference
       const industryRef = doc(collection(db, INDUSTRIES_COLLECTION));
       const industryId = industryRef.id;
@@ -146,6 +156,10 @@ export const getAllIndustries = async (): Promise<Industry[]> => {
     industryData: Partial<Industry>
   ): Promise<void> => {
     try {
+      if (!auth.currentUser) {
+        throw new Error('Authentication required to update industry');
+      }
+      
       const industryRef = doc(db, INDUSTRIES_COLLECTION, id);
       
       // Update data
@@ -164,6 +178,10 @@ export const getAllIndustries = async (): Promise<Industry[]> => {
    */
   export const deleteIndustry = async (id: string): Promise<void> => {
     try {
+      if (!auth.currentUser) {
+        throw new Error('Authentication required to delete industry');
+      }
+      
       const industryRef = doc(db, INDUSTRIES_COLLECTION, id);
       
       // Soft delete by setting isActive to false
@@ -183,6 +201,10 @@ export const getAllIndustries = async (): Promise<Industry[]> => {
    */
   export const seedInitialIndustries = async (): Promise<void> => {
     try {
+      if (!auth.currentUser) {
+        throw new Error('Authentication required to seed industries');
+      }
+      
       // Check if industries already exist
       const snapshot = await getDocs(collection(db, INDUSTRIES_COLLECTION));
       if (snapshot.size > 0) {
@@ -221,8 +243,13 @@ export const getAllIndustries = async (): Promise<Industry[]> => {
   /**
    * Get top industries by listing count
    */
-  export const getTopIndustries = async (limit: number = 10): Promise<Industry[]> => {
+  export const getTopIndustries = async (limit: number = 10, currentUserId?: string): Promise<Industry[]> => {
     try {
+      if (!auth.currentUser && !currentUserId) {
+        console.warn('Authentication not established for fetching top industries');
+        return []; // Return empty array instead of throwing
+      }
+      
       const industriesQuery = query(
         collection(db, INDUSTRIES_COLLECTION),
         where('isActive', '==', true),
@@ -251,6 +278,6 @@ export const getAllIndustries = async (): Promise<Industry[]> => {
       return industries;
     } catch (error) {
       console.error('Error getting top industries:', error);
-      throw new Error(`Failed to fetch top industries: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return []; // Return empty array on error
     }
   };

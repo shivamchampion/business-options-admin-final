@@ -108,14 +108,15 @@ import {
 export const getListings = async (
     pageSize: number = 10, 
     lastDoc: DocumentSnapshot | null = null,
-    filters?: ListingFilters
+    filters?: ListingFilters,
+    currentUserId?: string
   ): Promise<{listings: Listing[], lastDoc: DocumentSnapshot | null}> => {
     try {
       // Verify authentication
-      if (!auth.currentUser) {
-        throw new Error('Authentication required to fetch listings');
+      if (!auth.currentUser && !currentUserId) {
+        console.warn('Authentication not established for fetching listings');
+        return { listings: [], lastDoc: null };
       }
-  
       // Start with a base query
       let baseQuery = collection(db, LISTINGS_COLLECTION);
       
@@ -232,12 +233,8 @@ export const getListings = async (
         lastDoc: snapshot.docs[snapshot.docs.length - 1] || null
       };
     } catch (error) {
-      console.error('Error getting listings:', error);
-      // Return empty results on error to avoid breaking the UI
-      return {
-        listings: [],
-        lastDoc: null
-      };
+        console.error('Error getting listings:', error);
+        return { listings: [], lastDoc: null };
     }
   };
   
@@ -951,11 +948,12 @@ export const getListings = async (
 export const getListingsByStatus = async (
   status: ListingStatus,
   pageSize: number = 10,
-  lastDoc: DocumentSnapshot | null = null
+  lastDoc: DocumentSnapshot | null = null,
+  currentUserId?: string
 ): Promise<{listings: Listing[], lastDoc: DocumentSnapshot | null}> => {
   try {
     // Verify authentication
-    if (!auth.currentUser) {
+    if (!auth.currentUser && !currentUserId) {
       throw new Error('Authentication required to fetch listings');
     }
     
@@ -1014,11 +1012,18 @@ export const getListingsByStatus = async (
   /**
  * Get listing counts by status
  */
-export const getListingCountsByStatus = async (): Promise<{[key in ListingStatus]: number}> => {
+export const getListingCountsByStatus = async ( currentUserId?: string): Promise<{[key in ListingStatus]: number}> => {
   try {
     // Verify authentication
-    if (!auth.currentUser) {
-      throw new Error('Authentication required to fetch listing counts');
+    if (!auth.currentUser && !currentUserId) {
+        console.warn('Authentication not established for fetching listing counts');
+        return {
+          [ListingStatus.DRAFT]: 0,
+          [ListingStatus.PENDING]: 0,
+          [ListingStatus.PUBLISHED]: 0,
+          [ListingStatus.REJECTED]: 0,
+          [ListingStatus.ARCHIVED]: 0
+        };
     }
     
     const statusCounts: {[key in ListingStatus]: number} = {
@@ -1058,11 +1063,18 @@ export const getListingCountsByStatus = async (): Promise<{[key in ListingStatus
 /**
  * Get listing counts by type
  */
-export const getListingCountsByType = async (): Promise<{[key in ListingType]: number}> => {
+export const getListingCountsByType = async ( currentUserId?: string): Promise<{[key in ListingType]: number}> => {
   try {
     // Verify authentication
-    if (!auth.currentUser) {
-      throw new Error('Authentication required to fetch listing counts');
+    if (!auth.currentUser && !currentUserId) {
+        console.warn('Authentication not established for fetching listing type counts');
+        return {
+          [ListingType.BUSINESS]: 0,
+          [ListingType.FRANCHISE]: 0,
+          [ListingType.STARTUP]: 0,
+          [ListingType.INVESTOR]: 0,
+          [ListingType.DIGITAL_ASSET]: 0
+        };
     }
     
     const typeCounts: {[key in ListingType]: number} = {

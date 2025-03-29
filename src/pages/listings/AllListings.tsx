@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLoading } from '@/context/LoadingContext';
+import { useAuth } from '@/context/AuthContext';
+import { auth } from '@/lib/firebase';
 import { Tab } from '@headlessui/react';
 import {
     Plus,
@@ -32,10 +34,12 @@ import {
 } from '@/services/listingService';
 import { cn } from '@/lib/utils';
 import { toast } from 'react-hot-toast';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 export default function AllListings() {
     usePageTitle('Listings Management');
     const { startLoading, stopLoading } = useLoading();
+    const { user, isAuthenticated, isLoading: authLoading } = useAuth();
 
     // Tab state
     const [selectedTab, setSelectedTab] = useState(0);
@@ -90,10 +94,9 @@ export default function AllListings() {
         }, 150);
     };
 
-
     // Load data when switching tabs or when tab is first viewed
     useEffect(() => {
-        if (!initializedTabs[selectedTab]) {
+        if (isAuthenticated && !authLoading && auth.currentUser && !initializedTabs[selectedTab]) {
             loadListingsByTab(true);
 
             // Mark this tab as initialized
@@ -102,20 +105,22 @@ export default function AllListings() {
                 [selectedTab]: true
             }));
         }
-    }, [selectedTab]);
+    }, [selectedTab, isAuthenticated, authLoading, user]);
 
-    // Load counts on initial render
+    // Load counts and industries when auth is established
     useEffect(() => {
-        loadCounts();
-        loadIndustries();
-    }, []);
+        if (isAuthenticated && !authLoading && auth.currentUser) {
+            loadCounts();
+            loadIndustries();
+        }
+    }, [isAuthenticated, authLoading, user]);
 
     // Load counts data
     const loadCounts = async () => {
         try {
             const [typeCountsData, statusCountsData] = await Promise.all([
-                getListingCountsByType(),
-                getListingCountsByStatus()
+                getListingCountsByType(user?.id),
+                getListingCountsByStatus(user?.id)
             ]);
 
             setTypeCounts(typeCountsData);
@@ -129,7 +134,7 @@ export default function AllListings() {
     // Load industries for filter
     const loadIndustries = async () => {
         try {
-            const industriesData = await getAllIndustries();
+            const industriesData = await getAllIndustries(user?.id);
             setIndustries(industriesData);
         } catch (error) {
             console.error('Error loading industries:', error);
@@ -167,7 +172,8 @@ export default function AllListings() {
                 result = await getListingsByStatus(
                     ListingStatus.PENDING,
                     10,
-                    reset ? null : lastDoc
+                    reset ? null : lastDoc,
+                    user?.id
                 );
             } else if (selectedTab === 2) {
                 // Featured tab
@@ -175,21 +181,24 @@ export default function AllListings() {
                 result = await getListings(
                     10,
                     reset ? null : lastDoc,
-                    tabFilters
+                    tabFilters,
+                    user?.id
                 );
             } else if (selectedTab === 3) {
                 // Drafts tab
                 result = await getListingsByStatus(
                     ListingStatus.DRAFT,
                     10,
-                    reset ? null : lastDoc
+                    reset ? null : lastDoc,
+                    user?.id
                 );
             } else {
                 // All listings tab (default)
                 result = await getListings(
                     10,
                     reset ? null : lastDoc,
-                    tabFilters
+                    tabFilters,
+                    user?.id
                 );
             }
 
@@ -214,10 +223,10 @@ export default function AllListings() {
 
     // Effect to reload when filters change
     useEffect(() => {
-        if (initializedTabs[selectedTab]) {
+        if (isAuthenticated && !authLoading && auth.currentUser && initializedTabs[selectedTab]) {
             loadListingsByTab(true);
         }
-    }, [filters]);
+    }, [filters, isAuthenticated, authLoading]);
 
     // Load more listings
     const loadMore = () => {
@@ -500,6 +509,30 @@ export default function AllListings() {
         toast.info('Listing edit functionality coming soon');
     };
 
+    // Display loading state during auth
+    if (authLoading) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[400px]">
+                <LoadingSpinner size="lg" color="primary" />
+                <p className="mt-4 text-sm text-gray-500">
+                    Establishing secure connection...
+                </p>
+            </div>
+        );
+    }
+
+    // Add check for auth.currentUser to display waiting state
+    if (isAuthenticated && !auth.currentUser) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[400px]">
+                <LoadingSpinner size="lg" color="primary" />
+                <p className="mt-4 text-sm text-gray-500">
+                    Initializing authentication...
+                </p>
+            </div>
+        );
+    }
+
     return (
         <ErrorBoundary>
             <div>
@@ -521,67 +554,74 @@ export default function AllListings() {
                     </div>
                 </div>
 
-               {/* Tabs */}
-          <Tab.Group selectedIndex={selectedTab} onChange={handleTabChange}>
-            <div className="border-b border-gray-200 mb-6">
-              <div className="flex overflow-x-auto scrollbar-hide max-w-full pb-1">
-                <Tab.List className="flex space-x-1 min-w-max">
-                  {tabLabels.map((tab, idx) => (
-                    <Tab
-                      key={idx}
-                      className={({ selected }) => cn(
-                        "px-6 py-3 text-sm font-medium whitespace-nowrap focus:outline-none transition-colors relative",
-                        selected 
-                          ? 'text-blue-600' 
-                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                      )}
-                    >
-                      {({ selected }) => (
-                        <>
-                          <span className="flex items-center">
-                            {tab.name}
-                            {tab.count > 0 && (
-                              <span className="ml-2 bg-gray-100 text-gray-700 rounded-full px-2 py-0.5 text-xs font-normal">
-                                {tab.count}
-                              </span>
-                            )}
-                          </span>
-                          {selected && (
-                            <span className="absolute inset-x-0 bottom-0 h-0.5 bg-blue-500"></span>
-                          )}
-                        </>
-                      )}
-                    </Tab>
-                  ))}
-                </Tab.List>
-              </div>
-            </div>
+                {/* Tabs */}
+                <Tab.Group selectedIndex={selectedTab} onChange={handleTabChange}>
+                    <div className="border-b border-gray-200 mb-6">
+                        <div className="flex overflow-x-auto scrollbar-hide max-w-full">
+                            <Tab.List className="flex space-x-1 min-w-max">
+                                {tabLabels.map((tab, idx) => (
+                                    <Tab
+                                        key={idx}
+                                        className={({ selected }) => cn(
+                                            "px-6 py-3 text-sm font-medium whitespace-nowrap focus:outline-none transition-colors",
+                                            selected
+                                                ? 'text-blue-600 relative'
+                                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                        )}
+                                    >
+                                        {({ selected }) => (
+                                            <div className="relative">
+                                                <span className="flex items-center">
+                                                    {tab.name}
+                                                    {tab.count > 0 && (
+                                                        <span className="ml-2 bg-gray-100 text-gray-700 rounded-full px-2 py-0.5 text-xs font-normal">
+                                                            {tab.count}
+                                                        </span>
+                                                    )}
+                                                </span>
+                                                {selected && (
+                                                    <span className="absolute left-0 right-0 -bottom-[1px] h-0.5 bg-blue-500"></span>
+                                                )}
+                                            </div>
+                                        )}
+                                    </Tab>
+                                ))}
+                            </Tab.List>
+                        </div>
+                    </div>
 
-                    {/* Listing type quick filters */}
-                    <div className="flex mb-6 gap-2 overflow-x-auto pb-1 flex-nowrap">
-                        {typeFilters.map((filter, idx) => (
-                            <Button
-                                key={idx}
-                                variant={filters.type?.includes(filter.type) ? "primary" : "outline"}
-                                size="sm"
-                                leftIcon={filter.icon}
-                                onClick={() => {
-                                    // Toggle type filter
-                                    const currentTypes = filters.type || [];
-                                    const newTypes = currentTypes.includes(filter.type)
-                                        ? currentTypes.filter(t => t !== filter.type)
-                                        : [...currentTypes, filter.type];
+                    {/* Listing type quick filters with improved styling */}
+                    <div className="mb-6 flex flex-wrap sm:flex-nowrap gap-2 overflow-x-auto">
+                        <div className="flex gap-2 overflow-x-auto pb-2 flex-nowrap">
+                            {typeFilters.map((filter, idx) => (
+                                <Button
+                                    key={idx}
+                                    variant={filters.type?.includes(filter.type) ? "primary" : "outline"}
+                                    size="sm"
+                                    leftIcon={filter.icon}
+                                    onClick={() => {
+                                        // Toggle type filter
+                                        const currentTypes = filters.type || [];
+                                        const newTypes = currentTypes.includes(filter.type)
+                                            ? currentTypes.filter(t => t !== filter.type)
+                                            : [...currentTypes, filter.type];
 
-                                    handleFilterChange({
-                                        ...filters,
-                                        type: newTypes.length > 0 ? newTypes : undefined
-                                    });
-                                }}
-                                className="whitespace-nowrap"
-                            >
-                                {filter.name}
-                            </Button>
-                        ))}
+                                        handleFilterChange({
+                                            ...filters,
+                                            type: newTypes.length > 0 ? newTypes : undefined
+                                        });
+                                    }}
+                                    className={cn(
+                                        "whitespace-nowrap",
+                                        filters.type?.includes(filter.type) 
+                                            ? "shadow-sm" 
+                                            : "border border-gray-300 hover:border-gray-400"
+                                    )}
+                                >
+                                    {filter.name}
+                                </Button>
+                            ))}
+                        </div>
                     </div>
 
                     <Tab.Panels>

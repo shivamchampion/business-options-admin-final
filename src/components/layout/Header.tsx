@@ -126,11 +126,13 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
                 <div className="flex items-center">
                   <div className="relative">
                     <div className="h-8 w-8 rounded-full border-2 border-[#0031ac] overflow-hidden">
-                      <img 
-                        src="/avatar.png" 
-                        alt="Profile" 
+                     {user.profileImageUrl ? (<img 
+                        src={user.profileImageUrl}
+                        alt={user.name}
                         className="h-full w-full object-cover"
-                      />
+                      />) : (<div className="h-full w-full rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-medium">
+                        {user.name.charAt(0).toUpperCase()}
+                      </div>)} 
                     </div>
                     <div className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-green-400 border border-white"></div>
                   </div>
