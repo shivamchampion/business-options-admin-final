@@ -87,7 +87,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start the server
+// Start the server...
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT} in ${environment} mode`);
   console.log(`API URL: ${process.env.API_URL || 'http://localhost:' + PORT}`);
