@@ -1,20 +1,21 @@
 {
-    "name": "business-options-backend",
-    "version": "1.0.0",
-    "type": "module",
-    "description": "Backend for Business Options Platform",
-    "main": "index.js",
-    "scripts": {
-      "start": "node index.js",
-      "dev": "nodemon index.js"
-    },
-    "dependencies": {
-      "cors": "^2.8.5",
-      "dotenv": "^16.0.3",
-      "express": "^4.18.2",
-      "firebase-admin": "^11.5.0"
-    },
-    "devDependencies": {
-      "nodemon": "^2.0.22"
-    }
+  "name": "business-options-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Backend for Business Options Platform",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "firebase-admin": "^11.5.0",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
   }
+}
