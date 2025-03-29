@@ -1198,10 +1198,8 @@ export const getListingCountsByType = async ( currentUserId?: string): Promise<{
     return (score / maxScore) * 10;
   };
   
-  /**
-   * Calculate a financial score for a listing (0-10)
-   */
-  const calculateFinancialsScore = (listing: Partial<Listing>): number => {
+  // Fixed calculateFinancialsScore function
+const calculateFinancialsScore = (listing: Partial<Listing>): number => {
     let score = 0;
     
     if (listing.type === ListingType.BUSINESS && listing.businessDetails) {
@@ -1210,8 +1208,10 @@ export const getListingCountsByType = async ( currentUserId?: string): Promise<{
       // Give points for financial detail
       if (bd.financials?.annualRevenue?.value > 0) score += 3;
       if (bd.financials?.profitMargin?.percentage > 0) score += 2;
-      if (bd.financials?.revenueTrend === RevenueTrend.GROWING) score += 3;
-      else if (bd.financials?.revenueTrend === RevenueTrend.STABLE) score += 2;
+      
+      // Check revenue trend - fixed enum reference
+      if (bd.financials?.revenueTrend === 'growing') score += 3;
+      else if (bd.financials?.revenueTrend === 'stable') score += 2;
       
       // Check for reasonable pricing
       if (bd.sale?.askingPrice?.value > 0 && bd.financials?.annualRevenue?.value > 0) {

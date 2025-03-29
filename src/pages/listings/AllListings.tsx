@@ -590,44 +590,46 @@ export default function AllListings() {
                         </div>
                     </div>
 
-                    {/* Listing type quick filters with improved styling */}
-                    <div className="mb-6 flex flex-wrap sm:flex-nowrap gap-2 overflow-x-auto">
-                        <div className="flex gap-2 overflow-x-auto pb-2 flex-nowrap">
-                            {typeFilters.map((filter, idx) => (
-                                <Button
-                                    key={idx}
-                                    variant={filters.type?.includes(filter.type) ? "primary" : "outline"}
-                                    size="sm"
-                                    leftIcon={filter.icon}
-                                    onClick={() => {
-                                        // Toggle type filter
-                                        const currentTypes = filters.type || [];
-                                        const newTypes = currentTypes.includes(filter.type)
-                                            ? currentTypes.filter(t => t !== filter.type)
-                                            : [...currentTypes, filter.type];
+                    {/* Listing type quick filters with improved styling and fixed borders */}
+<div className="mb-6">
+  <div className="overflow-x-auto pb-2 hide-scrollbar pl-1.5 pr-4">
+    <div className="flex gap-3 min-w-max py-1 ml-0.5">
+      {typeFilters.map((filter, idx) => (
+        <Button
+          key={idx}
+          variant={filters.type?.includes(filter.type) ? "primary" : "outline"}
+          size="sm"
+          leftIcon={filter.icon}
+          onClick={() => {
+            // Toggle type filter
+            const currentTypes = filters.type || [];
+            const newTypes = currentTypes.includes(filter.type)
+              ? currentTypes.filter(t => t !== filter.type)
+              : [...currentTypes, filter.type];
 
-                                        handleFilterChange({
-                                            ...filters,
-                                            type: newTypes.length > 0 ? newTypes : undefined
-                                        });
-                                    }}
-                                    className={cn(
-                                        "whitespace-nowrap",
-                                        filters.type?.includes(filter.type) 
-                                            ? "shadow-sm" 
-                                            : "border border-gray-300 hover:border-gray-400"
-                                    )}
-                                >
-                                    {filter.name}
-                                </Button>
-                            ))}
-                        </div>
-                    </div>
+            handleFilterChange({
+              ...filters,
+              type: newTypes.length > 0 ? newTypes : undefined
+            });
+          }}
+          className={cn(
+            "whitespace-nowrap px-4 py-1.5 min-w-[120px] transition-all",
+            filters.type?.includes(filter.type) 
+              ? "border border-blue-600 bg-blue-600 text-white" 
+              : "border border-gray-300 text-gray-700 hover:border-gray-400 bg-white"
+          )}
+        >
+          {filter.name}
+        </Button>
+      ))}
+    </div>
+  </div>
+</div>
 
                     <Tab.Panels>
                         {/* All listings panel */}
                         <Tab.Panel>
-                            <div className="space-y-6">
+                            <div className="space-y-6 px-2">
                                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
                                     <ListingFilters
                                         filters={filters}
@@ -682,7 +684,7 @@ export default function AllListings() {
 
                         {/* Pending listings panel (similar to All but with status filter) */}
                         <Tab.Panel>
-                            <div className="space-y-6">
+                            <div className="space-y-6 px-2">
                                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
                                     <ListingFilters
                                         filters={filters}
@@ -746,7 +748,7 @@ export default function AllListings() {
 
                         {/* Featured listings panel */}
                         <Tab.Panel>
-                            <div className="space-y-6">
+                            <div className="space-y-6 px-2">
                                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
                                     <ListingFilters
                                         filters={filters}
@@ -810,7 +812,7 @@ export default function AllListings() {
 
                         {/* Drafts panel */}
                         <Tab.Panel>
-                            <div className="space-y-6">
+                            <div className="space-y-6 px-2">
                                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
                                     <ListingFilters
                                         filters={filters}
