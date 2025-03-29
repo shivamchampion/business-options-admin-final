@@ -1,6 +1,27 @@
+/**
+ * Authentication context - optimized for performance
+ */
+
 import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import { auth, db } from '@/lib/firebase';
 import { UserDetails, UserRole } from '@/types/firebase';
-import { loginUser, logoutUser, verifyToken } from '../../server/services/api'
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  doc, 
+  updateDoc, 
+  serverTimestamp 
+} from 'firebase/firestore';
+import { 
+  signInWithEmailAndPassword, 
+  signOut as firebaseSignOut,
+  browserLocalPersistence,  
+  browserSessionPersistence,  
+  setPersistence,
+  onIdTokenChanged
+} from 'firebase/auth';
 
 interface AuthContextType {
   user: UserDetails | null;
@@ -22,62 +43,76 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   
-  // Check for cached user data and token
+  // Check for cached user data
   useEffect(() => {
-    const checkAuth = async () => {
+    // Try to load data from session storage for immediate UI rendering
+    const cachedUser = sessionStorage.getItem('user_data');
+    if (cachedUser) {
       try {
-        // First check for cached user data for immediate UI rendering
-        const cachedUser = sessionStorage.getItem('user_data');
-        if (cachedUser) {
-          try {
-            const userData = JSON.parse(cachedUser);
-            setUser(userData);
-            setIsAuthenticated(true);
-          } catch (e) {
-            console.error('Error parsing cached user data');
-            sessionStorage.removeItem('user_data');
-          }
-        }
-        
-        // Then verify token with server if available
-        const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-        if (token) {
-          const userData = await verifyToken(token);
+        const userData = JSON.parse(cachedUser);
+        setUser(userData);
+        setIsAuthenticated(true);
+        setIsLoading(false);
+      } catch (e) {
+        console.error('Error parsing cached user data');
+        sessionStorage.removeItem('user_data');
+      }
+    }
+    
+    // More efficient token change listener (instead of onAuthStateChanged)
+    const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          // Query Firestore by uid
+          const userQuery = query(
+            collection(db, 'users'),
+            where('uid', '==', firebaseUser.uid)
+          );
+          const userDocs = await getDocs(userQuery);
           
-          if (ALLOWED_ROLES.includes(userData.role)) {
-            setUser(userData);
-            setIsAuthenticated(true);
-            setError(null);
+          if (!userDocs.empty) {
+            const userData = userDocs.docs[0].data() as UserDetails;
             
-            // Cache user data
-            sessionStorage.setItem('user_data', JSON.stringify(userData));
+            if (ALLOWED_ROLES.includes(userData.role)) { 
+              // Update last login time in Firestore
+              await updateDoc(userDocs.docs[0].ref, {
+                lastLogin: serverTimestamp()
+              });
+              
+              const userWithDates = {
+                ...userData,
+                lastLogin: new Date() 
+              };
+              
+              setUser(userWithDates);
+              setIsAuthenticated(true);
+              setError(null);
+              
+              // Cache user data
+              sessionStorage.setItem('user_data', JSON.stringify(userWithDates));
+            } else {
+              await signOut();
+              setError(new Error('Access denied: User role is not allowed to access admin panel'));
+            }
           } else {
             await signOut();
-            setError(new Error('Access denied: User role is not allowed to access admin panel'));
+            setError(new Error('User not found in system'));
           }
-        } else {
-          // No token found, clear state
-          sessionStorage.removeItem('user_data');
-          setUser(null);
-          setIsAuthenticated(false);
+        } catch (error: any) {
+          await signOut();
+          setError(new Error('Failed to fetch user data: ' + error.message));
+          console.error('Error in auth state change:', error);
         }
-      } catch (error) {
-        console.error('Auth verification error:', error);
-        
-        // Clear data on token verification failure
+      } else {
         sessionStorage.removeItem('user_data');
-        localStorage.removeItem('authToken');
-        sessionStorage.removeItem('authToken');
-        
         setUser(null);
         setIsAuthenticated(false);
-        setError(error instanceof Error ? error : new Error('Authentication failed'));
-      } finally {
-        setIsLoading(false);
+        setError(null);
       }
-    };
-    
-    checkAuth();
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const signIn = useCallback(async (email: string, password: string, rememberMe: boolean = false) => {
@@ -85,20 +120,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       setError(null);
       
-      const result = await loginUser(email, password);
+      // Set persistence based on remember me option
+      await setPersistence(auth,
+        rememberMe 
+          ? browserLocalPersistence 
+          : browserSessionPersistence 
+      );
       
-      // Store in session/local storage based on remember me option
-      if (rememberMe) {
-        localStorage.setItem('authToken', result.token);
-      } else {
-        sessionStorage.setItem('authToken', result.token);
-      }
-      
-      // Cache user data
-      sessionStorage.setItem('user_data', JSON.stringify(result.user));
-      
-      setUser(result.user);
-      setIsAuthenticated(true);
+      await signInWithEmailAndPassword(auth, email, password);
+      // Auth state change listener will handle the rest
     } catch (error: any) {
       setError(new Error(error.message));
       console.error('Sign in error:', error);
@@ -115,14 +145,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       // Clear cached user data
       sessionStorage.removeItem('user_data');
-      localStorage.removeItem('authToken');
-      sessionStorage.removeItem('authToken');
       
-      await logoutUser();
-      
-      setUser(null);
-      setIsAuthenticated(false);
+      await firebaseSignOut(auth);
     } catch (error: any) {
+      setError(new Error(error.message));
       console.error('Sign out error:', error);
       throw error;
     } finally {

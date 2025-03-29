@@ -6,7 +6,6 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import authRoutes from './routes/auth.js';
-import userRoutes from './routes/users.js';
 
 // Get current file path (ESM equivalent of __dirname)
 const __filename = fileURLToPath(import.meta.url);
@@ -63,7 +62,6 @@ app.use(cors({
 
 // Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
@@ -87,7 +85,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start the server...
+// Start the server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT} in ${environment} mode`);
   console.log(`API URL: ${process.env.API_URL || 'http://localhost:' + PORT}`);

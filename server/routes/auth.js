@@ -1,94 +1,6 @@
 import express from 'express';
 import admin from '../firebase/admin.js'; // Note the .js extension
-import firestoreService from '../services/firestore.js';
 const router = express.Router();
-
-// Login endpoint
-router.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
-    }
-    
-    // Firebase doesn't provide an API to authenticate with email/password in the admin SDK
-    // So this endpoint is just a placeholder - you'll need to use Firebase Auth in the client
-    // and then validate the token on the server
-    
-    res.status(500).json({ 
-      error: 'Server-side authentication is not supported. Please use Firebase Auth client-side.'
-    });
-  } catch (error) {
-    console.error('Error during login:', error);
-    
-    let errorMessage = 'Login failed';
-    if (error.code) {
-      switch (error.code) {
-        case 'auth/user-not-found':
-          errorMessage = 'No user found with this email';
-          break;
-        case 'auth/wrong-password':
-          errorMessage = 'Invalid password';
-          break;
-        case 'auth/invalid-email':
-          errorMessage = 'Invalid email format';
-          break;
-        case 'auth/user-disabled':
-          errorMessage = 'This account has been disabled';
-          break;
-        default:
-          errorMessage = error.message;
-      }
-    }
-    
-    res.status(401).json({ error: errorMessage });
-  }
-});
-
-// Verify token endpoint
-router.post('/verify-token', async (req, res) => {
-  try {
-    const { idToken } = req.body;
-    
-    if (!idToken) {
-      return res.status(400).json({ error: 'ID token is required' });
-    }
-    
-    // Verify the ID token
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
-    const uid = decodedToken.uid;
-    
-    // Get user info from Firestore
-    const userSnapshot = await admin.firestore()
-      .collection('users')
-      .where('uid', '==', uid)
-      .limit(1)
-      .get();
-    
-    if (userSnapshot.empty) {
-      return res.status(404).json({ error: 'User not found in database' });
-    }
-    
-    const userData = userSnapshot.docs[0].data();
-    const userId = userSnapshot.docs[0].id;
-    
-    // Update last login time
-    await firestoreService.updateUserLastLogin(userId);
-    
-    // Return user data
-    res.status(200).json({
-      ...userData,
-      id: userId,
-      createdAt: userData.createdAt?.toDate(),
-      lastLogin: new Date(),
-      verificationCodeExpiry: userData.verificationCodeExpiry?.toDate()
-    });
-  } catch (error) {
-    console.error('Error verifying token:', error);
-    res.status(401).json({ error: 'Invalid or expired token' });
-  }
-});
 
 // Create user with Firebase Auth
 router.post('/createUser', async (req, res) => {
@@ -97,12 +9,6 @@ router.post('/createUser', async (req, res) => {
     
     if (!name || !email || !role || !loginEmail) {
       return res.status(400).json({ error: 'Missing required fields' });
-    }
-    
-    // Check if email already exists in Firestore
-    const emailExists = await firestoreService.checkUserEmailExists(email);
-    if (emailExists) {
-      return res.status(400).json({ error: 'A user with this email already exists' });
     }
     
     // Generate a memorable password
@@ -261,4 +167,5 @@ function generateMemorablePassword() {
          specialChar;
 }
 
+// Export as default in ES Modules
 export default router;
