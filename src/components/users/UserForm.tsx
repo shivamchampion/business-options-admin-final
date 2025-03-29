@@ -4,6 +4,7 @@ import Button from '@/components/ui/Button';
 import { UserRole, UserDetails } from '@/types/firebase';
 import { z } from 'zod';
 import { cn } from '@/lib/utils';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 // Form validation schema
 const userFormSchema = z.object({
@@ -85,42 +86,44 @@ const UserForm: React.FC<UserFormProps> = ({
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-
+      
         if (!validateForm()) {
-            return;
+          return;
         }
-
+      
         setIsSubmitting(true);
-
+      
         try {
-            const result = await onSubmit({
-                id: user?.id,
-                name,
-                email,
-                role,
-            }, profileImage || undefined);
-            
-            // If we have credentials returned, show them
-            if (result && result.loginEmail && result.password) {
-                setCreatedCredentials({
-                    loginEmail: result.loginEmail,
-                    password: result.password
-                });
-                setShowCreatedUser(true);
-            } else {
-                onClose();
-            }
+          const result = await onSubmit({
+            id: user?.id,
+            name,
+            email,
+            role,
+          }, profileImage || undefined);
+          
+          // If we have credentials returned, show them
+          if (result && result.loginEmail && result.password) {
+            setCreatedCredentials({
+              loginEmail: result.loginEmail,
+              password: result.password
+            });
+            setShowCreatedUser(true);
+          } else {
+            onClose();
+          }
         } catch (error: any) {
-            console.error('Error submitting form:', error);
-            if (error.message.includes('email')) {
-                setErrors(prev => ({ ...prev, email: error.message }));
-            } else {
-                alert(`Error: ${error.message}`);
-            }
+          console.error('Error submitting form:', error);
+          if (error.message.includes('email')) {
+            setErrors(prev => ({ ...prev, email: error.message }));
+          } else {
+            // Display more user-friendly error messages
+            const errorMessage = error.message || 'Something went wrong. Please try again.';
+            alert(`Error: ${errorMessage}`);
+          }
         } finally {
-            setIsSubmitting(false);
+          setIsSubmitting(false);
         }
-    };
+      };
     
     const handleCopyEmail = () => {
         if (createdCredentials) {

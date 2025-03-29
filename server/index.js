@@ -3,9 +3,9 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import fs from 'fs';
-import authRoutes from './routes/auth.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import authRoutes from './routes/auth.js';
 
 // Get current file path (ESM equivalent of __dirname)
 const __filename = fileURLToPath(import.meta.url);
@@ -14,22 +14,19 @@ const __dirname = path.dirname(__filename);
 // Determine environment and load proper env file
 const environment = process.env.NODE_ENV || 'development';
 const envFile = environment === 'production' ? '.env.production' : '.env.development';
-const envPath = path.resolve(__dirname, '..', envFile);
+const envPath = path.resolve(__dirname, envFile);
 
-// Check if environment file exists
-if (!fs.existsSync(envPath)) {
-  console.error(`Error: Environment file ${envPath} not found`);
-  process.exit(1);
+// Check if environment file exists - MODIFIED TO MAKE OPTIONAL
+if (fs.existsSync(envPath)) {
+  const result = dotenv.config({ path: envPath });
+  if (result.error) {
+    console.error('Error loading environment variables:', result.error);
+  } else {
+    console.log(`Successfully loaded environment from ${envFile}`);
+  }
+} else {
+  console.log(`Environment file ${envFile} not found, using existing env vars`);
 }
-
-// Load environment variables
-const result = dotenv.config({ path: envPath });
-if (result.error) {
-  console.error('Error loading environment variables:', result.error);
-  process.exit(1);
-}
-
-console.log(`Successfully loaded environment from ${envFile}`);
 
 // Set up backend-specific variables based on Vite variables
 // This ensures variables work both in frontend and backend contexts
@@ -38,7 +35,7 @@ process.env.FRONTEND_URL = process.env.FRONTEND_URL || process.env.VITE_FRONTEND
 
 // Initialize Express
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8080;
 
 // Middleware
 app.use(express.json());
@@ -88,36 +85,9 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Graceful startup with automatic port finding if needed
-const startServer = (port) => {
-  const server = app.listen(port)
-    .on('listening', () => {
-      const actualPort = server.address().port;
-      console.log(`Server running on port ${actualPort} in ${environment} mode`);
-      console.log(`API URL: ${process.env.API_URL || 'http://localhost:' + actualPort}`);
-      console.log(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
-    })
-    .on('error', (err) => {
-      if (err.code === 'EADDRINUSE') {
-        console.log(`Port ${port} is already in use, trying ${port + 1}...`);
-        startServer(port + 1);
-      } else {
-        console.error('Server error:', err);
-        process.exit(1);
-      }
-    });
-  
-  // Handle graceful shutdown
-  process.on('SIGTERM', () => {
-    console.log('SIGTERM signal received: closing HTTP server');
-    server.close(() => {
-      console.log('HTTP server closed');
-      process.exit(0);
-    });
-  });
-  
-  return server;
-};
-
 // Start the server
-startServer(PORT);
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT} in ${environment} mode`);
+  console.log(`API URL: ${process.env.API_URL || 'http://localhost:' + PORT}`);
+  console.log(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+});

@@ -16,7 +16,7 @@ const envFile = process.env.NODE_ENV === 'production'
 // Load specific environment file
 const envPath = join(__dirname, '../../', envFile);
 
-// Check if file exists
+// Check if file exists - MODIFIED TO MAKE OPTIONAL
 if (fs.existsSync(envPath)) {
   const result = dotenv.config({ path: envPath });
   if (result.error) {

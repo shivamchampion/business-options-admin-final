@@ -86,10 +86,22 @@
 }
 
 @layer utilities {
-  .dropdown-menu-fix {
-    position: absolute;
-    z-index: 50;
-    transform: translateY(-100%);
-    top: -10px;
+  /* Custom toast styling */
+  .toast-custom {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+  
+  /* Toast icon styling */
+  .toast-custom > div:first-child {
+    flex-shrink: 0 !important;
+  }
+  
+  /* Toast message styling */
+  .toast-custom > div:last-child {
+    font-weight: 500 !important;
+    line-height: 1.4 !important;
+    word-break: break-word !important;
   }
 }

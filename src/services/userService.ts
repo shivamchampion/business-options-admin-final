@@ -221,46 +221,86 @@ import {
       // Upload profile image if provided
       let profileImageUrl = userData.profileImageUrl || null;
       if (profileImage) {
-        profileImageUrl = await uploadProfileImage(profileImage, userId);
+        try {
+          profileImageUrl = await uploadProfileImage(profileImage, userId);
+        } catch (imageError) {
+          console.error('Error uploading profile image:', imageError);
+          // Continue with user creation even if image upload fails
+        }
       }
       
       // Call the backend API to create the Firebase Auth user
       const API_URL = getApiUrl();
-      const response = await fetch(`${API_URL}/api/auth/createUser`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: userData.name,
-          email: userData.email,
-          role: userData.role,
-          loginEmail: loginEmail
-        }),
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create user account');
+      let response;
+      try {
+        response = await fetch(`${API_URL}/api/auth/createUser`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: userData.name,
+            email: userData.email,
+            role: userData.role,
+            loginEmail: loginEmail
+          }),
+          credentials: 'include'
+        });
+      } catch (networkError) {
+        throw new Error(`Network error: Could not connect to server. Please check your internet connection and try again.`);
       }
       
-      const { uid, password } = await response.json();
+      if (!response.ok) {
+        let errorMessage = 'Failed to create user account';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (e) {
+          // If response is not JSON, use status text
+          errorMessage = `Server error (${response.status}): ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+      
+      const data = await response.json();
+      const { uid, password } = data;
+      
+      if (!uid || !password) {
+        throw new Error('Invalid response from server: Missing user credentials');
+      }
       
       // Now save the user document with the uid
-      await setDoc(userRef, {
-        id: userId,
-        uid: uid,
-        name: userData.name,
-        email: userData.email,
-        loginEmail: loginEmail,
-        role: userData.role,
-        status: UserStatus.ACTIVE,
-        emailVerified: true,
-        isWebsiteUser: false,
-        createdAt: serverTimestamp(),
-        profileImageUrl
-      });
+      try {
+        await setDoc(userRef, {
+          id: userId,
+          uid: uid,
+          name: userData.name,
+          email: userData.email,
+          loginEmail: loginEmail,
+          role: userData.role,
+          status: UserStatus.ACTIVE,
+          emailVerified: true,
+          isWebsiteUser: false,
+          createdAt: serverTimestamp(),
+          profileImageUrl
+        });
+      } catch (firestoreError) {
+        // If Firestore save fails, attempt to clean up auth user
+        try {
+          await fetch(`${API_URL}/api/auth/deleteAuthUser`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ loginEmail }),
+            credentials: 'include'
+          });
+        } catch (cleanupError) {
+          console.error('Failed to clean up auth user after Firestore error:', cleanupError);
+        }
+        
+        throw new Error(`Database error: Failed to save user data. Please try again later.`);
+      }
       
       return {
         userId,
@@ -276,7 +316,6 @@ import {
       }
     }
   };
-  
   /**
    * Reset user password
    */

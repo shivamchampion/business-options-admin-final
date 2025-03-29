@@ -22,6 +22,7 @@ import {
   resetUserPassword
 } from '@/services/userService';
 import { cn } from '@/lib/utils';
+import { toast } from 'react-hot-toast';
 
 const pageSize = 10;
 
@@ -186,27 +187,38 @@ export default function AllUsers() {
   };
   
   // Handle user creation - Updated to return credentials
-  const handleCreateUser = async (userData: Partial<UserDetails>, profileImage?: File) => {
-    try {
-      startLoading('Creating user...');
-      
-      const result = await createAdminPanelUser(userData, profileImage);
-      
-      // Reload admin users
-      await loadAdminUsers(true);
-      
-      // Return credentials to show in UserForm
-      return {
-        loginEmail: result.loginEmail,
-        password: result.password
-      };
-    } catch (error) {
-      console.error('Error creating user:', error);
-      throw error;
-    } finally {
-      stopLoading();
+ const handleCreateUser = async (userData: Partial<UserDetails>, profileImage?: File) => {
+  try {
+    startLoading('Creating user...');
+    
+    const result = await createAdminPanelUser(userData, profileImage);
+    
+    // Show success toast
+    toast.success('User created successfully');
+    
+    // Reload admin users
+    await loadAdminUsers(true);
+    
+    // Return credentials to show in UserForm
+    return {
+      loginEmail: result.loginEmail,
+      password: result.password
+    };
+  } catch (error) {
+    console.error('Error creating user:', error);
+    
+    // Show error toast with user-friendly message
+    if (error instanceof Error) {
+      toast.error(error.message);
+    } else {
+      toast.error('Failed to create user. Please try again later.');
     }
-  };
+    
+    throw error;
+  } finally {
+    stopLoading();
+  }
+};
   
   // Handle viewing credentials
   const handleViewCredentials = (userId: string) => {
@@ -239,6 +251,9 @@ export default function AllUsers() {
       
       await updateUserStatus(userId, status);
       
+      // Show success toast
+      toast.success(`User ${status === UserStatus.ACTIVE ? 'activated' : 'deactivated'} successfully`);
+      
       // Update local state
       if (selectedTab === 0) {
         setAdminUsers(prev => 
@@ -251,6 +266,12 @@ export default function AllUsers() {
       }
     } catch (error) {
       console.error('Error updating user status:', error);
+      
+      // Show error toast
+      toast.error(error instanceof Error 
+        ? error.message 
+        : `Failed to update user status. Please try again.`
+      );
     } finally {
       stopLoading();
     }

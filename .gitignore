@@ -3,6 +3,9 @@
 
 # environment files
 .env.*
+.env.development
+.env
+.env.production
 .env.local
 .env.*.local
 

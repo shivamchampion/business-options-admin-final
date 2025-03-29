@@ -1,0 +1,2 @@
+gcloud builds submit --tag gcr.io/businessoptions-37882/business-options-backend
+gcloud run deploy business-options-backend --image gcr.io/businessoptions-37882/business-options-backend --platform managed --region asia-south1 --allow-unauthenticated --env-vars-file .env.yaml --timeout=5m
