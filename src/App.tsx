@@ -14,10 +14,10 @@ import React from 'react';
 const Dashboard = React.lazy(() => import("@/pages/Dashboard"));
 const AllUsers = React.lazy(() => import("@/pages/users/AllUsers"));
 const UserRoles = React.lazy(() => import("@/pages/users/UserRoles"));
+const AllListings = React.lazy(() => import("@/pages/listings/AllListings"));
 
 // Using placeholder components as requested
 const AdvisorsPage = () => <div className="card"><h1 className="text-2xl font-bold">Advisors Page</h1></div>;
-const ListingsPage = () => <div className="card"><h1 className="text-2xl font-bold">Listings Page</h1></div>;
 
 // Simple fallback for non-existent pages
 const PageNotFound = () => (
@@ -72,9 +72,15 @@ export default function App() {
                   </SuspenseBoundary>
                 } />
                 
+                {/* Listings Routes */}
+                <Route path="/listings" element={
+                  <SuspenseBoundary>
+                    <AllListings />
+                  </SuspenseBoundary>
+                } />
+                
                 {/* Regular components without code splitting */}
                 <Route path="/advisors" element={<AdvisorsPage />} />
-                <Route path="/listings" element={<ListingsPage />} />
               </Route>
               
               {/* 404 route */}
