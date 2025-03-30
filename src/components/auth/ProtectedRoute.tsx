@@ -1,10 +1,6 @@
-/**
- * ProtectedRoute component
- * Ensures only authorized users can access certain routes
- */
-
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -15,37 +11,38 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
   const { user, isAuthenticated, isLoading, error } = useAuth();
   const location = useLocation();
 
+  // Show loading screen while auth state is being determined
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-      </div>
+      <LoadingSpinner 
+        fullScreen 
+        size="lg" 
+        text="Verifying authentication..." 
+      />
     );
   }
 
+  // Handle authentication errors
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <h2 className="text-red-600 text-lg font-semibold mb-2">{error.message}</h2>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
+      <LoadingSpinner 
+        fullScreen 
+        error={error.message} 
+        onRetry={() => window.location.reload()} 
+      />
     );
   }
 
+  // Redirect to login if not authenticated
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  // Check role-based permissions
   if (allowedRoles && !allowedRoles.includes(user?.role || '')) {
     return <Navigate to="/unauthorized" replace />;
   }
 
+  // Render the protected content
   return <>{children}</>;
 };

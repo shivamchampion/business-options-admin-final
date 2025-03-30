@@ -2,18 +2,22 @@
 
 import React, { useState, useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
-import { 
-  Info, 
-  AlertCircle, 
-  HelpCircle, 
-  Store, 
-  Briefcase, 
-  FlaskConical, 
-  Users, 
-  Globe 
+import {
+  Info,
+  AlertCircle,
+  HelpCircle,
+  Store,
+  Briefcase,
+  FlaskConical,
+  Users,
+  Globe
 } from 'lucide-react';
 import { ListingType, ListingStatus, ListingPlan } from '@/types/listings';
-import { getAllIndustries } from '@/services/industryService';
+import {
+  getAllIndustries,
+  getSubCategoriesByCategory,
+  getCategoriesByIndustry
+} from '@/services/industryService';
 import Button from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 
@@ -33,85 +37,202 @@ const Tooltip = ({ content, children }) => {
 };
 
 export default function BasicInfo() {
-  const { register, formState: { errors }, watch, setValue, clearErrors } = useFormContext();
+  const { register, formState: { errors }, watch, setValue, clearErrors, trigger } = useFormContext();
+
+  // State for hierarchical selection
   const [industries, setIndustries] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [subCategories, setSubCategories] = useState([]);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+  const [loadingSubCategories, setLoadingSubCategories] = useState(false);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+
+  // Watch values
   const selectedType = watch('type');
-  const selectedIndustries = watch('industries') || [];
-  
-  // Fetch industries
+  const selectedIndustry = watch('industry');
+  const selectedCategory = watch('category');
+  const selectedSubCategories = watch('subCategories') || [];
+
+  // Fetch industries on component mount
   useEffect(() => {
     const loadIndustries = async () => {
       try {
         const industriesData = await getAllIndustries();
         setIndustries(industriesData);
+        setInitialLoadComplete(true);
       } catch (error) {
         console.error('Error loading industries:', error);
+        setInitialLoadComplete(true);
       }
     };
-    
+
     loadIndustries();
   }, []);
-  
+
+  // Fetch categories when industry changes
+  useEffect(() => {
+    const loadCategories = async () => {
+      if (!selectedIndustry) {
+        setCategories([]);
+        return;
+      }
+
+      try {
+        setLoadingCategories(true);
+        const categoriesData = await getCategoriesByIndustry(selectedIndustry);
+        setCategories(categoriesData);
+      } catch (error) {
+        console.error('Error loading categories:', error);
+      } finally {
+        setLoadingCategories(false);
+      }
+    };
+
+    if (initialLoadComplete && selectedIndustry) {
+      loadCategories();
+    }
+  }, [selectedIndustry, initialLoadComplete]);
+
+  // Fetch subcategories when category changes
+  useEffect(() => {
+    const loadSubCategories = async () => {
+      if (!selectedCategory) {
+        setSubCategories([]);
+        return;
+      }
+
+      try {
+        setLoadingSubCategories(true);
+        const subCategoriesData = await getSubCategoriesByCategory(selectedCategory);
+        setSubCategories(subCategoriesData);
+      } catch (error) {
+        console.error('Error loading subcategories:', error);
+      } finally {
+        setLoadingSubCategories(false);
+      }
+    };
+
+    if (initialLoadComplete && selectedCategory) {
+      loadSubCategories();
+    }
+  }, [selectedCategory, initialLoadComplete]);
+
+  // Add validation effect
+useEffect(() => {
+  if (initialLoadComplete) {
+    // Validate fields when they have values
+    if (selectedIndustry) {
+      trigger('industry');
+      
+      if (selectedCategory) {
+        trigger('category');
+        
+        if (selectedSubCategories.length > 0) {
+          trigger('subCategories');
+        }
+      }
+    }
+  }
+}, [initialLoadComplete, selectedIndustry, selectedCategory, selectedSubCategories, trigger]);
+
   // Handle industry selection
-  const handleIndustryToggle = (industryId) => {
-    const isSelected = selectedIndustries.includes(industryId);
-    
-    if (isSelected) {
-      // Remove industry
-      setValue(
-        'industries', 
-        selectedIndustries.filter(id => id !== industryId),
-        { shouldValidate: true, shouldDirty: true }
-      );
-    } else if (selectedIndustries.length < 3) {
-      // Add industry if less than 3 are selected
-      setValue(
-        'industries', 
-        [...selectedIndustries, industryId],
-        { shouldValidate: true, shouldDirty: true }
-      );
+  const handleIndustrySelect = (industryId) => {
+    // Only clear category and subcategories if industry is changing
+    if (industryId !== selectedIndustry) {
+      setValue('industry', industryId, { shouldValidate: true });
+      setValue('category', '', { shouldValidate: false });
+      setValue('subCategories', [], { shouldValidate: false });
+
+      // If industry is selected, trigger validation for it
+      if (industryId) {
+        setTimeout(() => trigger('industry'), 100);
+      }
+    } else if (industryId === '') {
+      // If clearing industry, also clear category and subcategories
+      setValue('industry', '', { shouldValidate: true });
+      setValue('category', '', { shouldValidate: false });
+      setValue('subCategories', [], { shouldValidate: false });
     }
   };
+
+// Update category selection handler
+const handleCategorySelect = (categoryId) => {
+  // Only clear subcategories if category is changing
+  if (categoryId !== selectedCategory) {
+    setValue('category', categoryId, { shouldValidate: true });
+    setValue('subCategories', [], { shouldValidate: false });
+    
+    // If category is selected, trigger validation for it
+    if (categoryId) {
+      setTimeout(() => trigger('category'), 100);
+    }
+  } else if (categoryId === '') {
+    // If clearing category, also clear subcategories
+    setValue('category', '', { shouldValidate: true });
+    setValue('subCategories', [], { shouldValidate: false });
+  }
+};
+
+// Update subcategory selection handler
+const handleSubCategoryToggle = (subCategoryId) => {
+  const isSelected = selectedSubCategories.includes(subCategoryId);
   
+  if (isSelected) {
+    // Remove subcategory
+    const newSubcategories = selectedSubCategories.filter(id => id !== subCategoryId);
+    setValue('subCategories', newSubcategories, { shouldValidate: true });
+    
+    // Trigger validation immediately after update
+    setTimeout(() => trigger('subCategories'), 100);
+  } else if (selectedSubCategories.length < 3) {
+    // Add subcategory if less than 3 are selected
+    const newSubcategories = [...selectedSubCategories, subCategoryId];
+    setValue('subCategories', newSubcategories, { shouldValidate: true });
+    
+    // Trigger validation immediately after update
+    setTimeout(() => trigger('subCategories'), 100);
+  }
+};
+
   // Type selection cards
   const typeOptions = [
-    { 
-      value: ListingType.BUSINESS, 
-      label: 'Business', 
+    {
+      value: ListingType.BUSINESS,
+      label: 'Business',
       icon: <Store className="h-5 w-5" />,
       description: 'Established businesses for sale with proven revenue and operations.',
       color: 'bg-blue-50 border-blue-200 text-blue-700'
     },
-    { 
-      value: ListingType.FRANCHISE, 
-      label: 'Franchise', 
+    {
+      value: ListingType.FRANCHISE,
+      label: 'Franchise',
       icon: <Briefcase className="h-5 w-5" />,
       description: 'Franchise opportunities with established brands and systems.',
       color: 'bg-purple-50 border-purple-200 text-purple-700'
     },
-    { 
-      value: ListingType.STARTUP, 
-      label: 'Startup', 
+    {
+      value: ListingType.STARTUP,
+      label: 'Startup',
       icon: <FlaskConical className="h-5 w-5" />,
       description: 'Early-stage ventures seeking investment or partnerships.',
       color: 'bg-green-50 border-green-200 text-green-700'
     },
-    { 
-      value: ListingType.INVESTOR, 
-      label: 'Investor', 
+    {
+      value: ListingType.INVESTOR,
+      label: 'Investor',
       icon: <Users className="h-5 w-5" />,
       description: 'Investors looking to fund businesses, startups, or franchises.',
       color: 'bg-amber-50 border-amber-200 text-amber-700'
     },
-    { 
-      value: ListingType.DIGITAL_ASSET, 
-      label: 'Digital Asset', 
+    {
+      value: ListingType.DIGITAL_ASSET,
+      label: 'Digital Asset',
       icon: <Globe className="h-5 w-5" />,
       description: 'Online businesses, websites, apps, or digital properties for sale.',
       color: 'bg-indigo-50 border-indigo-200 text-indigo-700'
     }
   ];
-  
+
   return (
     <div className="space-y-8">
       {/* Info Message */}
@@ -125,7 +246,7 @@ export default function BasicInfo() {
           </p>
         </div>
       </div>
-      
+
       {/* Listing Type */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -136,15 +257,15 @@ export default function BasicInfo() {
             <HelpCircle className="h-4 w-4 text-gray-400" />
           </Tooltip>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {typeOptions.map((type) => (
-            <div 
+            <div
               key={type.value}
               className={cn(
                 "relative border rounded-lg p-4 cursor-pointer transition-all duration-200 hover:shadow-md",
-                selectedType === type.value 
-                  ? `${type.color} border-2` 
+                selectedType === type.value
+                  ? `${type.color} border-2`
                   : "border-gray-200 hover:border-gray-300"
               )}
               onClick={() => {
@@ -163,11 +284,11 @@ export default function BasicInfo() {
                   <h3 className="font-medium">{type.label}</h3>
                 </div>
                 <p className="text-xs text-gray-600 flex-grow">{type.description}</p>
-                
+
                 <div className={cn(
                   "absolute top-2 right-2 w-4 h-4 rounded-full border flex items-center justify-center transition-colors duration-200",
-                  selectedType === type.value 
-                    ? "bg-[#0031ac] border-[#0031ac]" 
+                  selectedType === type.value
+                    ? "bg-[#0031ac] border-[#0031ac]"
                     : "border-gray-300"
                 )}>
                   {selectedType === type.value && (
@@ -178,15 +299,15 @@ export default function BasicInfo() {
             </div>
           ))}
         </div>
-        
-        {errors.type && (
+
+        {errors.type && errors.type.message ? (
           <p className="mt-1 text-sm text-red-600 flex items-center">
             <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
             {errors.type.message}
           </p>
-        )}
+        ) : null}
       </div>
-      
+
       {/* Listing Name */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -197,7 +318,7 @@ export default function BasicInfo() {
             <HelpCircle className="h-4 w-4 text-gray-400" />
           </Tooltip>
         </div>
-        
+
         <input
           id="name"
           type="text"
@@ -208,7 +329,7 @@ export default function BasicInfo() {
           )}
           {...register("name")}
         />
-        
+
         {errors.name ? (
           <p className="text-sm text-red-600 flex items-center">
             <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
@@ -220,59 +341,156 @@ export default function BasicInfo() {
           </p>
         )}
       </div>
-      
-      {/* Industries */}
+
+      {/* Industry, Category, and Subcategory Selection */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <label className="block text-sm font-medium text-gray-700">
-            Industries <span className="text-red-500">*</span>
+            Industry Classification <span className="text-red-500">*</span>
           </label>
-          <Tooltip content="Select up to 3 industries that best describe your listing. This helps with categorization and search.">
+          <Tooltip content="Select the industry, category, and subcategory that best describe your listing. This helps with search and discovery.">
             <HelpCircle className="h-4 w-4 text-gray-400" />
           </Tooltip>
         </div>
-        
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-          {industries.map((industry) => (
-            <div 
-              key={industry.id}
+
+        {/* Industry Selection */}
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="industry" className="block text-sm font-medium text-gray-600 mb-1">
+              Industry <span className="text-red-500">*</span>
+            </label>
+            <select
+              id="industry"
               className={cn(
-                "flex items-center p-3 border rounded-lg cursor-pointer transition-colors",
-                selectedIndustries.includes(industry.id)
-                  ? "bg-blue-50 border-blue-200"
-                  : "border-gray-200 hover:border-gray-300"
+                "w-full px-3 py-2 border rounded-lg focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                errors.industry ? "border-red-300" : "border-gray-300"
               )}
-              onClick={() => handleIndustryToggle(industry.id)}
+              value={selectedIndustry || ''}
+              onChange={(e) => handleIndustrySelect(e.target.value)}
             >
-              <div className={cn(
-                "w-4 h-4 rounded mr-2 flex items-center justify-center",
-                selectedIndustries.includes(industry.id) 
-                  ? "bg-[#0031ac]" 
-                  : "border border-gray-300"
-              )}>
-                {selectedIndustries.includes(industry.id) && (
-                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                  </svg>
+              <option value="">Select an industry</option>
+              {industries.map((industry) => (
+                <option key={industry.id} value={industry.id}>
+                  {industry.name}
+                </option>
+              ))}
+            </select>
+
+            {errors.industry && errors.industry.message ? (
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+                {errors.industry.message}
+              </p>
+            ) : null}
+          </div>
+
+          {/* Category Selection - only show if industry is selected */}
+          {selectedIndustry && (
+            <div>
+              <label htmlFor="category" className="block text-sm font-medium text-gray-600 mb-1">
+                Category <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="category"
+                className={cn(
+                  "w-full px-3 py-2 border rounded-lg focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.category ? "border-red-300" : "border-gray-300"
                 )}
-              </div>
-              <span className="text-sm">{industry.name}</span>
+                value={selectedCategory || ''}
+                onChange={(e) => handleCategorySelect(e.target.value)}
+                disabled={loadingCategories}
+                onBlur={() => trigger('category')} // Add this to trigger validation on blur
+              >
+                <option value="">Select a category</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+
+              {loadingCategories && (
+                <div className="mt-1 text-sm text-gray-500 flex items-center">
+                  <div className="animate-spin mr-1 h-3 w-3 border-2 border-gray-500 border-t-transparent rounded-full"></div>
+                  Loading categories...
+                </div>
+              )}
+
+              {errors.category && errors.category.message ? (
+                <p className="mt-1 text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+                  {errors.category.message}
+                </p>
+              ) : null}
             </div>
-          ))}
+          )}
+
+          {/* Subcategory Selection - only show if category is selected */}
+          {selectedCategory && (
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                Subcategories <span className="text-red-500">*</span> (select at least 1, up to 3)
+              </label>
+
+              {loadingSubCategories ? (
+                <div className="mt-1 text-sm text-gray-500 flex items-center">
+                  <div className="animate-spin mr-1 h-3 w-3 border-2 border-gray-500 border-t-transparent rounded-full"></div>
+                  Loading subcategories...
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {subCategories.map((subCategory) => (
+                      <div
+                        key={subCategory.id}
+                        className={cn(
+                          "flex items-center p-3 border rounded-lg cursor-pointer transition-colors",
+                          selectedSubCategories.includes(subCategory.id)
+                            ? "bg-blue-50 border-blue-200"
+                            : "border-gray-200 hover:border-gray-300"
+                        )}
+                        onClick={() => handleSubCategoryToggle(subCategory.id)}
+                      >
+                        <div className={cn(
+                          "w-4 h-4 rounded mr-2 flex items-center justify-center",
+                          selectedSubCategories.includes(subCategory.id)
+                            ? "bg-[#0031ac]"
+                            : "border border-gray-300"
+                        )}>
+                          {selectedSubCategories.includes(subCategory.id) && (
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                        <span className="text-sm">{subCategory.name}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {subCategories.length === 0 && (
+                    <p className="text-sm text-gray-500 py-2">
+                      No subcategories available for this category.
+                    </p>
+                  )}
+                </>
+              )}
+
+              {errors.subCategories && errors.subCategories.message ? (
+                <p className="mt-1 text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+                  {errors.subCategories.message}
+                </p>
+              ) : null}
+
+              <p className="text-xs text-gray-500 mt-1">
+                Selected: {selectedSubCategories.length}/3 {selectedSubCategories.length >= 3 && "(Maximum reached)"}
+              </p>
+            </div>
+          )}
         </div>
-        
-        {errors.industries && (
-          <p className="text-sm text-red-600 flex items-center">
-            <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
-            {errors.industries.message}
-          </p>
-        )}
-        
-        <p className="text-xs text-gray-500">
-          Selected: {selectedIndustries.length}/3 {selectedIndustries.length >= 3 && "(Maximum reached)"}
-        </p>
       </div>
-      
+
       {/* Description */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -283,7 +501,7 @@ export default function BasicInfo() {
             <HelpCircle className="h-4 w-4 text-gray-400" />
           </Tooltip>
         </div>
-        
+
         <textarea
           id="description"
           rows="6"
@@ -294,7 +512,7 @@ export default function BasicInfo() {
           )}
           {...register("description")}
         ></textarea>
-        
+
         {errors.description ? (
           <p className="text-sm text-red-600 flex items-center">
             <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
@@ -306,7 +524,7 @@ export default function BasicInfo() {
           </p>
         )}
       </div>
-      
+
       {/* Status and Plan */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Status */}
@@ -319,7 +537,7 @@ export default function BasicInfo() {
               <HelpCircle className="h-4 w-4 text-gray-400" />
             </Tooltip>
           </div>
-          
+
           <select
             id="status"
             className={cn(
@@ -331,15 +549,15 @@ export default function BasicInfo() {
             <option value={ListingStatus.DRAFT}>Draft</option>
             <option value={ListingStatus.PENDING}>Submit for Review</option>
           </select>
-          
-          {errors.status && (
+
+          {errors.status && errors.status.message ? (
             <p className="text-sm text-red-600 flex items-center">
               <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
               {errors.status.message}
             </p>
-          )}
+          ) : null}
         </div>
-        
+
         {/* Plan */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -350,7 +568,7 @@ export default function BasicInfo() {
               <HelpCircle className="h-4 w-4 text-gray-400" />
             </Tooltip>
           </div>
-          
+
           <select
             id="plan"
             className={cn(
@@ -365,27 +583,27 @@ export default function BasicInfo() {
             <option value={ListingPlan.PREMIUM}>Premium Plan</option>
             <option value={ListingPlan.PLATINUM}>Platinum Plan</option>
           </select>
-          
-          {errors.plan && (
+
+          {errors.plan && errors.plan.message ? (
             <p className="text-sm text-red-600 flex items-center">
               <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
               {errors.plan.message}
             </p>
-          )}
+          ) : null}
         </div>
       </div>
-      
+
       {/* Location */}
       <div className="space-y-3">
         <h3 className="text-lg font-medium text-gray-800">Location Information</h3>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* State */}
           <div className="space-y-2">
             <label htmlFor="location.state" className="block text-sm font-medium text-gray-700">
               State <span className="text-red-500">*</span>
             </label>
-            
+
             <input
               id="location.state"
               type="text"
@@ -396,21 +614,21 @@ export default function BasicInfo() {
               )}
               {...register("location.state")}
             />
-            
-            {errors.location?.state && (
+
+            {errors.location?.state && errors.location?.state.message ? (
               <p className="text-sm text-red-600 flex items-center">
                 <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                 {errors.location.state.message}
               </p>
-            )}
+            ) : null}
           </div>
-          
+
           {/* City */}
           <div className="space-y-2">
             <label htmlFor="location.city" className="block text-sm font-medium text-gray-700">
               City <span className="text-red-500">*</span>
             </label>
-            
+
             <input
               id="location.city"
               type="text"
@@ -421,23 +639,23 @@ export default function BasicInfo() {
               )}
               {...register("location.city")}
             />
-            
-            {errors.location?.city && (
+
+            {errors.location?.city && errors.location?.city.message ? (
               <p className="text-sm text-red-600 flex items-center">
                 <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                 {errors.location.city.message}
               </p>
-            )}
+            ) : null}
           </div>
         </div>
-        
+
         {/* Address & Pincode (optional) */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
             <label htmlFor="location.address" className="block text-sm font-medium text-gray-700">
               Address (Optional)
             </label>
-            
+
             <input
               id="location.address"
               type="text"
@@ -445,17 +663,17 @@ export default function BasicInfo() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
               {...register("location.address")}
             />
-            
+
             <p className="text-xs text-gray-500">
               This will not be displayed publicly for privacy reasons.
             </p>
           </div>
-          
+
           <div className="space-y-2">
             <label htmlFor="location.pincode" className="block text-sm font-medium text-gray-700">
               Pincode (Optional)
             </label>
-            
+
             <input
               id="location.pincode"
               type="text"
@@ -466,18 +684,18 @@ export default function BasicInfo() {
           </div>
         </div>
       </div>
-      
+
       {/* Contact Information */}
       <div className="space-y-3">
         <h3 className="text-lg font-medium text-gray-800">Contact Information</h3>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Email */}
           <div className="space-y-2">
             <label htmlFor="contactInfo.email" className="block text-sm font-medium text-gray-700">
               Contact Email <span className="text-red-500">*</span>
             </label>
-            
+
             <input
               id="contactInfo.email"
               type="email"
@@ -488,21 +706,21 @@ export default function BasicInfo() {
               )}
               {...register("contactInfo.email")}
             />
-            
-            {errors.contactInfo?.email && (
+
+            {errors.contactInfo?.email && errors.contactInfo?.email.message ? (
               <p className="text-sm text-red-600 flex items-center">
                 <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                 {errors.contactInfo.email.message}
               </p>
-            )}
+            ) : null}
           </div>
-          
+
           {/* Phone */}
           <div className="space-y-2">
             <label htmlFor="contactInfo.phone" className="block text-sm font-medium text-gray-700">
               Contact Phone (Optional)
             </label>
-            
+
             <input
               id="contactInfo.phone"
               type="tel"
@@ -512,14 +730,14 @@ export default function BasicInfo() {
             />
           </div>
         </div>
-        
+
         {/* Website & Contact Name (optional) */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
             <label htmlFor="contactInfo.website" className="block text-sm font-medium text-gray-700">
               Website (Optional)
             </label>
-            
+
             <input
               id="contactInfo.website"
               type="url"
@@ -530,20 +748,20 @@ export default function BasicInfo() {
               )}
               {...register("contactInfo.website")}
             />
-            
-            {errors.contactInfo?.website && (
+
+            {errors.contactInfo?.website && errors.contactInfo?.website.message ? (
               <p className="text-sm text-red-600 flex items-center">
                 <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                 {errors.contactInfo.website.message}
               </p>
-            )}
+            ) : null}
           </div>
-          
+
           <div className="space-y-2">
             <label htmlFor="contactInfo.contactName" className="block text-sm font-medium text-gray-700">
               Contact Person (Optional)
             </label>
-            
+
             <input
               id="contactInfo.contactName"
               type="text"

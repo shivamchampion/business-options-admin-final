@@ -27,12 +27,17 @@ const listingSchema = z.object({
   // Core Fields (common across all types)
   name: z.string().min(3, "Name must be at least 3 characters").max(100, "Name cannot exceed 100 characters"),
   type: z.nativeEnum(ListingType, { errorMap: () => ({ message: "Please select a listing type" }) }),
-  industries: z.array(z.string()).min(1, "Select at least one industry").max(3, "You can select up to 3 industries"),
+
+  // Classification fields
+  industry: z.string().min(1, "Please select an industry"),
+  category: z.string().min(1, "Please select a category"),
+  subCategories: z.array(z.string()).min(1, "Select at least one subcategory").max(3, "You can select up to 3 subcategories"),
+
   description: z.string().min(100, "Description must be at least 100 characters").max(5000, "Description cannot exceed 5000 characters"),
   shortDescription: z.string().optional(),
   status: z.nativeEnum(ListingStatus, { errorMap: () => ({ message: "Please select a status" }) }),
   plan: z.nativeEnum(ListingPlan, { errorMap: () => ({ message: "Please select a plan" }) }),
-  
+
   // Location Information (required)
   location: z.object({
     country: z.string().default("India"),
@@ -42,7 +47,7 @@ const listingSchema = z.object({
     pincode: z.string().optional(),
     displayLocation: z.string().optional(),
   }),
-  
+
   // Contact Information
   contactInfo: z.object({
     email: z.string().email("Please enter a valid email"),
@@ -52,7 +57,7 @@ const listingSchema = z.object({
     contactName: z.string().optional(),
     preferredContactMethod: z.string().optional(),
   }),
-  
+
   // Media is handled separately
   // Type-specific details will be validated in each step
 }).catchall(z.any());
@@ -69,7 +74,7 @@ export default function ListingForm({ isEdit = false }) {
   const navigate = useNavigate();
   const { id } = useParams();
   const { startLoading, stopLoading } = useLoading();
-  
+
   const [currentStep, setCurrentStep] = useState(0);
   const [listing, setListing] = useState(null);
   const [isLoading, setIsLoading] = useState(isEdit);
@@ -79,7 +84,7 @@ export default function ListingForm({ isEdit = false }) {
   const [documentsToDelete, setDocumentsToDelete] = useState([]);
   const [saveAsDraft, setSaveAsDraft] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
-  
+
   // Initialize react-hook-form
   const methods = useForm({
     resolver: zodResolver(listingSchema),
@@ -87,7 +92,9 @@ export default function ListingForm({ isEdit = false }) {
     defaultValues: {
       type: undefined,
       name: '',
-      industries: [],
+      industry: '',
+      category: '',
+      subCategories: [],
       description: '',
       status: ListingStatus.DRAFT,
       plan: ListingPlan.FREE,
@@ -102,12 +109,12 @@ export default function ListingForm({ isEdit = false }) {
       },
     }
   });
-  
+
   const { handleSubmit, reset, trigger, formState: { errors, isValid, isDirty }, watch, setValue } = methods;
-  
+
   // Watch listing type to update type-specific forms
   const listingType = watch('type');
-  
+
   // Load existing listing data if in edit mode
   useEffect(() => {
     if (isEdit && id) {
@@ -115,26 +122,26 @@ export default function ListingForm({ isEdit = false }) {
         try {
           setIsLoading(true);
           startLoading('Loading listing data...');
-          
+
           const listingData = await getListingById(id);
           setListing(listingData);
-          
+
           // Initialize form with listing data
           reset({
             ...listingData,
             // Add any special transformations needed for form fields
           });
-          
+
           // Initialize media state
           if (listingData.media?.galleryImages) {
             setUploadedImages(listingData.media.galleryImages);
           }
-          
+
           // Initialize documents state
           if (listingData.documents) {
             setUploadedDocuments(listingData.documents);
           }
-          
+
         } catch (error) {
           console.error('Error loading listing:', error);
           toast.error('Failed to load listing data. Please try again.');
@@ -144,16 +151,16 @@ export default function ListingForm({ isEdit = false }) {
           stopLoading();
         }
       };
-      
+
       fetchListing();
     }
   }, [isEdit, id, reset]);
-  
+
   // Handle next step
   const handleNext = async () => {
     // Validate current step
     const fieldsToValidate = [];
-    
+
     switch (currentStep) {
       case 0: // Basic Info
         fieldsToValidate.push('name', 'type', 'industries', 'description', 'status', 'plan', 'location', 'contactInfo');
@@ -182,11 +189,11 @@ export default function ListingForm({ isEdit = false }) {
         // No additional validation needed, review only
         break;
     }
-    
+
     // Validate the fields for the current step
     if (fieldsToValidate.length > 0) {
       const isStepValid = await trigger(fieldsToValidate);
-      
+
       if (!isStepValid) {
         // Highlight errors
         setSubmitAttempted(true);
@@ -194,7 +201,7 @@ export default function ListingForm({ isEdit = false }) {
         return;
       }
     }
-    
+
     // If validation passes, move to next step or submit
     if (currentStep < steps.length - 1) {
       setCurrentStep(currentStep + 1);
@@ -204,7 +211,7 @@ export default function ListingForm({ isEdit = false }) {
       handleSubmit(onSubmit)();
     }
   };
-  
+
   // Handle previous step
   const handlePrevious = () => {
     if (currentStep > 0) {
@@ -212,12 +219,12 @@ export default function ListingForm({ isEdit = false }) {
       window.scrollTo(0, 0);
     }
   };
-  
+
   // Handle image upload
   const handleImageUpload = (files) => {
     setUploadedImages(prev => [...prev, ...files]);
   };
-  
+
   // Handle image deletion
   const handleImageDelete = (imageToDelete) => {
     if (imageToDelete.url) {
@@ -229,12 +236,12 @@ export default function ListingForm({ isEdit = false }) {
       setUploadedImages(prev => prev.filter(img => img !== imageToDelete));
     }
   };
-  
+
   // Handle document upload
   const handleDocumentUpload = (files) => {
     setUploadedDocuments(prev => [...prev, ...files]);
   };
-  
+
   // Handle document deletion
   const handleDocumentDelete = (docToDelete) => {
     if (docToDelete.url) {
@@ -246,26 +253,50 @@ export default function ListingForm({ isEdit = false }) {
       setUploadedDocuments(prev => prev.filter(doc => doc !== docToDelete));
     }
   };
-  
+
   // Handle save as draft
   const handleSaveAsDraft = () => {
     setSaveAsDraft(true);
     setValue('status', ListingStatus.DRAFT);
     handleSubmit(onSubmit)();
   };
-  
+
+  const getErrorMessages = (errors) => {
+    const messages = [];
+
+    const extractErrors = (obj, path = '') => {
+      if (!obj) return;
+
+      if (obj.message) {
+        messages.push({ path, message: obj.message });
+        return;
+      }
+
+      if (typeof obj === 'object') {
+        Object.entries(obj).forEach(([key, value]) => {
+          const newPath = path ? `${path}.${key}` : key;
+          extractErrors(value, newPath);
+        });
+      }
+    };
+
+    extractErrors(errors);
+    return messages;
+  };
+
+
   // Form submission
   const onSubmit = async (data) => {
     try {
       startLoading(isEdit ? 'Updating listing...' : 'Creating listing...');
-      
+
       // Prepare listing data
       const listingData = {
         ...data,
         // Set short description if not provided
         shortDescription: data.shortDescription || data.description.substring(0, 150) + '...',
       };
-      
+
       // Create or update listing
       if (isEdit) {
         await updateListing(
@@ -276,7 +307,7 @@ export default function ListingForm({ isEdit = false }) {
           imagesToDelete,
           documentsToDelete
         );
-        
+
         toast.success('Listing updated successfully!');
       } else {
         const newListingId = await createListing(
@@ -284,7 +315,7 @@ export default function ListingForm({ isEdit = false }) {
           uploadedImages,
           uploadedDocuments
         );
-        
+
         toast.success('Listing created successfully!');
         navigate(`/listings/${newListingId}`);
       }
@@ -296,7 +327,7 @@ export default function ListingForm({ isEdit = false }) {
       setSaveAsDraft(false);
     }
   };
-  
+
   // Loading state
   if (isLoading) {
     return (
@@ -305,10 +336,10 @@ export default function ListingForm({ isEdit = false }) {
       </div>
     );
   }
-  
+
   // Get current step component
   const StepComponent = steps[currentStep].component;
-  
+
   return (
     <div className="max-w-5xl mx-auto">
       {/* Progress Stepper */}
@@ -318,14 +349,13 @@ export default function ListingForm({ isEdit = false }) {
             <React.Fragment key={step.id}>
               {/* Step indicator */}
               <div className="flex flex-col items-center">
-                <div 
-                  className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors duration-200 ${
-                    index < currentStep 
-                      ? 'bg-[#0031ac] text-white border-[#0031ac]' 
-                      : index === currentStep 
-                        ? 'bg-white text-[#0031ac] border-[#0031ac]' 
-                        : 'bg-white text-gray-400 border-gray-300'
-                  }`}
+                <div
+                  className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors duration-200 ${index < currentStep
+                    ? 'bg-[#0031ac] text-white border-[#0031ac]'
+                    : index === currentStep
+                      ? 'bg-white text-[#0031ac] border-[#0031ac]'
+                      : 'bg-white text-gray-400 border-gray-300'
+                    }`}
                 >
                   {index < currentStep ? (
                     <CheckCircle className="h-5 w-5" />
@@ -333,24 +363,22 @@ export default function ListingForm({ isEdit = false }) {
                     <span>{index + 1}</span>
                   )}
                 </div>
-                <span className={`text-xs mt-2 font-medium ${
-                  index <= currentStep ? 'text-[#0031ac]' : 'text-gray-500'
-                }`}>
+                <span className={`text-xs mt-2 font-medium ${index <= currentStep ? 'text-[#0031ac]' : 'text-gray-500'
+                  }`}>
                   {step.title}
                 </span>
               </div>
-              
+
               {/* Connector line */}
               {index < steps.length - 1 && (
-                <div className={`flex-1 h-[2px] mx-2 ${
-                  index < currentStep ? 'bg-[#0031ac]' : 'bg-gray-300'
-                }`} />
+                <div className={`flex-1 h-[2px] mx-2 ${index < currentStep ? 'bg-[#0031ac]' : 'bg-gray-300'
+                  }`} />
               )}
             </React.Fragment>
           ))}
         </div>
       </div>
-      
+
       {/* Form */}
       <FormProvider {...methods}>
         <form onSubmit={handleSubmit(onSubmit)}>
@@ -366,7 +394,7 @@ export default function ListingForm({ isEdit = false }) {
                 {currentStep === 4 && "Review your listing before submitting"}
               </p>
             </div>
-            
+
             {/* Error summary if submission attempted */}
             {submitAttempted && Object.keys(errors).length > 0 && (
               <div className="mb-6 p-4 border border-red-200 bg-red-50 rounded-lg">
@@ -375,18 +403,17 @@ export default function ListingForm({ isEdit = false }) {
                   <div>
                     <h3 className="text-sm font-medium text-red-800">Please fix the following errors:</h3>
                     <ul className="mt-1 text-sm text-red-700 list-disc list-inside">
-                      {Object.entries(errors).map(([key, error]) => (
-                        <li key={key}>{error.message}</li>
+                      {getErrorMessages(errors).map((error, index) => (
+                        <li key={index}>{error.message}</li>
                       ))}
                     </ul>
                   </div>
                 </div>
               </div>
             )}
-            
             {/* Step Content */}
             <div className="mb-8">
-              <StepComponent 
+              <StepComponent
                 uploadedImages={uploadedImages}
                 onImageUpload={handleImageUpload}
                 onImageDelete={handleImageDelete}
@@ -396,7 +423,7 @@ export default function ListingForm({ isEdit = false }) {
                 submitAttempted={submitAttempted}
               />
             </div>
-            
+
             {/* Navigation Buttons */}
             <div className="flex items-center justify-between pt-6 border-t border-gray-200">
               <div>
@@ -411,7 +438,7 @@ export default function ListingForm({ isEdit = false }) {
                   </Button>
                 )}
               </div>
-              
+
               <div className="flex items-center space-x-4">
                 <Button
                   type="button"
@@ -421,7 +448,7 @@ export default function ListingForm({ isEdit = false }) {
                 >
                   Save as Draft
                 </Button>
-                
+
                 <Button
                   type="button"
                   variant="primary"

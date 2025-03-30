@@ -1,8 +1,9 @@
-// Update to src/App.jsx
+// src/App.tsx
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/context/AuthContext";
 import { LoadingProvider } from "@/context/LoadingContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { PublicRoute } from "@/components/auth/PublicRoute"; // New import
 import ErrorBoundary from "@/components/ErrorBoundary";
 import SuspenseBoundary from "@/components/ui/SuspenseBoundary";
 import { Toaster } from 'react-hot-toast';
@@ -47,8 +48,12 @@ export default function App() {
         <Router>
           <AuthProvider>
             <Routes>
-              {/* Public routes */}
-              <Route path="/login" element={<Login />} />
+              {/* Public routes - wrapped with PublicRoute to redirect if already authenticated */}
+              <Route path="/login" element={
+                <PublicRoute>
+                  <Login />
+                </PublicRoute>
+              } />
               <Route path="/unauthorized" element={<Unauthorized />} />
               
               {/* Protected routes with layout */}

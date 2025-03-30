@@ -225,11 +225,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // Memoize context value to prevent unnecessary renders
   const contextValue = useMemo(() => ({
     user,
     isAuthenticated,
-    isLoading: isLoading || (isAuthenticated && !isTokenReady), // Important: Consider loading until token is ready
+    isLoading: isLoading || 
+               (user && !isAuthenticated) || 
+               (isAuthenticated && !isTokenReady),
     signIn,
     signOut,
     error
