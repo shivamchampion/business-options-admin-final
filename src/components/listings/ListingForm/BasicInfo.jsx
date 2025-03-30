@@ -1,7 +1,8 @@
 // src/components/listings/ListingForm/BasicInfo.jsx
-
 import React, { useState, useEffect } from 'react';
-import { useFormContext } from 'react-hook-form';
+import { useFormContext, useFieldArray } from 'react-hook-form';
+import Select from 'react-select';
+import { Country, State, City } from 'country-state-city';
 import {
   Info,
   AlertCircle,
@@ -10,7 +11,11 @@ import {
   Briefcase,
   FlaskConical,
   Users,
-  Globe
+  Globe,
+  Plus,
+  Trash,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { ListingType, ListingStatus, ListingPlan } from '@/types/listings';
 import {
@@ -20,6 +25,7 @@ import {
 } from '@/services/industryService';
 import Button from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
+import { toast } from 'react-hot-toast';
 
 // Tooltip component
 const Tooltip = ({ content, children }) => {
@@ -37,162 +43,332 @@ const Tooltip = ({ content, children }) => {
 };
 
 export default function BasicInfo() {
-  const { register, formState: { errors }, watch, setValue, clearErrors, trigger } = useFormContext();
+  const { control, register, formState: { errors }, watch, setValue, clearErrors, trigger } = useFormContext();
 
-  // State for hierarchical selection
-  const [industries, setIndustries] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [subCategories, setSubCategories] = useState([]);
-  const [loadingCategories, setLoadingCategories] = useState(false);
-  const [loadingSubCategories, setLoadingSubCategories] = useState(false);
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  // Use fieldArray for classifications
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: "classifications"
+  });
 
-  // Watch values
+  // Track expanded industry sections
+  const [expandedSections, setExpandedSections] = useState(fields.map((_, i) => true));
+
+  // State for dropdowns
+  const [countries, setCountries] = useState([]);
+  const [states, setStates] = useState([]);
+  const [cities, setCities] = useState([]);
+  // Add this constant near the top of your component
+  const INDIA_OPTION = { value: 'IN', label: 'India' };
+
+  // State for industries data
+  const [allIndustries, setAllIndustries] = useState([]);
+  const [categoriesMap, setCategoriesMap] = useState({}); // industryId -> categories[]
+  const [subCategoriesMap, setSubCategoriesMap] = useState({}); // categoryId -> subCategories[]
+  const [loadingIndustries, setLoadingIndustries] = useState(false);
+
+  // Watch values for location
+  const selectedCountry = watch('location.country');
+  const selectedState = watch('location.state');
+  const selectedCity = watch('location.city');
+
+  // Watch values for type
   const selectedType = watch('type');
-  const selectedIndustry = watch('industry');
-  const selectedCategory = watch('category');
-  const selectedSubCategories = watch('subCategories') || [];
 
-  // Fetch industries on component mount
+  // Watch the classifications array to keep track of selected industries
+  const classifications = watch('classifications') || [];
+
+  // Toggle expansion of industry section
+  const toggleSection = (index) => {
+    setExpandedSections(prev => {
+      const newState = [...prev];
+      newState[index] = !newState[index];
+      return newState;
+    });
+  };
+
+  // Load countries on component mount
+  useEffect(() => {
+    const countryList = Country.getAllCountries().map(country => ({
+      value: country.isoCode,
+      label: country.name
+    }));
+    setCountries(countryList);
+  }, []); // Close this useEffect properly
+
+  // Load states when country changes
+  useEffect(() => {
+    if (selectedCountry) {
+      const stateList = State.getStatesOfCountry(selectedCountry).map(state => ({
+        value: state.isoCode,
+        label: state.name
+      }));
+      setStates(stateList);
+
+      // If state is already set, validate it exists in new country
+      if (selectedState) {
+        const stateExists = stateList.some(state => state.value === selectedState);
+        if (!stateExists) {
+          setValue('location.state', '');
+          setValue('location.stateName', '');
+          setValue('location.city', '');
+          setValue('location.cityName', '');
+        }
+      }
+    }
+  }, [selectedCountry]);
+
+  // Load cities when state changes
+  useEffect(() => {
+    if (selectedCountry && selectedState) {
+      const cityList = City.getCitiesOfState(selectedCountry, selectedState).map(city => ({
+        value: city.name,
+        label: city.name
+      }));
+      setCities(cityList);
+
+      // If city is already set, validate it exists in new state
+      if (selectedCity) {
+        const cityExists = cityList.some(city => city.value === selectedCity);
+        if (!cityExists) {
+          setValue('location.city', '');
+          setValue('location.cityName', '');
+        }
+      }
+    }
+  }, [selectedCountry, selectedState]);
+
+  // Fetch all industries on component mount
   useEffect(() => {
     const loadIndustries = async () => {
       try {
+        setLoadingIndustries(true);
         const industriesData = await getAllIndustries();
-        setIndustries(industriesData);
-        setInitialLoadComplete(true);
+        setAllIndustries(industriesData);
       } catch (error) {
         console.error('Error loading industries:', error);
-        setInitialLoadComplete(true);
+        toast.error('Failed to load industries');
+      } finally {
+        setLoadingIndustries(false);
       }
     };
 
     loadIndustries();
   }, []);
 
-  // Fetch categories when industry changes
+  // Load categories for all selected industries
   useEffect(() => {
-    const loadCategories = async () => {
-      if (!selectedIndustry) {
-        setCategories([]);
-        return;
-      }
+    const loadAllCategories = async () => {
+      const newCategoriesMap = { ...categoriesMap };
 
-      try {
-        setLoadingCategories(true);
-        const categoriesData = await getCategoriesByIndustry(selectedIndustry);
-        setCategories(categoriesData);
-      } catch (error) {
-        console.error('Error loading categories:', error);
-      } finally {
-        setLoadingCategories(false);
-      }
-    };
-
-    if (initialLoadComplete && selectedIndustry) {
-      loadCategories();
-    }
-  }, [selectedIndustry, initialLoadComplete]);
-
-  // Fetch subcategories when category changes
-  useEffect(() => {
-    const loadSubCategories = async () => {
-      if (!selectedCategory) {
-        setSubCategories([]);
-        return;
-      }
-
-      try {
-        setLoadingSubCategories(true);
-        const subCategoriesData = await getSubCategoriesByCategory(selectedCategory);
-        setSubCategories(subCategoriesData);
-      } catch (error) {
-        console.error('Error loading subcategories:', error);
-      } finally {
-        setLoadingSubCategories(false);
-      }
-    };
-
-    if (initialLoadComplete && selectedCategory) {
-      loadSubCategories();
-    }
-  }, [selectedCategory, initialLoadComplete]);
-
-  // Add validation effect
-useEffect(() => {
-  if (initialLoadComplete) {
-    // Validate fields when they have values
-    if (selectedIndustry) {
-      trigger('industry');
-      
-      if (selectedCategory) {
-        trigger('category');
-        
-        if (selectedSubCategories.length > 0) {
-          trigger('subCategories');
+      for (const classification of classifications) {
+        const industryId = classification.industry;
+        if (industryId && !newCategoriesMap[industryId]) {
+          try {
+            const categoriesData = await getCategoriesByIndustry(industryId);
+            newCategoriesMap[industryId] = categoriesData;
+          } catch (error) {
+            console.error(`Error loading categories for industry ${industryId}:`, error);
+          }
         }
       }
+
+      setCategoriesMap(newCategoriesMap);
+    };
+
+    if (classifications.length > 0) {
+      loadAllCategories();
     }
-  }
-}, [initialLoadComplete, selectedIndustry, selectedCategory, selectedSubCategories, trigger]);
+  }, [classifications.map(c => c.industry).join(',')]);
 
-  // Handle industry selection
-  const handleIndustrySelect = (industryId) => {
-    // Only clear category and subcategories if industry is changing
-    if (industryId !== selectedIndustry) {
-      setValue('industry', industryId, { shouldValidate: true });
-      setValue('category', '', { shouldValidate: false });
-      setValue('subCategories', [], { shouldValidate: false });
+  // Load subcategories for all selected categories
+  useEffect(() => {
+    const loadAllSubCategories = async () => {
+      const newSubCategoriesMap = { ...subCategoriesMap };
 
-      // If industry is selected, trigger validation for it
-      if (industryId) {
-        setTimeout(() => trigger('industry'), 100);
+      for (const classification of classifications) {
+        const categoryId = classification.category;
+        if (categoryId && !newSubCategoriesMap[categoryId]) {
+          try {
+            const subCategoriesData = await getSubCategoriesByCategory(categoryId);
+            newSubCategoriesMap[categoryId] = subCategoriesData;
+          } catch (error) {
+            console.error(`Error loading subcategories for category ${categoryId}:`, error);
+          }
+        }
       }
-    } else if (industryId === '') {
-      // If clearing industry, also clear category and subcategories
-      setValue('industry', '', { shouldValidate: true });
-      setValue('category', '', { shouldValidate: false });
-      setValue('subCategories', [], { shouldValidate: false });
+
+      setSubCategoriesMap(newSubCategoriesMap);
+    };
+
+    if (classifications.length > 0) {
+      loadAllSubCategories();
     }
+  }, [classifications.map(c => c.category).join(',')]);
+
+  // Add validation effect for classifications
+  useEffect(() => {
+    if (fields.length > 0) {
+      fields.forEach((field, index) => {
+        const industry = watch(`classifications.${index}.industry`);
+        const category = watch(`classifications.${index}.category`);
+        const subCategories = watch(`classifications.${index}.subCategories`) || [];
+
+        if (industry) {
+          trigger(`classifications.${index}.industry`);
+
+          if (category) {
+            trigger(`classifications.${index}.category`);
+
+            if (subCategories.length > 0) {
+              trigger(`classifications.${index}.subCategories`);
+            }
+          }
+        }
+      });
+    }
+  }, [fields, trigger, watch]);
+
+  // All handler functions should be defined at the component level, not inside useEffect
+  const handleCountryChange = (option) => {
+    setValue('location.country', option.value);
+    setValue('location.countryName', option.label);
+
+    // Reset state and city when country changes
+    setValue('location.state', '');
+    setValue('location.stateName', '');
+    setValue('location.city', '');
+    setValue('location.cityName', '');
+
+    trigger('location.country');
   };
 
-// Update category selection handler
-const handleCategorySelect = (categoryId) => {
-  // Only clear subcategories if category is changing
-  if (categoryId !== selectedCategory) {
-    setValue('category', categoryId, { shouldValidate: true });
-    setValue('subCategories', [], { shouldValidate: false });
-    
-    // If category is selected, trigger validation for it
-    if (categoryId) {
-      setTimeout(() => trigger('category'), 100);
-    }
-  } else if (categoryId === '') {
-    // If clearing category, also clear subcategories
-    setValue('category', '', { shouldValidate: true });
-    setValue('subCategories', [], { shouldValidate: false });
-  }
-};
+  const handleStateChange = (option) => {
+    setValue('location.state', option.value);
+    setValue('location.stateName', option.label);
 
-// Update subcategory selection handler
-const handleSubCategoryToggle = (subCategoryId) => {
-  const isSelected = selectedSubCategories.includes(subCategoryId);
-  
-  if (isSelected) {
-    // Remove subcategory
-    const newSubcategories = selectedSubCategories.filter(id => id !== subCategoryId);
-    setValue('subCategories', newSubcategories, { shouldValidate: true });
-    
-    // Trigger validation immediately after update
-    setTimeout(() => trigger('subCategories'), 100);
-  } else if (selectedSubCategories.length < 3) {
-    // Add subcategory if less than 3 are selected
-    const newSubcategories = [...selectedSubCategories, subCategoryId];
-    setValue('subCategories', newSubcategories, { shouldValidate: true });
-    
-    // Trigger validation immediately after update
-    setTimeout(() => trigger('subCategories'), 100);
-  }
-};
+    // Reset city when state changes
+    setValue('location.city', '');
+    setValue('location.cityName', '');
+
+    trigger('location.state');
+  };
+
+  const handleCityChange = (option) => {
+    setValue('location.city', option.value);
+    setValue('location.cityName', option.label);
+
+    trigger('location.city');
+  };
+
+  // Find selected options for dropdowns
+  const findSelectedCountry = () => countries.find(country => country.value === selectedCountry) || null;
+  const findSelectedState = () => states.find(state => state.value === selectedState) || null;
+  const findSelectedCity = () => cities.find(city => city.value === selectedCity || city.label === selectedCity) || null;
+
+  // Add new industry classification
+  const addClassification = () => {
+    if (classifications.length >= 3) {
+      toast.error('You can select up to 3 industries');
+      return;
+    }
+
+    append({
+      industry: '',
+      industryName: '',
+      category: '',
+      categoryName: '',
+      subCategories: [],
+      subCategoryNames: []
+    });
+
+    // Expand the newly added section
+    setExpandedSections([...expandedSections, true]);
+  };
+
+  // Remove an industry classification
+  const removeClassification = (index) => {
+    remove(index);
+
+    // Update expanded sections
+    setExpandedSections(prev => {
+      const newState = [...prev];
+      newState.splice(index, 1);
+      return newState;
+    });
+  };
+
+  // Handle industry selection
+  const handleIndustryChange = (option, index) => {
+    // Update industry and clear category and subcategories
+    setValue(`classifications.${index}.industry`, option?.value || '');
+    setValue(`classifications.${index}.industryName`, option?.label || '');
+    setValue(`classifications.${index}.category`, '');
+    setValue(`classifications.${index}.categoryName`, '');
+    setValue(`classifications.${index}.subCategories`, []);
+    setValue(`classifications.${index}.subCategoryNames`, []);
+
+    trigger(`classifications.${index}.industry`);
+  };
+
+  // Handle category selection
+  const handleCategoryChange = (option, index) => {
+    // Update category and clear subcategories
+    setValue(`classifications.${index}.category`, option?.value || '');
+    setValue(`classifications.${index}.categoryName`, option?.label || '');
+    setValue(`classifications.${index}.subCategories`, []);
+    setValue(`classifications.${index}.subCategoryNames`, []);
+
+    trigger(`classifications.${index}.category`);
+  };
+
+  // Handle subcategory selection
+  const handleSubCategoryToggle = (subCategoryId, subCategoryName, index) => {
+    const currentSubCategories = watch(`classifications.${index}.subCategories`) || [];
+    const currentSubCategoryNames = watch(`classifications.${index}.subCategoryNames`) || [];
+
+    const isSelected = currentSubCategories.includes(subCategoryId);
+
+    if (isSelected) {
+      // Remove subcategory
+      const newSubCategories = currentSubCategories.filter(id => id !== subCategoryId);
+      const newSubCategoryNames = currentSubCategoryNames.filter((_, i) =>
+        currentSubCategories[i] !== subCategoryId
+      );
+
+      setValue(`classifications.${index}.subCategories`, newSubCategories);
+      setValue(`classifications.${index}.subCategoryNames`, newSubCategoryNames);
+    } else {
+      // Add subcategory if less than 3 are selected
+      if (currentSubCategories.length < 3) {
+        setValue(`classifications.${index}.subCategories`, [...currentSubCategories, subCategoryId]);
+        setValue(`classifications.${index}.subCategoryNames`, [...currentSubCategoryNames, subCategoryName]);
+      } else {
+        toast.error('You can select up to 3 subcategories');
+      }
+    }
+
+    trigger(`classifications.${index}.subCategories`);
+  };
+
+  // Custom styles for react-select
+  const selectStyles = {
+    control: (base, state) => ({
+      ...base,
+      minHeight: '40px',
+      borderRadius: '0.5rem',
+      borderColor: state.isFocused ? '#0031ac' : errors.location?.country ? '#fca5a5' : '#D1D5DB',
+      boxShadow: state.isFocused ? '0 0 0 1px #0031ac' : 'none',
+      '&:hover': {
+        borderColor: state.isFocused ? '#0031ac' : '#9CA3AF'
+      }
+    }),
+    option: (base, state) => ({
+      ...base,
+      backgroundColor: state.isSelected ? '#0031ac' : state.isFocused ? '#E6EEFF' : null,
+      color: state.isSelected ? 'white' : '#333333'
+    })
+  };
 
   // Type selection cards
   const typeOptions = [
@@ -342,152 +518,222 @@ const handleSubCategoryToggle = (subCategoryId) => {
         )}
       </div>
 
-      {/* Industry, Category, and Subcategory Selection */}
+      {/* Industry Classifications */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <label className="block text-sm font-medium text-gray-700">
             Industry Classification <span className="text-red-500">*</span>
           </label>
-          <Tooltip content="Select the industry, category, and subcategory that best describe your listing. This helps with search and discovery.">
+          <Tooltip content="Select up to 3 industries that best describe your listing, along with categories and subcategories.">
             <HelpCircle className="h-4 w-4 text-gray-400" />
           </Tooltip>
         </div>
 
-        {/* Industry Selection */}
+        {/* Error for classifications array */}
+        {errors.classifications && errors.classifications.message && (
+          <p className="text-sm text-red-600 flex items-center">
+            <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+            {errors.classifications.message}
+          </p>
+        )}
+
+        {/* Display industry classifications */}
         <div className="space-y-4">
-          <div>
-            <label htmlFor="industry" className="block text-sm font-medium text-gray-600 mb-1">
-              Industry <span className="text-red-500">*</span>
-            </label>
-            <select
-              id="industry"
-              className={cn(
-                "w-full px-3 py-2 border rounded-lg focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
-                errors.industry ? "border-red-300" : "border-gray-300"
-              )}
-              value={selectedIndustry || ''}
-              onChange={(e) => handleIndustrySelect(e.target.value)}
+          {fields.map((field, index) => (
+            <div
+              key={field.id}
+              className="border border-gray-200 rounded-lg overflow-hidden"
             >
-              <option value="">Select an industry</option>
-              {industries.map((industry) => (
-                <option key={industry.id} value={industry.id}>
-                  {industry.name}
-                </option>
-              ))}
-            </select>
-
-            {errors.industry && errors.industry.message ? (
-              <p className="mt-1 text-sm text-red-600 flex items-center">
-                <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
-                {errors.industry.message}
-              </p>
-            ) : null}
-          </div>
-
-          {/* Category Selection - only show if industry is selected */}
-          {selectedIndustry && (
-            <div>
-              <label htmlFor="category" className="block text-sm font-medium text-gray-600 mb-1">
-                Category <span className="text-red-500">*</span>
-              </label>
-              <select
-                id="category"
-                className={cn(
-                  "w-full px-3 py-2 border rounded-lg focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
-                  errors.category ? "border-red-300" : "border-gray-300"
-                )}
-                value={selectedCategory || ''}
-                onChange={(e) => handleCategorySelect(e.target.value)}
-                disabled={loadingCategories}
-                onBlur={() => trigger('category')} // Add this to trigger validation on blur
+              {/* Section header with toggle and remove */}
+              <div
+                className="bg-gray-50 px-4 py-3 flex items-center justify-between cursor-pointer"
+                onClick={() => toggleSection(index)}
               >
-                <option value="">Select a category</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-
-              {loadingCategories && (
-                <div className="mt-1 text-sm text-gray-500 flex items-center">
-                  <div className="animate-spin mr-1 h-3 w-3 border-2 border-gray-500 border-t-transparent rounded-full"></div>
-                  Loading categories...
+                <div className="flex items-center">
+                  <span className="w-6 h-6 flex items-center justify-center bg-[#0031ac] text-white rounded-full mr-2 text-sm">
+                    {index + 1}
+                  </span>
+                  <h3 className="font-medium text-gray-800">
+                    {watch(`classifications.${index}.industryName`) || `Industry Classification ${index + 1}`}
+                  </h3>
                 </div>
-              )}
-
-              {errors.category && errors.category.message ? (
-                <p className="mt-1 text-sm text-red-600 flex items-center">
-                  <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
-                  {errors.category.message}
-                </p>
-              ) : null}
-            </div>
-          )}
-
-          {/* Subcategory Selection - only show if category is selected */}
-          {selectedCategory && (
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">
-                Subcategories <span className="text-red-500">*</span> (select at least 1, up to 3)
-              </label>
-
-              {loadingSubCategories ? (
-                <div className="mt-1 text-sm text-gray-500 flex items-center">
-                  <div className="animate-spin mr-1 h-3 w-3 border-2 border-gray-500 border-t-transparent rounded-full"></div>
-                  Loading subcategories...
+                <div className="flex items-center">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeClassification(index);
+                    }}
+                    className="p-1 text-gray-400 hover:text-red-500 mr-2"
+                  >
+                    <Trash className="h-4 w-4" />
+                  </button>
+                  {expandedSections[index] ? (
+                    <ChevronUp className="h-5 w-5 text-gray-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-gray-400" />
+                  )}
                 </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                    {subCategories.map((subCategory) => (
-                      <div
-                        key={subCategory.id}
-                        className={cn(
-                          "flex items-center p-3 border rounded-lg cursor-pointer transition-colors",
-                          selectedSubCategories.includes(subCategory.id)
-                            ? "bg-blue-50 border-blue-200"
-                            : "border-gray-200 hover:border-gray-300"
-                        )}
-                        onClick={() => handleSubCategoryToggle(subCategory.id)}
-                      >
-                        <div className={cn(
-                          "w-4 h-4 rounded mr-2 flex items-center justify-center",
-                          selectedSubCategories.includes(subCategory.id)
-                            ? "bg-[#0031ac]"
-                            : "border border-gray-300"
-                        )}>
-                          {selectedSubCategories.includes(subCategory.id) && (
-                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </div>
-                        <span className="text-sm">{subCategory.name}</span>
-                      </div>
-                    ))}
+              </div>
+
+              {/* Section content (collapsible) */}
+              {expandedSections[index] && (
+                <div className="p-4 space-y-4">
+                  {/* Industry Select */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Industry <span className="text-red-500">*</span>
+                    </label>
+                    <Select
+                      options={allIndustries.map(industry => ({
+                        value: industry.id,
+                        label: industry.name
+                      }))}
+                      value={
+                        watch(`classifications.${index}.industry`)
+                          ? {
+                            value: watch(`classifications.${index}.industry`),
+                            label: watch(`classifications.${index}.industryName`)
+                          }
+                          : null
+                      }
+                      onChange={(option) => handleIndustryChange(option, index)}
+                      placeholder="Select an industry"
+                      styles={selectStyles}
+                      isSearchable
+                      isLoading={loadingIndustries}
+                      className={cn(
+                        errors.classifications?.[index]?.industry ? "select-error" : ""
+                      )}
+                    />
+                    {errors.classifications?.[index]?.industry && (
+                      <p className="mt-1 text-sm text-red-600 flex items-center">
+                        <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+                        {errors.classifications[index].industry.message}
+                      </p>
+                    )}
                   </div>
 
-                  {subCategories.length === 0 && (
-                    <p className="text-sm text-gray-500 py-2">
-                      No subcategories available for this category.
-                    </p>
+                  {/* Category Select - Only show if industry is selected */}
+                  {watch(`classifications.${index}.industry`) && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Category <span className="text-red-500">*</span>
+                      </label>
+                      <Select
+                        options={
+                          (categoriesMap[watch(`classifications.${index}.industry`)] || [])
+                            .map(category => ({
+                              value: category.id,
+                              label: category.name
+                            }))
+                        }
+                        value={
+                          watch(`classifications.${index}.category`)
+                            ? {
+                              value: watch(`classifications.${index}.category`),
+                              label: watch(`classifications.${index}.categoryName`)
+                            }
+                            : null
+                        }
+                        onChange={(option) => handleCategoryChange(option, index)}
+                        placeholder="Select a category"
+                        styles={selectStyles}
+                        isSearchable
+                        isLoading={!categoriesMap[watch(`classifications.${index}.industry`)]}
+                        className={cn(
+                          errors.classifications?.[index]?.category ? "select-error" : ""
+                        )}
+                      />
+                      {errors.classifications?.[index]?.category && (
+                        <p className="mt-1 text-sm text-red-600 flex items-center">
+                          <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+                          {errors.classifications[index].category.message}
+                        </p>
+                      )}
+                    </div>
                   )}
-                </>
+
+                  {/* Subcategory Selection - Only show if category is selected */}
+                  {watch(`classifications.${index}.category`) && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Subcategories <span className="text-red-500">*</span> (select at least 1, up to 3)
+                      </label>
+
+                      {!subCategoriesMap[watch(`classifications.${index}.category`)] ? (
+                        <div className="text-sm text-gray-500 flex items-center">
+                          <div className="animate-spin mr-1 h-3 w-3 border-2 border-gray-500 border-t-transparent rounded-full"></div>
+                          Loading subcategories...
+                        </div>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                            {(subCategoriesMap[watch(`classifications.${index}.category`)] || []).map((subCategory) => (
+                              <div
+                                key={subCategory.id}
+                                className={cn(
+                                  "flex items-center p-3 border rounded-lg cursor-pointer transition-colors",
+                                  watch(`classifications.${index}.subCategories`, []).includes(subCategory.id)
+                                    ? "bg-blue-50 border-blue-200"
+                                    : "border-gray-200 hover:border-gray-300"
+                                )}
+                                onClick={() => handleSubCategoryToggle(subCategory.id, subCategory.name, index)}
+                              >
+                                <div className={cn(
+                                  "w-4 h-4 rounded mr-2 flex items-center justify-center",
+                                  watch(`classifications.${index}.subCategories`, []).includes(subCategory.id)
+                                    ? "bg-[#0031ac]"
+                                    : "border border-gray-300"
+                                )}>
+                                  {watch(`classifications.${index}.subCategories`, []).includes(subCategory.id) && (
+                                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <span className="text-sm">{subCategory.name}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {(subCategoriesMap[watch(`classifications.${index}.category`)] || []).length === 0 && (
+                            <p className="text-sm text-gray-500 py-2">
+                              No subcategories available for this category.
+                            </p>
+                          )}
+                        </>
+                      )}
+
+                      {errors.classifications?.[index]?.subCategories && (
+                        <p className="mt-1 text-sm text-red-600 flex items-center">
+                          <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+                          {errors.classifications[index].subCategories.message}
+                        </p>
+                      )}
+
+                      <p className="text-xs text-gray-500 mt-1">
+                        Selected: {watch(`classifications.${index}.subCategories`, []).length}/3
+                        {watch(`classifications.${index}.subCategories`, []).length >= 3 && " (Maximum reached)"}
+                      </p>
+                    </div>
+                  )}
+                </div>
               )}
-
-              {errors.subCategories && errors.subCategories.message ? (
-                <p className="mt-1 text-sm text-red-600 flex items-center">
-                  <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
-                  {errors.subCategories.message}
-                </p>
-              ) : null}
-
-              <p className="text-xs text-gray-500 mt-1">
-                Selected: {selectedSubCategories.length}/3 {selectedSubCategories.length >= 3 && "(Maximum reached)"}
-              </p>
             </div>
-          )}
+          ))}
+
+          {/* Add classification button */}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={addClassification}
+            disabled={fields.length >= 3}
+            className="w-full flex items-center justify-center"
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Add Industry Classification {fields.length >= 3 && "(Maximum reached)"}
+          </Button>
         </div>
       </div>
 
@@ -593,26 +839,64 @@ const handleSubCategoryToggle = (subCategoryId) => {
         </div>
       </div>
 
-      {/* Location */}
+      {/* Location Information */}
       <div className="space-y-3">
         <h3 className="text-lg font-medium text-gray-800">Location Information</h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Country */}
+          <div className="space-y-2">
+            <label htmlFor="location.country" className="block text-sm font-medium text-gray-700">
+              Country <span className="text-red-500">*</span>
+            </label>
+
+            <Select
+              inputId="location.country"
+              options={countries}
+              value={countries.find(country => country.value === selectedCountry) || INDIA_OPTION}
+              onChange={handleCountryChange}
+              placeholder="Select country"
+              styles={selectStyles}
+              className={cn(
+                errors.location?.country ? "select-error" : ""
+              )}
+            />
+
+            {errors.location?.country && errors.location?.country.message ? (
+              <p className="text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+                {errors.location.country.message}
+              </p>
+            ) : null}
+
+            {/* Hidden inputs for form validation */}
+            <input
+              type="hidden"
+              {...register("location.country")}
+            />
+            <input
+              type="hidden"
+              {...register("location.countryName")}
+            />
+          </div>
+
           {/* State */}
           <div className="space-y-2">
             <label htmlFor="location.state" className="block text-sm font-medium text-gray-700">
               State <span className="text-red-500">*</span>
             </label>
 
-            <input
-              id="location.state"
-              type="text"
-              placeholder="e.g. Maharashtra"
+            <Select
+              inputId="location.state"
+              options={states}
+              value={findSelectedState()}
+              onChange={handleStateChange}
+              placeholder="Select state"
+              styles={selectStyles}
+              isDisabled={!selectedCountry || states.length === 0}
               className={cn(
-                "w-full px-3 py-2 border rounded-lg focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
-                errors.location?.state ? "border-red-300" : "border-gray-300"
+                errors.location?.state ? "select-error" : ""
               )}
-              {...register("location.state")}
             />
 
             {errors.location?.state && errors.location?.state.message ? (
@@ -621,6 +905,16 @@ const handleSubCategoryToggle = (subCategoryId) => {
                 {errors.location.state.message}
               </p>
             ) : null}
+
+            {/* Hidden inputs for form validation */}
+            <input
+              type="hidden"
+              {...register("location.state")}
+            />
+            <input
+              type="hidden"
+              {...register("location.stateName")}
+            />
           </div>
 
           {/* City */}
@@ -629,15 +923,17 @@ const handleSubCategoryToggle = (subCategoryId) => {
               City <span className="text-red-500">*</span>
             </label>
 
-            <input
-              id="location.city"
-              type="text"
-              placeholder="e.g. Mumbai"
+            <Select
+              inputId="location.city"
+              options={cities}
+              value={findSelectedCity()}
+              onChange={handleCityChange}
+              placeholder="Select city"
+              styles={selectStyles}
+              isDisabled={!selectedState || cities.length === 0}
               className={cn(
-                "w-full px-3 py-2 border rounded-lg focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
-                errors.location?.city ? "border-red-300" : "border-gray-300"
+                errors.location?.city ? "select-error" : ""
               )}
-              {...register("location.city")}
             />
 
             {errors.location?.city && errors.location?.city.message ? (
@@ -646,6 +942,16 @@ const handleSubCategoryToggle = (subCategoryId) => {
                 {errors.location.city.message}
               </p>
             ) : null}
+
+            {/* Hidden inputs for form validation */}
+            <input
+              type="hidden"
+              {...register("location.city")}
+            />
+            <input
+              type="hidden"
+              {...register("location.cityName")}
+            />
           </div>
         </div>
 

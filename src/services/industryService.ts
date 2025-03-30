@@ -14,7 +14,7 @@ import {
   updateDoc, 
   deleteDoc, 
   serverTimestamp, 
-  orderBy
+  orderBy,
 } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { IndustryObject, CategoryObject, SubCategoryObject } from '@/types/listings';
@@ -65,6 +65,7 @@ export const getAllIndustries = async (currentUserId?: string): Promise<Industry
     return [];
   }
 };
+
 
 /**
 * Get categories by industry ID
@@ -800,86 +801,159 @@ export const getTopIndustries = async (limit: number = 10, currentUserId?: strin
   }
 };
 
+
+
 /**
-* Get multiple industry, category, and subcategory names by IDs
-* Useful for displaying names in listing details
+* Get display names for classifications (multiple industry-category-subcategory sets)
 */
 export const getClassificationNames = async (
-industryId?: string,
-categoryId?: string,
-subCategoryIds: string[] = []
-): Promise<{
-industryName?: string,
-categoryName?: string,
-subCategoryNames: string[]
-}> => {
-try {
-  const result = {
-    industryName: undefined,
-    categoryName: undefined,
-    subCategoryNames: [] as string[]
-  };
-  
-  // Get industry name if ID provided
-  if (industryId) {
-    try {
-      const industryDoc = await getDoc(doc(db, INDUSTRIES_COLLECTION, industryId));
-      if (industryDoc.exists()) {
-        result.industryName = industryDoc.data().name;
-      }
-    } catch (err) {
-      console.error('Error fetching industry name:', err);
-    }
-  }
-  
-  // Get category name if ID provided
-  if (categoryId) {
-    try {
-      const categoryDoc = await getDoc(doc(db, CATEGORIES_COLLECTION, categoryId));
-      if (categoryDoc.exists()) {
-        result.categoryName = categoryDoc.data().name;
-      }
-    } catch (err) {
-      console.error('Error fetching category name:', err);
-    }
-  }
-  
-  // Get subcategory names if IDs provided
-  if (subCategoryIds.length > 0) {
-    const subCategoryNames: string[] = [];
-    
-    // Process subcategories in batches to avoid too many parallel requests
-    const batchSize = 5;
-    for (let i = 0; i < subCategoryIds.length; i += batchSize) {
-      const batch = subCategoryIds.slice(i, i + batchSize);
-      const promises = batch.map(async (id) => {
+  classifications: Array<{
+    industry: string,
+    category: string,
+    subCategories: string[]
+  }>
+): Promise<Array<{
+  industryName: string,
+  categoryName: string,
+  subCategoryNames: string[]
+}>> => {
+  try {
+    // Process classifications in batches to avoid too many parallel requests
+    const results = await Promise.all(
+      classifications.map(async (classification) => {
+        const result = {
+          industryName: '',
+          categoryName: '',
+          subCategoryNames: [] as string[]
+        };
+        
+        // Get industry name
         try {
-          const subCategoryDoc = await getDoc(doc(db, SUBCATEGORIES_COLLECTION, id));
-          if (subCategoryDoc.exists()) {
-            return subCategoryDoc.data().name;
+          const industryDoc = await getDoc(doc(db, 'industries', classification.industry));
+          if (industryDoc.exists()) {
+            result.industryName = industryDoc.data().name;
           }
-          return null;
         } catch (err) {
-          console.error(`Error fetching subcategory name for ID ${id}:`, err);
-          return null;
+          console.error(`Error fetching industry name:`, err);
         }
-      });
-      
-      const batchResults = await Promise.all(promises);
-      subCategoryNames.push(...batchResults.filter(name => name !== null) as string[]);
-    }
+        
+        // Get category name
+        try {
+          const categoryDoc = await getDoc(doc(db, 'categories', classification.category));
+          if (categoryDoc.exists()) {
+            result.categoryName = categoryDoc.data().name;
+          }
+        } catch (err) {
+          console.error(`Error fetching category name:`, err);
+        }
+        
+        // Get subcategory names
+        if (classification.subCategories.length > 0) {
+          const subCategoryNames = await Promise.all(
+            classification.subCategories.map(async (id) => {
+              try {
+                const subCategoryDoc = await getDoc(doc(db, 'subCategories', id));
+                return subCategoryDoc.exists() ? subCategoryDoc.data().name : null;
+              } catch (err) {
+                console.error(`Error fetching subcategory name:`, err);
+                return null;
+              }
+            })
+          );
+          
+          result.subCategoryNames = subCategoryNames.filter(name => name !== null) as string[];
+        }
+        
+        return result;
+      })
+    );
     
-    result.subCategoryNames = subCategoryNames;
+    return results;
+  } catch (error) {
+    console.error('Error getting classification names:', error);
+    return [];
   }
-  
-  return result;
-} catch (error) {
-  console.error('Error getting classification names:', error);
-  return {
-    industryName: undefined,
-    categoryName: undefined,
-    subCategoryNames: []
-  };
-}
 };
 
+/**
+ * Legacy function for getting classification names (single industry)
+ * Kept for backward compatibility
+ */
+export const getClassificationNamesSingle = async (
+  industryId?: string,
+  categoryId?: string,
+  subCategoryIds: string[] = []
+): Promise<{
+  industryName?: string,
+  categoryName?: string,
+  subCategoryNames: string[]
+}> => {
+  try {
+    const result = {
+      industryName: undefined,
+      categoryName: undefined,
+      subCategoryNames: [] as string[]
+    };
+    
+    // Get industry name if ID provided
+    if (industryId) {
+      try {
+        const industryDoc = await getDoc(doc(db, INDUSTRIES_COLLECTION, industryId));
+        if (industryDoc.exists()) {
+          result.industryName = industryDoc.data().name;
+        }
+      } catch (err) {
+        console.error('Error fetching industry name:', err);
+      }
+    }
+    
+    // Get category name if ID provided
+    if (categoryId) {
+      try {
+        const categoryDoc = await getDoc(doc(db, CATEGORIES_COLLECTION, categoryId));
+        if (categoryDoc.exists()) {
+          result.categoryName = categoryDoc.data().name;
+        }
+      } catch (err) {
+        console.error('Error fetching category name:', err);
+      }
+    }
+    
+    // Get subcategory names if IDs provided
+    if (subCategoryIds.length > 0) {
+      const subCategoryNames: string[] = [];
+      
+      // Process subcategories in batches to avoid too many parallel requests
+      const batchSize = 5;
+      for (let i = 0; i < subCategoryIds.length; i += batchSize) {
+        const batch = subCategoryIds.slice(i, i + batchSize);
+        const promises = batch.map(async (id) => {
+          try {
+            const subCategoryDoc = await getDoc(doc(db, SUBCATEGORIES_COLLECTION, id));
+            if (subCategoryDoc.exists()) {
+              return subCategoryDoc.data().name;
+            }
+            return null;
+          } catch (err) {
+            console.error(`Error fetching subcategory name for ID ${id}:`, err);
+            return null;
+          }
+        });
+        
+        const batchResults = await Promise.all(promises);
+        subCategoryNames.push(...batchResults.filter(name => name !== null) as string[]);
+      }
+      
+      result.subCategoryNames = subCategoryNames;
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting classification names:', error);
+    return {
+      industryName: undefined,
+      categoryName: undefined,
+      subCategoryNames: []
+    };
+  }
+};
