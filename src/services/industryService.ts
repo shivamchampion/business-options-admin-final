@@ -15,6 +15,9 @@ import {
   deleteDoc, 
   serverTimestamp, 
   orderBy,
+  limit,
+  Timestamp,
+  DocumentReference
 } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { IndustryObject, CategoryObject, SubCategoryObject } from '@/types/listings';
@@ -636,130 +639,6 @@ try {
 };
 
 /**
- * Seed initial industries if none exist
- * This is used for initial setup
- */
-export const seedInitialIndustries = async (): Promise<void> => {
-  try {
-    if (!auth.currentUser) {
-      throw new Error('Authentication required to seed industries');
-    }
-    
-    // Check if industries already exist
-    const snapshot = await getDocs(collection(db, INDUSTRIES_COLLECTION));
-    if (snapshot.size > 0) {
-      return; // Industries already exist, no need to seed
-    }
-    
-    // Default industries
-    const defaultIndustries = [
-      { name: 'Retail' },
-      { name: 'Food & Beverage' },
-      { name: 'Technology' },
-      { name: 'Manufacturing' },
-      { name: 'Healthcare' },
-      { name: 'Education' },
-      { name: 'Services' },
-      { name: 'Hospitality' },
-      { name: 'Real Estate' },
-      { name: 'Automotive' },
-      { name: 'Construction' },
-      { name: 'Financial Services' },
-      { name: 'E-commerce' },
-      { name: 'Transportation & Logistics' },
-      { name: 'Entertainment & Media' }
-    ];
-    
-    // Create each industry
-    const promises = defaultIndustries.map(industry => createIndustry(industry));
-    await Promise.all(promises);
-    
-    console.log('Successfully seeded initial industries');
-  } catch (error) {
-    console.error('Error seeding initial industries:', error);
-  }
-};
-
-/**
-* Seed initial categories for an industry if none exist
-*/
-export const seedInitialCategories = async (industryId: string): Promise<void> => {
-try {
-  if (!auth.currentUser) {
-    throw new Error('Authentication required to seed categories');
-  }
-  
-  // Check if categories already exist for this industry
-  const catSnapshot = await getDocs(
-    query(collection(db, CATEGORIES_COLLECTION), where('industryId', '==', industryId))
-  );
-  
-  if (catSnapshot.size > 0) {
-    return; // Categories already exist, no need to seed
-  }
-  
-  // Get industry name
-  const industryDoc = await getDoc(doc(db, INDUSTRIES_COLLECTION, industryId));
-  if (!industryDoc.exists()) {
-    throw new Error(`Industry with ID ${industryId} not found`);
-  }
-  
-  const industryName = industryDoc.data().name;
-  
-  // Default categories based on industry
-  let defaultCategories = [];
-  
-  switch (industryName) {
-    case 'Retail':
-      defaultCategories = [
-        { name: 'Clothing & Apparel', industryId },
-        { name: 'Electronics', industryId },
-        { name: 'Furniture', industryId },
-        { name: 'Grocery & Convenience', industryId },
-        { name: 'Specialty Retail', industryId }
-      ];
-      break;
-      
-    case 'Food & Beverage':
-      defaultCategories = [
-        { name: 'Restaurants', industryId },
-        { name: 'Cafes & Bakeries', industryId },
-        { name: 'Bars & Nightclubs', industryId },
-        { name: 'Food Production', industryId },
-        { name: 'Beverage Manufacturing', industryId }
-      ];
-      break;
-      
-    case 'Technology':
-      defaultCategories = [
-        { name: 'Software Development', industryId },
-        { name: 'IT Services', industryId },
-        { name: 'Hardware & Electronics', industryId },
-        { name: 'Cloud Services', industryId },
-        { name: 'Telecommunications', industryId }
-      ];
-      break;
-      
-    // Add more industries as needed
-    default:
-      defaultCategories = [
-        { name: 'General', industryId },
-        { name: 'Specialized Services', industryId },
-        { name: 'Products', industryId }
-      ];
-  }
-  
-  // Create each category
-  const promises = defaultCategories.map(category => createCategory(category));
-  await Promise.all(promises);
-  
-  console.log(`Successfully seeded initial categories for ${industryName}`);
-} catch (error) {
-  console.error('Error seeding initial categories:', error);
-}
-};
-
-/**
  * Get top industries by listing count
  */
 export const getTopIndustries = async (limit: number = 10, currentUserId?: string): Promise<IndustryObject[]> => {
@@ -800,8 +679,6 @@ export const getTopIndustries = async (limit: number = 10, currentUserId?: strin
     return []; // Return empty array on error
   }
 };
-
-
 
 /**
 * Get display names for classifications (multiple industry-category-subcategory sets)
@@ -955,5 +832,334 @@ export const getClassificationNamesSingle = async (
       categoryName: undefined,
       subCategoryNames: []
     };
+  }
+};
+
+/**
+ * Seed initial industries, categories, and subcategories
+ * This function ensures there's at least some data to populate the form
+ */
+export const seedIndustriesData = async (): Promise<void> => {
+  try {
+    if (!auth.currentUser) {
+      console.warn('Authentication not established for seeding industries data');
+      return;
+    }
+    
+    // Check if industries already exist
+    const industriesSnapshot = await getDocs(collection(db, INDUSTRIES_COLLECTION));
+    if (industriesSnapshot.size > 0) {
+      console.log('Industries already exist, checking for categories and subcategories');
+      
+      // Check if each industry has categories
+      for (const industryDoc of industriesSnapshot.docs) {
+        const industryId = industryDoc.id;
+        const categoriesQuery = query(
+          collection(db, CATEGORIES_COLLECTION),
+          where('industryId', '==', industryId)
+        );
+        const categoriesSnapshot = await getDocs(categoriesQuery);
+        
+        if (categoriesSnapshot.size === 0) {
+          console.log(`No categories found for industry ${industryId}, seeding categories`);
+          await seedCategoriesForIndustry(industryId, industryDoc.data().name);
+        } else {
+          // Check if each category has subcategories
+          for (const categoryDoc of categoriesSnapshot.docs) {
+            const categoryId = categoryDoc.id;
+            const subCategoriesQuery = query(
+              collection(db, SUBCATEGORIES_COLLECTION),
+              where('categoryId', '==', categoryId)
+            );
+            const subCategoriesSnapshot = await getDocs(subCategoriesQuery);
+            
+            if (subCategoriesSnapshot.size === 0) {
+              console.log(`No subcategories found for category ${categoryId}, seeding subcategories`);
+              await seedSubCategoriesForCategory(categoryId, categoryDoc.data().name, industryId);
+            }
+          }
+        }
+      }
+      
+      return;
+    }
+    
+    // If no industries exist, create initial industries
+    console.log('No industries found, seeding initial industries, categories, and subcategories');
+    
+    // Default industries with categories and subcategories
+    const industriesData = [
+      {
+        name: 'Retail',
+        categories: [
+          {
+            name: 'Clothing & Apparel',
+            subcategories: ['Fashion Boutique', 'Footwear', 'Accessories', 'Children\'s Clothing']
+          },
+          {
+            name: 'Electronics',
+            subcategories: ['Mobile Phones', 'Computers & Laptops', 'Home Appliances', 'Audio & Visual']
+          },
+          {
+            name: 'Grocery & Convenience',
+            subcategories: ['Supermarket', 'Convenience Store', 'Specialty Foods', 'Organic & Natural']
+          }
+        ]
+      },
+      {
+        name: 'Food & Beverage',
+        categories: [
+          {
+            name: 'Restaurants',
+            subcategories: ['Fine Dining', 'Casual Dining', 'Fast Food', 'Cafes', 'Food Trucks']
+          },
+          {
+            name: 'Bars & Nightclubs',
+            subcategories: ['Pub', 'Wine Bar', 'Nightclub', 'Cocktail Bar', 'Sports Bar']
+          },
+          {
+            name: 'Food Production',
+            subcategories: ['Bakery', 'Brewery', 'Dairy Products', 'Packaged Foods', 'Catering']
+          }
+        ]
+      },
+      {
+        name: 'Technology',
+        categories: [
+          {
+            name: 'Software Development',
+            subcategories: ['Mobile Apps', 'Web Development', 'Enterprise Software', 'Game Development']
+          },
+          {
+            name: 'IT Services',
+            subcategories: ['Managed IT Services', 'Cloud Computing', 'Cybersecurity', 'IT Consulting']
+          },
+          {
+            name: 'Hardware & Electronics',
+            subcategories: ['Computer Hardware', 'IoT Devices', 'Telecommunications', 'Electronic Components']
+          }
+        ]
+      },
+      {
+        name: 'Manufacturing',
+        categories: [
+          {
+            name: 'Textiles',
+            subcategories: ['Clothing Manufacturing', 'Fabric Production', 'Technical Textiles']
+          },
+          {
+            name: 'Automotive',
+            subcategories: ['Vehicle Assembly', 'Auto Parts', 'Aftermarket Components']
+          },
+          {
+            name: 'Electronics Manufacturing',
+            subcategories: ['Consumer Electronics', 'Industrial Electronics', 'Electronic Components']
+          }
+        ]
+      },
+      {
+        name: 'Healthcare',
+        categories: [
+          {
+            name: 'Medical Services',
+            subcategories: ['Hospitals', 'Clinics', 'Diagnostic Centers', 'Telemedicine']
+          },
+          {
+            name: 'Pharmaceutical',
+            subcategories: ['Drug Manufacturing', 'R&D', 'Distribution', 'Retail Pharmacy']
+          },
+          {
+            name: 'Wellness & Fitness',
+            subcategories: ['Gyms', 'Yoga Studios', 'Spas', 'Nutrition Services']
+          }
+        ]
+      }
+    ];
+    
+    // Create each industry with its categories and subcategories
+    for (const industry of industriesData) {
+      // Create industry
+      const industryId = await createIndustry({ 
+        name: industry.name,
+        description: `${industry.name} businesses and services`,
+        isActive: true
+      });
+      
+      // Create categories for this industry
+      for (const category of industry.categories) {
+        const categoryId = await createCategory({
+          name: category.name,
+          description: `${category.name} in the ${industry.name} industry`,
+          industryId,
+          isActive: true
+        });
+        
+        // Create subcategories for this category
+        for (const subcategoryName of category.subcategories) {
+          await createSubCategory({
+            name: subcategoryName,
+            description: `${subcategoryName} businesses in ${category.name}`,
+            categoryId,
+            industryId,
+            isActive: true
+          });
+        }
+      }
+    }
+    
+    console.log('Successfully seeded initial industries, categories, and subcategories');
+  } catch (error) {
+    console.error('Error seeding industries data:', error);
+  }
+};
+
+/**
+ * Seed categories for a specific industry
+ */
+const seedCategoriesForIndustry = async (industryId: string, industryName: string): Promise<void> => {
+  try {
+    // Default categories based on industry name
+    let categories: Array<{name: string, subcategories: string[]}> = [];
+    
+    switch (industryName) {
+      case 'Retail':
+        categories = [
+          {
+            name: 'Clothing & Apparel',
+            subcategories: ['Fashion Boutique', 'Footwear', 'Accessories', 'Children\'s Clothing']
+          },
+          {
+            name: 'Electronics',
+            subcategories: ['Mobile Phones', 'Computers & Laptops', 'Home Appliances', 'Audio & Visual']
+          },
+          {
+            name: 'Grocery & Convenience',
+            subcategories: ['Supermarket', 'Convenience Store', 'Specialty Foods', 'Organic & Natural']
+          }
+        ];
+        break;
+      
+      case 'Food & Beverage':
+        categories = [
+          {
+            name: 'Restaurants',
+            subcategories: ['Fine Dining', 'Casual Dining', 'Fast Food', 'Cafes', 'Food Trucks']
+          },
+          {
+            name: 'Bars & Nightclubs',
+            subcategories: ['Pub', 'Wine Bar', 'Nightclub', 'Cocktail Bar', 'Sports Bar']
+          },
+          {
+            name: 'Food Production',
+            subcategories: ['Bakery', 'Brewery', 'Dairy Products', 'Packaged Foods', 'Catering']
+          }
+        ];
+        break;
+        
+      case 'Technology':
+        categories = [
+          {
+            name: 'Software Development',
+            subcategories: ['Mobile Apps', 'Web Development', 'Enterprise Software', 'Game Development']
+          },
+          {
+            name: 'IT Services',
+            subcategories: ['Managed IT Services', 'Cloud Computing', 'Cybersecurity', 'IT Consulting']
+          },
+          {
+            name: 'Hardware & Electronics',
+            subcategories: ['Computer Hardware', 'IoT Devices', 'Telecommunications', 'Electronic Components']
+          }
+        ];
+        break;
+      
+      // Add more mappings for other industries
+      
+      default:
+        categories = [
+          {
+            name: 'General',
+            subcategories: ['General Services', 'Products', 'Consulting']
+          },
+          {
+            name: 'Specialized Services',
+            subcategories: ['Professional Services', 'Technical Services', 'Support Services']
+          }
+        ];
+    }
+    
+    // Create categories for this industry
+    for (const category of categories) {
+      const categoryId = await createCategory({
+        name: category.name,
+        description: `${category.name} in the ${industryName} industry`,
+        industryId,
+        isActive: true
+      });
+      
+      // Create subcategories for this category
+      for (const subcategoryName of category.subcategories) {
+        await createSubCategory({
+          name: subcategoryName,
+          description: `${subcategoryName} businesses in ${category.name}`,
+          categoryId,
+          industryId,
+          isActive: true
+        });
+      }
+    }
+    
+    console.log(`Successfully seeded categories and subcategories for industry ${industryName}`);
+  } catch (error) {
+    console.error(`Error seeding categories for industry ${industryId}:`, error);
+  }
+};
+
+/**
+ * Seed subcategories for a specific category
+ */
+const seedSubCategoriesForCategory = async (
+  categoryId: string, 
+  categoryName: string, 
+  industryId: string
+): Promise<void> => {
+  try {
+    // Default subcategories based on category name
+    let subcategories: string[] = [];
+    
+    // These are just examples - in reality, you'd want to tailor these to each specific category
+    switch (categoryName) {
+      case 'Clothing & Apparel':
+        subcategories = ['Fashion Boutique', 'Footwear', 'Accessories', 'Children\'s Clothing'];
+        break;
+        
+      case 'Restaurants':
+        subcategories = ['Fine Dining', 'Casual Dining', 'Fast Food', 'Cafes', 'Food Trucks'];
+        break;
+        
+      case 'Software Development':
+        subcategories = ['Mobile Apps', 'Web Development', 'Enterprise Software', 'Game Development'];
+        break;
+      
+      // Add more mappings for other categories
+      
+      default:
+        subcategories = ['General', 'Specialized', 'Premium', 'Budget'];
+    }
+    
+    // Create subcategories for this category
+    for (const subcategoryName of subcategories) {
+      await createSubCategory({
+        name: subcategoryName,
+        description: `${subcategoryName} businesses in ${categoryName}`,
+        categoryId,
+        industryId,
+        isActive: true
+      });
+    }
+    
+    console.log(`Successfully seeded subcategories for category ${categoryName}`);
+  } catch (error) {
+    console.error(`Error seeding subcategories for category ${categoryId}:`, error);
   }
 };

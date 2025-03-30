@@ -26,41 +26,27 @@ import { toast } from 'react-hot-toast';
  * - Delete functionality
  */
 const MediaUpload = ({ 
-  images = [], 
-  featuredImageIndex = 0,
-  onChange,
-  onError,
+  uploadedImages = [], 
+  onImageUpload,
+  onImageDelete,
+  submitAttempted = false,
   isEdit = false,
   isLoading = false,
   listingType
 }) => {
   // State for tracking images
-  const [uploadedImages, setUploadedImages] = useState(images);
-  const [featured, setFeatured] = useState(featuredImageIndex);
+  const [images, setImages] = useState(uploadedImages);
+  const [featured, setFeatured] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({});
   const [errors, setErrors] = useState([]);
 
-  // Update parent component when images change
+  // Update local state when props change
   useEffect(() => {
-    if (onChange) {
-      onChange({
-        images: uploadedImages,
-        featuredImageIndex: featured
-      });
+    if (uploadedImages && uploadedImages.length > 0) {
+      setImages(uploadedImages);
     }
-  }, [uploadedImages, featured, onChange]);
-
-  // Update local state when props change (e.g., in edit mode)
-  useEffect(() => {
-    if (images && images.length > 0) {
-      setUploadedImages(images);
-    }
-    
-    if (featuredImageIndex !== undefined) {
-      setFeatured(featuredImageIndex);
-    }
-  }, [images, featuredImageIndex]);
+  }, [uploadedImages]);
 
   // Validate file dimensions (min 800x600)
   const validateDimensions = (file) => {
@@ -90,9 +76,8 @@ const MediaUpload = ({
     setErrors([]);
     
     // Check if adding these files would exceed the maximum
-    if (uploadedImages.length + acceptedFiles.length > 10) {
-      setErrors([`You can upload a maximum of 10 images. ${10 - uploadedImages.length} more can be added.`]);
-      if (onError) onError([`You can upload a maximum of 10 images. ${10 - uploadedImages.length} more can be added.`]);
+    if (images.length + acceptedFiles.length > 10) {
+      setErrors([`You can upload a maximum of 10 images. ${10 - images.length} more can be added.`]);
       return;
     }
     
@@ -139,7 +124,7 @@ const MediaUpload = ({
     // Set initial progress state
     setUploadProgress(progressTracking);
     
-    // Simulate upload progress for each file (in a real app, this would be real upload progress)
+    // Simulate upload progress for each file
     validFiles.forEach((fileObj) => {
       const { name } = fileObj.file;
       let progress = 0;
@@ -153,14 +138,14 @@ const MediaUpload = ({
             [name]: 100
           }));
           
-          // Mark file as uploaded
-          setUploadedImages(prev => 
-            [...prev, { 
+          // Update the parent component
+          if (onImageUpload) {
+            onImageUpload([{ 
               ...fileObj,
               progress: 100,
               uploaded: true
-            }]
-          );
+            }]);
+          }
         } else {
           setUploadProgress(prev => ({
             ...prev,
@@ -173,14 +158,13 @@ const MediaUpload = ({
     // Set errors if any
     if (newErrors.length > 0) {
       setErrors(newErrors);
-      if (onError) onError(newErrors);
     }
     
     // Complete upload process
     setTimeout(() => {
       setIsUploading(false);
     }, validFiles.length * 2000); // Give time for "uploads" to complete
-  }, [uploadedImages, onError]);
+  }, [images, onImageUpload]);
 
   // Configure dropzone
   const { 
@@ -195,19 +179,19 @@ const MediaUpload = ({
       'image/jpeg': ['.jpg', '.jpeg'],
       'image/png': ['.png']
     },
-    disabled: isLoading || uploadedImages.length >= 10,
+    disabled: isLoading || images.length >= 10,
     maxSize: 5 * 1024 * 1024, // 5MB
   });
 
   // Handle deletion of an image
   const handleDeleteImage = (index) => {
-    const newImages = [...uploadedImages];
-    newImages.splice(index, 1);
-    setUploadedImages(newImages);
+    if (onImageDelete) {
+      onImageDelete(images[index]);
+    }
     
     // If we deleted the featured image, set the first image as featured
     if (featured === index) {
-      setFeatured(newImages.length > 0 ? 0 : -1);
+      setFeatured(images.length > 1 ? 0 : -1);
     } else if (featured > index) {
       // Adjust featured index if we deleted an image before it
       setFeatured(featured - 1);
@@ -217,6 +201,8 @@ const MediaUpload = ({
   // Set an image as the featured image
   const handleSetFeatured = (index) => {
     setFeatured(index);
+    // In a real application, you would also update this on the backend
+    toast.success(`Image ${index + 1} set as main image`);
   };
 
   // Get appropriate progress color
@@ -285,11 +271,11 @@ const MediaUpload = ({
       <div 
         {...getRootProps()} 
         className={cn(
-          "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors duration-200",
+          "border-2 border-dashed rounded-lg p-6 md:p-8 text-center cursor-pointer transition-colors duration-200",
           isDragActive ? "border-blue-400 bg-blue-50" : "border-gray-300 hover:border-gray-400",
           isDragAccept ? "border-green-500 bg-green-50" : "",
           isDragReject ? "border-red-500 bg-red-50" : "",
-          (isLoading || uploadedImages.length >= 10) ? "opacity-50 cursor-not-allowed" : ""
+          (isLoading || images.length >= 10) ? "opacity-50 cursor-not-allowed" : ""
         )}
       >
         <input {...getInputProps()} />
@@ -301,7 +287,7 @@ const MediaUpload = ({
           
           {isDragActive ? (
             <p className="text-sm font-medium text-blue-700">Drop the files here...</p>
-          ) : uploadedImages.length >= 10 ? (
+          ) : images.length >= 10 ? (
             <p className="text-sm font-medium text-gray-700">Maximum 10 images reached</p>
           ) : (
             <>
@@ -317,14 +303,14 @@ const MediaUpload = ({
       </div>
 
       {/* Image preview grid */}
-      {uploadedImages.length > 0 && (
+      {images.length > 0 && (
         <div className="mt-8">
           <h3 className="text-sm font-medium text-gray-700 mb-4">
-            Uploaded Images ({uploadedImages.length}/10)
+            Uploaded Images ({images.length}/10)
           </h3>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {uploadedImages.map((image, index) => (
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+            {images.map((image, index) => (
               <div 
                 key={index} 
                 className={cn(
@@ -334,13 +320,14 @@ const MediaUpload = ({
               >
                 {/* Featured badge */}
                 {featured === index && (
-                  <div className="absolute top-2 left-2 z-10 bg-blue-500 text-white text-xs px-2 py-1 rounded-full">
-                    Featured
+                  <div className="absolute top-1 left-1 z-10 bg-blue-500 text-white text-[9px] px-1.5 py-0.5 rounded-full flex items-center">
+                    <Star className="h-2 w-2 mr-0.5" />
+                    <span>Main</span>
                   </div>
                 )}
                 
                 {/* Image preview */}
-                <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
+                <div className="relative bg-gray-100 overflow-hidden" style={{ height: "100px" }}>
                   <img 
                     src={image.preview || image.url} 
                     alt={`Listing image ${index + 1}`}
@@ -370,28 +357,36 @@ const MediaUpload = ({
                 </div>
                 
                 {/* Image controls */}
-                <div className="p-2 flex items-center justify-between bg-gray-50">
+                <div className="p-1 flex items-center justify-between bg-gray-50 text-xs">
                   <button
                     type="button"
-                    onClick={() => handleSetFeatured(index)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleSetFeatured(index);
+                    }}
                     disabled={featured === index}
                     className={cn(
-                      "p-1.5 rounded-full text-xs flex items-center",
+                      "p-1 rounded text-xs flex items-center transition-colors",
                       featured === index 
-                        ? "bg-blue-100 text-blue-700" 
-                        : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-100"
+                        ? "bg-blue-100 text-blue-700 cursor-default" 
+                        : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-100 hover:text-blue-600"
                     )}
                   >
-                    <Star className="h-3 w-3 mr-1" />
-                    <span>{featured === index ? 'Main' : 'Set Main'}</span>
+                    <Star className="h-2.5 w-2.5 mr-0.5" />
+                    <span className="hidden md:inline text-[10px]">{featured === index ? 'Main' : 'Set'}</span>
                   </button>
                   
                   <button
                     type="button"
-                    onClick={() => handleDeleteImage(index)}
-                    className="p-1.5 rounded-full bg-white text-red-600 border border-gray-300 hover:bg-red-50"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDeleteImage(index);
+                    }}
+                    className="p-1.5 rounded-full bg-white text-red-600 border border-gray-300 hover:bg-red-50 transition-colors"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-3 w-3" />
                   </button>
                 </div>
               </div>
@@ -401,13 +396,13 @@ const MediaUpload = ({
       )}
 
       {/* Image count warning */}
-      {uploadedImages.length < 3 && (
+      {images.length < 3 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4">
           <div className="flex items-start">
             <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 mr-3 flex-shrink-0" />
             <div>
               <p className="text-sm font-medium text-amber-800">
-                You need to upload at least 3 images ({uploadedImages.length}/3)
+                You need to upload at least 3 images ({images.length}/3)
               </p>
               <p className="text-sm text-amber-700 mt-1">
                 High-quality images improve your listing's appeal and increase chances of getting inquiries.
