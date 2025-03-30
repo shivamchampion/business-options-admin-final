@@ -4,7 +4,16 @@ import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'react-hot-toast';
-import { CheckCircle, AlertTriangle, ChevronLeft, ChevronRight, Save } from 'lucide-react';
+import { 
+  CheckCircle, 
+  AlertTriangle, 
+  ChevronLeft, 
+  ChevronRight, 
+  Save,
+  AlertCircle,
+  ArrowLeft,
+  X
+} from 'lucide-react';
 import { useLoading } from '@/context/LoadingContext';
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -20,6 +29,7 @@ import {
 } from '@/services/listingService';
 import { seedIndustriesData } from '@/services/industryService';
 import { ListingType, ListingStatus, ListingPlan } from '@/types/listings';
+import { cn } from '@/lib/utils';
 
 // Classification schema for industry-category-subcategory
 const classificationSchema = z.object({
@@ -79,6 +89,9 @@ const listingSchema = z.object({
     preferredContactMethod: z.string().optional(),
   }),
 
+  // Media validation
+  mediaValidation: z.any().optional(),
+  
   // Media and type-specific fields are handled separately
 }).catchall(z.any());
 
@@ -147,20 +160,109 @@ const steps = [
   { id: 'review', title: 'Review & Submit', component: ReviewSubmit },
 ];
 
-export default function ListingForm({ isEdit = false }) {
+// Storage keys
+const STORAGE_KEYS = {
+  FORM_DATA: 'listingFormData',
+  IMAGES: 'listingFormImages',
+  FEATURED_IMAGE: 'listingFormFeaturedImage',
+  STEP: 'listingFormStep'
+};
+
+// Helper function for safe localStorage operations
+const safeStorage = {
+  get: (key, defaultValue = null) => {
+    try {
+      const value = localStorage.getItem(key);
+      return value ? JSON.parse(value) : defaultValue;
+    } catch (error) {
+      console.error(`Error retrieving ${key} from localStorage:`, error);
+      return defaultValue;
+    }
+  },
+  set: (key, value) => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      return true;
+    } catch (error) {
+      console.error(`Error saving ${key} to localStorage:`, error);
+      return false;
+    }
+  },
+  remove: (key) => {
+    try {
+      localStorage.removeItem(key);
+      return true;
+    } catch (error) {
+      console.error(`Error removing ${key} from localStorage:`, error);
+      return false;
+    }
+  },
+  clear: () => {
+    try {
+      Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
+      return true;
+    } catch (error) {
+      console.error(`Error clearing localStorage:`, error);
+      return false;
+    }
+  }
+};
+
+// Helper function to sanitize images for storage
+const sanitizeImagesForStorage = (images) => {
+  if (!images || !Array.isArray(images)) return [];
+  
+  return images.map(image => {
+    if (!image) return null;
+    
+    // Create a new clean object
+    return {
+      id: image.id || `img-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      name: image.name || 'image',
+      size: image.size || 0,
+      url: image.url || image.preview || '',
+      preview: image.preview || image.url || '',
+      path: image.path || '',
+      type: image.type || 'image/jpeg'
+    };
+  }).filter(Boolean); // Remove any nulls
+};
+
+function ListingForm({ isEdit = false }) {
   const navigate = useNavigate();
   const { id } = useParams();
   const { startLoading, stopLoading } = useLoading();
 
-  const [currentStep, setCurrentStep] = useState(0);
+  // Synchronously load the stored step from localStorage first
+  const initialStep = (() => {
+    try {
+      const savedStep = localStorage.getItem(STORAGE_KEYS.STEP);
+      if (savedStep !== null) {
+        const stepIndex = parseInt(savedStep, 10);
+        if (!isNaN(stepIndex) && stepIndex >= 0 && stepIndex < steps.length) {
+          return stepIndex;
+        }
+      }
+    } catch (e) {
+      console.error("Error loading initial step:", e);
+    }
+    return 0;
+  })();
+
+  const [currentStep, setCurrentStep] = useState(initialStep);
   const [listing, setListing] = useState(null);
-  const [isLoading, setIsLoading] = useState(isEdit);
+  const [isLoading, setIsLoading] = useState(false);
   const [uploadedImages, setUploadedImages] = useState([]);
   const [uploadedDocuments, setUploadedDocuments] = useState([]);
   const [imagesToDelete, setImagesToDelete] = useState([]);
   const [documentsToDelete, setDocumentsToDelete] = useState([]);
   const [saveAsDraft, setSaveAsDraft] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [stepErrors, setStepErrors] = useState({});
+  const [showErrorSummary, setShowErrorSummary] = useState(false);
+  const [featuredImageIndex, setFeaturedImageIndex] = useState(0);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   // Initialize react-hook-form
   const methods = useForm({
@@ -190,69 +292,334 @@ export default function ListingForm({ isEdit = false }) {
         email: '',
         phone: '',
       },
-    }
+      mediaValidation: false
+    },
+    shouldUnregister: false
   });
 
-  const { handleSubmit, reset, trigger, formState: { errors, isValid, isDirty }, watch, setValue } = methods;
+  const { handleSubmit, reset, trigger, formState: { errors }, watch, setValue } = methods;
 
   // Watch listing type to update type-specific forms
   const listingType = watch('type');
 
-  // Initialize by checking for industry data and seeding if needed
+  // INITIAL DATA LOAD - Load data from localStorage first, then from server if in edit mode
   useEffect(() => {
-    const initializeData = async () => {
-      // Call seed function to ensure industries data exists
-      try {
-        await seedIndustriesData();
-      } catch (error) {
-        console.error('Error initializing industry data:', error);
-        // This isn't fatal, so we won't show an error to the user
+    const initForm = async () => {
+      setInitialLoading(true); // Start loading spinner
+      
+      // Immediately load from localStorage (already loaded step in useState initialization)
+      // If in non-edit mode, load the rest from localStorage
+      if (!isEdit) {
+        const savedFormData = safeStorage.get(STORAGE_KEYS.FORM_DATA);
+        const savedImages = safeStorage.get(STORAGE_KEYS.IMAGES, []);
+        const savedFeatured = safeStorage.get(STORAGE_KEYS.FEATURED_IMAGE, 0);
+
+        if (savedFormData) {
+          reset(savedFormData);
+        }
+
+        if (savedImages && savedImages.length > 0) {
+          // Make sure images have all required properties
+          const processedImages = savedImages.map((img, idx) => ({
+            ...img,
+            id: img.id || `local-img-${idx}`,
+            url: img.url || img.preview || '',
+            preview: img.preview || img.url || '',
+            type: img.type || 'image/jpeg'
+          }));
+          
+          setUploadedImages(processedImages);
+          setValue('mediaValidation', processedImages.length >= 3);
+        }
+
+        if (savedFeatured !== null) {
+          setFeaturedImageIndex(parseInt(savedFeatured, 10));
+        }
+        
+        setDataLoaded(true);
+        setInitialLoading(false); // End loading spinner for localStorage load
       }
-    };
-    
-    initializeData();
-  }, []);
-  
-  // Load existing listing data if in edit mode
-  useEffect(() => {
-    if (isEdit && id) {
-      const fetchListing = async () => {
-        try {
+
+      try {
+        // Seed industry data (can happen in background)
+        await seedIndustriesData();
+        
+        // If in edit mode, load from server
+        if (isEdit && id) {
           setIsLoading(true);
           startLoading('Loading listing data...');
-
-          const listingData = await getListingById(id);
-          setListing(listingData);
-
-          // Migrate data to support the new classifications structure
-          const migratedData = migrateListingData(listingData);
-
-          // Initialize form with listing data
-          reset(migratedData);
-
-          // Initialize media state
-          if (listingData.media?.galleryImages) {
-            setUploadedImages(listingData.media.galleryImages);
+          
+          try {
+            const listingData = await getListingById(id);
+            setListing(listingData);
+            
+            // Migrate and reset form data
+            const migratedData = migrateListingData(listingData);
+            reset(migratedData);
+            
+            // Process images
+            if (listingData.media?.galleryImages) {
+              const processedImages = listingData.media.galleryImages.map((img, idx) => ({
+                ...img,
+                id: img.id || `server-img-${idx}`,
+                url: img.url || img.preview || '',
+                preview: img.preview || img.url || '',
+                type: img.type || 'image/jpeg'
+              }));
+              
+              setUploadedImages(processedImages);
+              setValue('mediaValidation', processedImages.length >= 3);
+              
+              // Set first image as featured
+              if (processedImages.length > 0) {
+                setFeaturedImageIndex(0);
+              }
+            }
+            
+            // Load documents
+            if (listingData.documents) {
+              setUploadedDocuments(listingData.documents);
+            }
+            
+            setDataLoaded(true);
+          } catch (error) {
+            console.error('Error loading listing:', error);
+            toast.error('Failed to load listing data. Please try again.');
+            navigate('/listings');
+          } finally {
+            setIsLoading(false);
+            stopLoading();
+            setInitialLoading(false); // End loading spinner after server load
           }
-
-          // Initialize documents state
-          if (listingData.documents) {
-            setUploadedDocuments(listingData.documents);
-          }
-
-        } catch (error) {
-          console.error('Error loading listing:', error);
-          toast.error('Failed to load listing data. Please try again.');
-          navigate('/listings');
-        } finally {
-          setIsLoading(false);
-          stopLoading();
+        } else {
+          setInitialLoading(false); // Make sure loading ends if not in edit mode
         }
-      };
+      } catch (error) {
+        console.error('Error initializing form:', error);
+        setDataLoaded(true); // Continue despite errors
+        setInitialLoading(false); // End loading spinner if there's an error
+      }
+    };
 
-      fetchListing();
+    initForm();
+  }, [id, isEdit, navigate, reset, startLoading, stopLoading, setValue]);
+
+  // Save current step to localStorage whenever it changes
+  useEffect(() => {
+    if (!isEdit) {
+      safeStorage.set(STORAGE_KEYS.STEP, currentStep);
     }
-  }, [isEdit, id, reset, navigate, startLoading, stopLoading]);
+  }, [currentStep, isEdit]);
+  
+  // Save featured image index
+  useEffect(() => {
+    if (!isEdit) {
+      safeStorage.set(STORAGE_KEYS.FEATURED_IMAGE, featuredImageIndex);
+    }
+  }, [featuredImageIndex, isEdit]);
+  
+  // Save form data with debounce
+  useEffect(() => {
+    if (isEdit) return;
+    
+    let timeout = null;
+    
+    const saveFormData = () => {
+      const formData = methods.getValues();
+      
+      // Create a clean copy
+      const cleanData = { ...formData };
+      delete cleanData.mediaUploads;
+      
+      safeStorage.set(STORAGE_KEYS.FORM_DATA, cleanData);
+    };
+    
+    const debouncedSave = () => {
+      if (timeout) clearTimeout(timeout);
+      timeout = setTimeout(saveFormData, 300);
+    };
+    
+    // Watch form changes
+    const subscription = methods.watch(debouncedSave);
+    
+    return () => {
+      if (timeout) clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
+  }, [methods, isEdit]);
+  
+  // Update error state
+  useEffect(() => {
+    const newErrors = {};
+    
+    // Basic Info errors (step 0)
+    const basicInfoFields = ['name', 'type', 'classifications', 'description', 'status', 'plan', 'location', 'contactInfo'];
+    const hasBasicInfoErrors = Object.keys(errors).some(key => 
+      basicInfoFields.some(field => key === field || key.startsWith(`${field}.`))
+    );
+    
+    if (hasBasicInfoErrors) {
+      newErrors[0] = true;
+    }
+    
+    // Media errors (step 1)
+    if (uploadedImages.length < 3) {
+      newErrors[1] = true;
+    }
+    
+    // Details errors (step 2)
+    const detailsPrefix = listingType ? `${listingType}Details` : '';
+    const hasDetailsErrors = Object.keys(errors).some(key => key.startsWith(detailsPrefix));
+    
+    if (hasDetailsErrors) {
+      newErrors[2] = true;
+    }
+    
+    setStepErrors(newErrors);
+  }, [errors, listingType, uploadedImages.length]);
+
+  // Handle image upload - Direct implementation
+  const handleImageUpload = (files) => {
+    // Validate files first
+    if (!files || !Array.isArray(files) || files.length === 0) {
+      console.warn("No valid files to upload");
+      return;
+    }
+    
+    // Create a copy of the current images
+    const currentImages = [...uploadedImages];
+    const wasEmpty = currentImages.length === 0;
+    
+    // Add the new images
+    const newImages = [...currentImages, ...files];
+    
+    // Update state
+    setUploadedImages(newImages);
+    
+    // Set featured image if this is the first upload
+    if (wasEmpty && files.length > 0) {
+      setFeaturedImageIndex(0);
+      safeStorage.set(STORAGE_KEYS.FEATURED_IMAGE, 0);
+    }
+    
+    // Update validation
+    setValue('mediaValidation', newImages.length >= 3);
+    
+    // Save to localStorage
+    safeStorage.set(STORAGE_KEYS.IMAGES, sanitizeImagesForStorage(newImages));
+    
+    console.log("Images updated:", newImages.length);
+  };
+
+  // Handle image deletion
+  const handleImageDelete = (imageToDelete) => {
+    // Add to delete list if it's a server image
+    if (imageToDelete.url || imageToDelete.path) {
+      setImagesToDelete(prev => [...prev, imageToDelete.path || imageToDelete.url]);
+    }
+    
+    // Find the image index
+    const imageIndex = uploadedImages.findIndex(img => {
+      if (imageToDelete.id && img.id) return img.id === imageToDelete.id;
+      if (imageToDelete.path && img.path) return img.path === imageToDelete.path;
+      if (imageToDelete.url && img.url) return img.url === imageToDelete.url;
+      return img === imageToDelete;
+    });
+    
+    // If image not found, exit
+    if (imageIndex === -1) {
+      console.warn("Image not found:", imageToDelete);
+      return;
+    }
+    
+    // Create new array without the deleted image
+    const newImages = [...uploadedImages];
+    newImages.splice(imageIndex, 1);
+    
+    // Update state
+    setUploadedImages(newImages);
+    
+    // Handle featured image adjustment
+    if (imageIndex === featuredImageIndex) {
+      // If deleting the featured image, set the first remaining as featured
+      if (newImages.length > 0) {
+        setFeaturedImageIndex(0);
+        safeStorage.set(STORAGE_KEYS.FEATURED_IMAGE, 0);
+      } else {
+        setFeaturedImageIndex(-1);
+        safeStorage.set(STORAGE_KEYS.FEATURED_IMAGE, -1);
+      }
+    } else if (imageIndex < featuredImageIndex) {
+      // If deleting before the featured image, decrement index
+      const newIndex = featuredImageIndex - 1;
+      setFeaturedImageIndex(newIndex);
+      safeStorage.set(STORAGE_KEYS.FEATURED_IMAGE, newIndex);
+    }
+    
+    // Update validation
+    setValue('mediaValidation', newImages.length >= 3);
+    
+    // Save to localStorage
+    safeStorage.set(STORAGE_KEYS.IMAGES, sanitizeImagesForStorage(newImages));
+    
+    console.log("Image deleted, remaining:", newImages.length);
+  };
+
+  // Handle setting featured image
+  const handleSetFeatured = (index) => {
+    setFeaturedImageIndex(index);
+    safeStorage.set(STORAGE_KEYS.FEATURED_IMAGE, index);
+  };
+
+  // Handle document upload
+  const handleDocumentUpload = (files) => {
+    setUploadedDocuments(prev => [...prev, ...files]);
+  };
+
+  // Handle document deletion
+  const handleDocumentDelete = (docToDelete) => {
+    if (docToDelete.url || docToDelete.id) {
+      setDocumentsToDelete(prev => [...prev, docToDelete.id]);
+    }
+    
+    setUploadedDocuments(prev => {
+      if (docToDelete.id) {
+        return prev.filter(doc => doc.id !== docToDelete.id);
+      }
+      return prev.filter(doc => doc !== docToDelete);
+    });
+  };
+
+  // Handle save as draft
+  const handleSaveAsDraft = () => {
+    setSaveAsDraft(true);
+    setValue('status', ListingStatus.DRAFT);
+    handleSubmit(onSubmit)();
+  };
+
+  // Extract error messages for display
+  const getErrorMessages = (errors) => {
+    const messages = [];
+
+    const extractErrors = (obj, path = '') => {
+      if (!obj) return;
+
+      if (obj.message) {
+        messages.push({ path, message: obj.message });
+        return;
+      }
+
+      if (typeof obj === 'object') {
+        Object.entries(obj).forEach(([key, value]) => {
+          const newPath = path ? `${path}.${key}` : key;
+          extractErrors(value, newPath);
+        });
+      }
+    };
+
+    extractErrors(errors);
+    return messages;
+  };
 
   // Handle next step
   const handleNext = async () => {
@@ -267,7 +634,13 @@ export default function ListingForm({ isEdit = false }) {
         fieldsToValidate.push('name', 'type', 'classifications', 'description', 'status', 'plan', 'location', 'contactInfo');
         break;
       case 1: // Media
-        // Media validation is handled in the component
+        fieldsToValidate.push('mediaValidation');
+        
+        // Check if we have enough images
+        if (uploadedImages.length < 3) {
+          toast.error('Please upload at least 3 images to continue');
+          return;
+        }
         break;
       case 2: // Details
         // Type-specific validation
@@ -299,7 +672,8 @@ export default function ListingForm({ isEdit = false }) {
 
       if (!isStepValid) {
         // Highlight errors
-        toast.error('Please fix the errors before proceeding.');
+        setShowErrorSummary(true);
+        toast.error('Please fix the errors before proceeding');
         return;
       }
     }
@@ -308,6 +682,7 @@ export default function ListingForm({ isEdit = false }) {
     if (currentStep < steps.length - 1) {
       setCurrentStep(currentStep + 1);
       window.scrollTo(0, 0);
+      setShowErrorSummary(false);
     } else {
       // Submit form on final step
       handleSubmit(onSubmit)();
@@ -319,73 +694,9 @@ export default function ListingForm({ isEdit = false }) {
     if (currentStep > 0) {
       setCurrentStep(currentStep - 1);
       window.scrollTo(0, 0);
+      setShowErrorSummary(false);
     }
   };
-
-  // Handle image upload
-  const handleImageUpload = (files) => {
-    setUploadedImages(prev => [...prev, ...files]);
-  };
-
-  // Handle image deletion
-  const handleImageDelete = (imageToDelete) => {
-    if (imageToDelete.url) {
-      // Existing image
-      setImagesToDelete(prev => [...prev, imageToDelete.path]);
-      setUploadedImages(prev => prev.filter(img => img.path !== imageToDelete.path));
-    } else {
-      // New image not yet uploaded
-      setUploadedImages(prev => prev.filter(img => img !== imageToDelete));
-    }
-  };
-
-  // Handle document upload
-  const handleDocumentUpload = (files) => {
-    setUploadedDocuments(prev => [...prev, ...files]);
-  };
-
-  // Handle document deletion
-  const handleDocumentDelete = (docToDelete) => {
-    if (docToDelete.url) {
-      // Existing document
-      setDocumentsToDelete(prev => [...prev, docToDelete.id]);
-      setUploadedDocuments(prev => prev.filter(doc => doc.id !== docToDelete.id));
-    } else {
-      // New document not yet uploaded
-      setUploadedDocuments(prev => prev.filter(doc => doc !== docToDelete));
-    }
-  };
-
-  // Handle save as draft
-  const handleSaveAsDraft = () => {
-    setSaveAsDraft(true);
-    setValue('status', ListingStatus.DRAFT);
-    handleSubmit(onSubmit)();
-  };
-
-  const getErrorMessages = (errors) => {
-    const messages = [];
-
-    const extractErrors = (obj, path = '') => {
-      if (!obj) return;
-
-      if (obj.message) {
-        messages.push({ path, message: obj.message });
-        return;
-      }
-
-      if (typeof obj === 'object') {
-        Object.entries(obj).forEach(([key, value]) => {
-          const newPath = path ? `${path}.${key}` : key;
-          extractErrors(value, newPath);
-        });
-      }
-    };
-
-    extractErrors(errors);
-    return messages;
-  };
-
 
   // Form submission
   const onSubmit = async (data) => {
@@ -404,6 +715,8 @@ export default function ListingForm({ isEdit = false }) {
         ...data,
         // Set short description if not provided
         shortDescription: data.shortDescription || data.description.substring(0, 150) + '...',
+        // Set featured image
+        featuredImageIndex
       };
 
       // Create or update listing
@@ -425,6 +738,9 @@ export default function ListingForm({ isEdit = false }) {
           uploadedDocuments
         );
 
+        // Clear stored form data on success
+        safeStorage.clear();
+
         toast.success('Listing created successfully!');
         navigate(`/listings/${newListingId}`);
       }
@@ -438,16 +754,31 @@ export default function ListingForm({ isEdit = false }) {
   };
 
   // Loading state
-  if (isLoading) {
+  if (isLoading || initialLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
-        <LoadingSpinner size="lg" color="primary" text="Loading listing data..." />
+        <LoadingSpinner size="lg" color="primary" text={initialLoading ? "Loading saved form data..." : "Loading listing data..."} />
       </div>
     );
   }
 
   // Get current step component
   const StepComponent = steps[currentStep].component;
+  
+  // Get error summary for current step
+  const currentStepErrorMessages = getErrorMessages(errors).filter(error => {
+    switch (currentStep) {
+      case 0: // Basic Info
+        return ['name', 'type', 'classifications', 'description', 'status', 'plan', 'location', 'contactInfo'].some(field => 
+          error.path === field || error.path.startsWith(`${field}.`)
+        );
+      case 2: // Details
+        const detailsPrefix = listingType ? `${listingType}Details` : '';
+        return error.path.startsWith(detailsPrefix);
+      default:
+        return false;
+    }
+  });
 
   return (
     <div className="w-full px-4 md:px-6 mx-auto">
@@ -457,7 +788,7 @@ export default function ListingForm({ isEdit = false }) {
           {steps.map((step, index) => (
             <React.Fragment key={step.id}>
               {/* Step indicator */}
-              <div className="flex flex-col items-center">
+              <div className="flex flex-col items-center relative">
                 <div
                   className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center border-2 transition-colors duration-200 ${
                     index < currentStep
@@ -473,6 +804,14 @@ export default function ListingForm({ isEdit = false }) {
                     <span className="text-sm md:text-base font-medium">{index + 1}</span>
                   )}
                 </div>
+                
+                {/* Error indicator */}
+                {stepErrors[index] && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-xs z-10">
+                    !
+                  </span>
+                )}
+                
                 <span className={`text-xs md:text-sm mt-2 font-medium text-center ${
                   index <= currentStep ? 'text-[#0031ac]' : 'text-gray-500'
                 }`}>
@@ -508,38 +847,55 @@ export default function ListingForm({ isEdit = false }) {
             </div>
 
             {/* Error summary if submission attempted */}
-            {submitAttempted && Object.keys(errors).length > 0 && (
+            {submitAttempted && showErrorSummary && currentStepErrorMessages.length > 0 && (
               <div className="mb-6 p-4 border border-red-200 bg-red-50 rounded-lg">
                 <div className="flex items-start">
-                  <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
-                  <div>
-                    <h3 className="text-sm font-medium text-red-800">Please fix the following errors:</h3>
-                    <ul className="mt-1 text-sm text-red-700 list-disc list-inside">
-                      {getErrorMessages(errors).map((error, index) => (
-                        <li key={index}>{error.message}</li>
+                  <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-medium text-red-800">Please fix the following errors:</h3>
+                      <button 
+                        type="button"
+                        onClick={() => setShowErrorSummary(false)}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <ul className="mt-2 text-sm text-red-700 space-y-1">
+                      {currentStepErrorMessages.map((error, index) => (
+                        <li key={index} className="flex items-start">
+                          <span className="mr-2">•</span>
+                          <span>{error.message}</span>
+                        </li>
                       ))}
                     </ul>
                   </div>
                 </div>
               </div>
             )}
+            
             {/* Step Content */}
             <div className="mb-8">
               <StepComponent
                 uploadedImages={uploadedImages}
                 onImageUpload={handleImageUpload}
                 onImageDelete={handleImageDelete}
+                onSetFeatured={handleSetFeatured}
+                featuredImageIndex={featuredImageIndex}
                 uploadedDocuments={uploadedDocuments}
                 onDocumentUpload={handleDocumentUpload}
                 onDocumentDelete={handleDocumentDelete}
                 submitAttempted={submitAttempted}
+                isLoading={!dataLoaded}
+                listingType={listingType}
               />
             </div>
 
             {/* Navigation Buttons */}
             <div className="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-gray-200">
               <div>
-                {currentStep > 0 && (
+                {currentStep > 0 ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -547,6 +903,15 @@ export default function ListingForm({ isEdit = false }) {
                     leftIcon={<ChevronLeft className="h-4 w-4" />}
                   >
                     Previous
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => navigate('/listings')}
+                    leftIcon={<ArrowLeft className="h-4 w-4" />}
+                  >
+                    Back to Listings
                   </Button>
                 )}
               </div>
@@ -577,3 +942,5 @@ export default function ListingForm({ isEdit = false }) {
     </div>
   );
 }
+
+export default ListingForm;

@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { motion } from 'framer-motion';
+import { 
+  AlertTriangle, 
+  Info, 
+  HelpCircle,
+  AlertCircle,
+  ChevronRight
+} from 'lucide-react';
 import { ListingType } from '@/types/listings';
-import { AlertTriangle, Info } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 // Import type-specific forms
 import BusinessForm from '../business/BusinessForm';
@@ -18,10 +25,26 @@ const fadeVariants = {
   exit: { opacity: 0, transition: { duration: 0.2 } }
 };
 
+// Tooltip component (reused from BasicInfo for consistency)
+const Tooltip = ({ content, children }) => {
+  return (
+    <div className="group relative inline-block">
+      {children}
+      <div className="absolute z-10 w-60 opacity-0 invisible group-hover:opacity-100 group-hover:visible transform -translate-x-1/2 left-1/2 bottom-full mb-2 transition-all duration-150">
+        <div className="relative bg-gray-800 text-white text-xs rounded p-2 text-center shadow-lg">
+          {content}
+          <div className="absolute w-2 h-2 bg-gray-800 transform rotate-45 translate-y-1 translate-x-0 left-1/2 -ml-1 bottom-0"></div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ListingDetails = () => {
   const { control, formState: { errors } } = useFormContext();
   const [isLoading, setIsLoading] = useState(false);
-  const [prevType, setPrevType] = useState<ListingType | null>(null);
+  const [prevType, setPrevType] = useState(null);
+  const [expandedErrors, setExpandedErrors] = useState(false);
   
   // Watch the listing type to render the appropriate form
   const listingType = useWatch({
@@ -58,6 +81,24 @@ const ListingDetails = () => {
         return "Please provide details about your digital asset, including technical information, traffic data, and sale requirements.";
       default:
         return "Please select a listing type and provide the required details.";
+    }
+  };
+
+  // Function to get type-specific form title
+  const getTypeTitle = () => {
+    switch (listingType) {
+      case ListingType.BUSINESS:
+        return "Business Details";
+      case ListingType.FRANCHISE:
+        return "Franchise Opportunity Details";
+      case ListingType.STARTUP:
+        return "Startup Details";
+      case ListingType.INVESTOR:
+        return "Investor Profile Details";
+      case ListingType.DIGITAL_ASSET:
+        return "Digital Asset Details";
+      default:
+        return "Listing Details";
     }
   };
 
@@ -114,12 +155,34 @@ const ListingDetails = () => {
     }
   };
 
+  // Get all errors for the current listing type
+  const getTypeErrors = () => {
+    const result = [];
+    const prefix = listingType ? listingType + 'Details' : '';
+    
+    if (!prefix) return result;
+    
+    Object.entries(errors).forEach(([key, value]) => {
+      if (key.startsWith(prefix)) {
+        const field = key.replace(prefix + '.', '');
+        result.push({
+          field: field.charAt(0).toUpperCase() + field.slice(1).replace(/([A-Z])/g, ' $1'),
+          message: value.message
+        });
+      }
+    });
+    
+    return result;
+  };
+
+  const typeErrors = getTypeErrors();
+
   return (
     <div className="space-y-6">
       {/* Step Header */}
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-gray-900">
-          {listingType ? `${listingType.charAt(0).toUpperCase() + listingType.slice(1)} Details` : 'Listing Details'}
+          {getTypeTitle()}
         </h2>
         <p className="text-sm text-gray-500 mt-1">
           Step 3 of 5: Provide specific details about your {listingType} listing
@@ -127,21 +190,46 @@ const ListingDetails = () => {
       </div>
 
       {/* Instructions */}
-      <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 flex items-start">
+      <div className="p-4 border border-blue-200 bg-blue-50 rounded-lg flex items-start">
         <Info className="h-5 w-5 text-blue-500 mr-3 mt-0.5 flex-shrink-0" />
         <div className="text-sm text-blue-700">
+          <p className="font-medium mb-1">Detailed Information</p>
           <p>{getTypeInstructions()}</p>
-          <p className="mt-2">All fields marked with * are required.</p>
+          <p className="mt-2">All fields marked with an asterisk (*) are required.</p>
         </div>
       </div>
 
       {/* Error Warning */}
       {hasTypeErrors() && (
-        <div className="bg-red-50 border border-red-100 rounded-lg p-4 flex items-start">
-          <AlertTriangle className="h-5 w-5 text-red-500 mr-3 mt-0.5 flex-shrink-0" />
-          <div className="text-sm text-red-700">
-            <p className="font-medium">There are errors in your form</p>
-            <p>Please review the highlighted fields and correct the errors before proceeding.</p>
+        <div className="p-4 border border-red-200 bg-red-50 rounded-lg">
+          <div className="flex items-start">
+            <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
+            <div className="text-sm text-red-700 flex-1">
+              <p className="font-medium mb-1">There are errors in your form</p>
+              <p>Please review the highlighted fields and correct the errors before proceeding.</p>
+              
+              {typeErrors.length > 0 && (
+                <div className="mt-2">
+                  <button 
+                    onClick={() => setExpandedErrors(!expandedErrors)}
+                    className="flex items-center text-sm font-medium text-red-700 hover:text-red-800"
+                  >
+                    <ChevronRight className={`h-4 w-4 mr-1 transition-transform ${expandedErrors ? 'rotate-90' : ''}`} />
+                    {expandedErrors ? 'Hide error details' : 'Show error details'}
+                  </button>
+                  
+                  {expandedErrors && (
+                    <ul className="mt-2 space-y-1 pl-6 list-disc">
+                      {typeErrors.map((error, index) => (
+                        <li key={index}>
+                          <span className="font-medium">{error.field}:</span> {error.message}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -153,7 +241,7 @@ const ListingDetails = () => {
         animate="visible"
         exit="exit"
         variants={fadeVariants}
-        className="space-y-8"
+        className="space-y-8 bg-white rounded-lg"
       >
         {renderForm()}
       </motion.div>
