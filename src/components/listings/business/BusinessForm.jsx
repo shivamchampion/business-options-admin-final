@@ -2,26 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Info, HelpCircle } from 'lucide-react';
-import { Tooltip } from '@/components/ui/Tooltip';
-import {
-  FormField,
-  FormItem,
-  FormLabel,
-  FormControl,
-  FormDescription,
-  FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Slider } from '@/components/ui/slider';
-import { Switch } from '@/components/ui/switch';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Info, HelpCircle, ChevronDownIcon, CheckIcon } from 'lucide-react';
+import  Tooltip  from '@/components/ui/Tooltip';
+import { Listbox, Transition, Disclosure, Switch as HeadlessSwitch, RadioGroup, Combobox } from '@headlessui/react';
+
+import { Fragment } from 'react';
 import { BusinessType, EntityType, LocationType, RevenueTrend } from '@/types/listings';
-import { currencyFormatter, percentageFormatter } from '@/lib/utils';
+
 import { cn } from '@/lib/utils';
 
 // Validation schema for the Business form
@@ -271,6 +258,167 @@ const revenueTrendOptions = [
   { value: RevenueTrend.DECLINING, label: "Declining (<-10%)" },
 ];
 
+// Custom form components using Headless UI
+const Card = ({ children, className }) => {
+  return (
+    <div className={`bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden ${className}`}>
+      {children}
+    </div>
+  );
+};
+
+const CardHeader = ({ children, className }) => {
+  return <div className={`px-6 py-4 border-b border-gray-100 ${className}`}>{children}</div>;
+};
+
+const CardTitle = ({ children, className }) => {
+  return <h3 className={`text-xl font-semibold text-gray-900 ${className}`}>{children}</h3>;
+};
+
+const CardContent = ({ children, className }) => {
+  return <div className={`p-6 ${className}`}>{children}</div>;
+};
+
+const Input = React.forwardRef(({ type = "text", className, ...props }, ref) => {
+  return (
+    <input
+      type={type}
+      className={`w-full rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 ${className}`}
+      ref={ref}
+      {...props}
+    />
+  );
+});
+
+const Textarea = React.forwardRef(({ className, ...props }, ref) => {
+  return (
+    <textarea
+      className={`w-full rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 ${className}`}
+      ref={ref}
+      {...props}
+    />
+  );
+});
+
+const FormItem = ({ children, className }) => {
+  return <div className={`space-y-1 ${className}`}>{children}</div>;
+};
+
+const FormLabel = ({ children, className }) => {
+  return (
+    <label className={`block text-sm font-medium text-gray-700 ${className}`}>
+      {children}
+    </label>
+  );
+};
+
+const FormDescription = ({ children, className }) => {
+  return (
+    <p className={`text-sm text-gray-500 ${className}`}>
+      {children}
+    </p>
+  );
+};
+
+const FormMessage = ({ children, className }) => {
+  if (!children) return null;
+  
+  return (
+    <p className={`mt-1 text-sm text-red-600 ${className}`}>
+      {children}
+    </p>
+  );
+};
+
+// Custom Headless UI Select component
+const SelectWrapper = ({ value, onChange, options, placeholder, error }) => {
+  const selectedOption = options.find(option => option.value === value) || null;
+  
+  return (
+    <Listbox value={value} onChange={onChange}>
+      {({ open }) => (
+        <div className="relative">
+          <Listbox.Button
+            className={`relative w-full rounded-md border ${error ? 'border-red-300' : 'border-gray-300'} bg-white py-2 pl-3 pr-10 text-left shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm`}
+          >
+            <span className="block truncate">
+              {selectedOption ? selectedOption.label : placeholder}
+            </span>
+            <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+              <ChevronDownIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+            </span>
+          </Listbox.Button>
+
+          <Transition
+            show={open}
+            as={Fragment}
+            leave="transition ease-in duration-100"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <Listbox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
+              {options.map((option) => (
+                <Listbox.Option
+                  key={option.value}
+                  className={({ active }) =>
+                    `relative cursor-default select-none py-2 pl-10 pr-4 ${
+                      active ? 'bg-blue-100 text-blue-900' : 'text-gray-900'
+                    }`
+                  }
+                  value={option.value}
+                >
+                  {({ selected, active }) => (
+                    <>
+                      <span
+                        className={`block truncate ${
+                          selected ? 'font-medium' : 'font-normal'
+                        }`}
+                      >
+                        {option.label}
+                      </span>
+                      {selected ? (
+                        <span
+                          className={`absolute inset-y-0 left-0 flex items-center pl-3 ${
+                            active ? 'text-blue-600' : 'text-blue-600'
+                          }`}
+                        >
+                          <CheckIcon className="h-5 w-5" aria-hidden="true" />
+                        </span>
+                      ) : null}
+                    </>
+                  )}
+                </Listbox.Option>
+              ))}
+            </Listbox.Options>
+          </Transition>
+        </div>
+      )}
+    </Listbox>
+  );
+};
+
+// Custom checkbox component
+const CheckboxComponent = ({ checked, onChange, label, description }) => {
+  return (
+    <div className="flex items-start space-x-3">
+      <div className="flex h-5 items-center">
+        <input
+          type="checkbox"
+          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+      </div>
+      {(label || description) && (
+        <div className="leading-none">
+          {label && <span className="text-sm font-medium text-gray-700">{label}</span>}
+          {description && <p className="text-sm text-gray-500">{description}</p>}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /**
  * Business Form Component - Step 3 of listing creation
  * Includes all sections as specified in the documentation:
@@ -324,11 +472,6 @@ export default function BusinessForm({
     }
   }, [watch("operations.employees.count"), watch("operations.employees.fullTime")]);
 
-  // Format currency inputs for display
-  const formatCurrency = (value) => {
-    if (!value) return "₹0";
-    return currencyFormatter(parseFloat(value), "INR");
-  };
 
   // Handler for form submission
   const onFormSubmit = (data) => {
@@ -435,152 +578,135 @@ export default function BusinessForm({
           <CardContent className="space-y-6">
             <div className="grid md:grid-cols-2 gap-6">
               {/* Business Type */}
-              <FormField
-                control={control}
-                name="businessType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Business Type <span className="text-red-500">*</span></FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
+              <FormItem>
+                <FormLabel>Business Type <span className="text-red-500">*</span></FormLabel>
+                <Controller
+                  control={control}
+                  name="businessType"
+                  render={({ field }) => (
+                    <SelectWrapper
                       value={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select business type" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {businessTypeOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      The primary business category or industry
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      onChange={field.onChange}
+                      options={businessTypeOptions}
+                      placeholder="Select business type"
+                      error={errors.businessType}
+                    />
+                  )}
+                />
+                <FormDescription>
+                  The primary business category or industry
+                </FormDescription>
+                <FormMessage>{errors.businessType?.message}</FormMessage>
+              </FormItem>
 
               {/* Entity Type */}
-              <FormField
-                control={control}
-                name="entityType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Entity Type <span className="text-red-500">*</span></FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
+              <FormItem>
+                <FormLabel>Entity Type <span className="text-red-500">*</span></FormLabel>
+                <Controller
+                  control={control}
+                  name="entityType"
+                  render={({ field }) => (
+                    <SelectWrapper
                       value={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select entity type" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {entityTypeOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      The legal structure of the business
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      onChange={field.onChange}
+                      options={entityTypeOptions}
+                      placeholder="Select entity type"
+                      error={errors.entityType}
+                    />
+                  )}
+                />
+                <FormDescription>
+                  The legal structure of the business
+                </FormDescription>
+                <FormMessage>{errors.entityType?.message}</FormMessage>
+              </FormItem>
             </div>
 
             <div className="grid md:grid-cols-2 gap-6">
               {/* Year Established */}
-              <FormField
-                control={control}
-                name="establishedYear"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Year Established <span className="text-red-500">*</span></FormLabel>
-                    <FormControl>
-                      <Input 
-                        type="number" 
-                        placeholder="YYYY" 
-                        min={1900} 
-                        max={new Date().getFullYear()} 
-                        {...field} 
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      The year when the business was founded
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <FormItem>
+                <FormLabel>Year Established <span className="text-red-500">*</span></FormLabel>
+                <Controller
+                  control={control}
+                  name="establishedYear"
+                  render={({ field }) => (
+                    <Input 
+                      type="number" 
+                      placeholder="YYYY" 
+                      min={1900} 
+                      max={new Date().getFullYear()} 
+                      {...field} 
+                      className={errors.establishedYear ? "border-red-300" : ""}
+                    />
+                  )}
+                />
+                <FormDescription>
+                  The year when the business was founded
+                </FormDescription>
+                <FormMessage>{errors.establishedYear?.message}</FormMessage>
+              </FormItem>
 
               {/* Registration Number */}
-              <FormField
-                control={control}
-                name="registrationNumber"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Registration Number <span className="text-red-500">*</span></FormLabel>
-                    <FormControl>
-                      <Input placeholder="Enter business registration number" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      The official business registration ID
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <FormItem>
+                <FormLabel>Registration Number <span className="text-red-500">*</span></FormLabel>
+                <Controller
+                  control={control}
+                  name="registrationNumber"
+                  render={({ field }) => (
+                    <Input 
+                      placeholder="Enter business registration number" 
+                      {...field} 
+                      className={errors.registrationNumber ? "border-red-300" : ""}
+                    />
+                  )}
+                />
+                <FormDescription>
+                  The official business registration ID
+                </FormDescription>
+                <FormMessage>{errors.registrationNumber?.message}</FormMessage>
+              </FormItem>
             </div>
 
             <div className="grid md:grid-cols-2 gap-6">
               {/* GST Number */}
-              <FormField
-                control={control}
-                name="gstNumber"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>GST Number</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Enter GST registration number (if applicable)" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      The tax registration number (optional)
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <FormItem>
+                <FormLabel>GST Number</FormLabel>
+                <Controller
+                  control={control}
+                  name="gstNumber"
+                  render={({ field }) => (
+                    <Input 
+                      placeholder="Enter GST registration number (if applicable)" 
+                      {...field} 
+                      className={errors.gstNumber ? "border-red-300" : ""}
+                    />
+                  )}
+                />
+                <FormDescription>
+                  The tax registration number (optional)
+                </FormDescription>
+                <FormMessage>{errors.gstNumber?.message}</FormMessage>
+              </FormItem>
 
               {/* PAN Number */}
-              <FormField
-                control={control}
-                name="panNumber"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>PAN Number</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Enter business PAN number (if applicable)" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      The business tax ID (optional)
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <FormItem>
+                <FormLabel>PAN Number</FormLabel>
+                <Controller
+                  control={control}
+                  name="panNumber"
+                  render={({ field }) => (
+                    <Input 
+                      placeholder="Enter business PAN number (if applicable)" 
+                      {...field} 
+                      className={errors.panNumber ? "border-red-300" : ""}
+                    />
+                  )}
+                />
+                <FormDescription>
+                  The business tax ID (optional)
+                </FormDescription>
+                <FormMessage>{errors.panNumber?.message}</FormMessage>
+              </FormItem>
             </div>
           </CardContent>
         </Card>
@@ -602,271 +728,267 @@ export default function BusinessForm({
               
               <div className="grid md:grid-cols-3 gap-4">
                 {/* Total Employees */}
-                <FormField
-                  control={control}
-                  name="operations.employees.count"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Total Employees <span className="text-red-500">*</span></FormLabel>
-                      <FormControl>
-                        <Input type="number" min="0" {...field} />
-                      </FormControl>
-                      <FormDescription>
-                        Total number of employees
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <FormItem>
+                  <FormLabel>Total Employees <span className="text-red-500">*</span></FormLabel>
+                  <Controller
+                    control={control}
+                    name="operations.employees.count"
+                    render={({ field }) => (
+                      <Input 
+                        type="number" 
+                        min="0" 
+                        {...field} 
+                        className={errors.operations?.employees?.count ? "border-red-300" : ""}
+                      />
+                    )}
+                  />
+                  <FormDescription>
+                    Total number of employees
+                  </FormDescription>
+                  <FormMessage>{errors.operations?.employees?.count?.message}</FormMessage>
+                </FormItem>
 
                 {/* Full-Time Employees */}
-                <FormField
-                  control={control}
-                  name="operations.employees.fullTime"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Full-time <span className="text-red-500">*</span></FormLabel>
-                      <FormControl>
-                        <Input type="number" min="0" {...field} />
-                      </FormControl>
-                      <FormDescription>
-                        Number of full-time employees
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Part-Time Employees */}
-                <FormField
-                  control={control}
-                  name="operations.employees.partTime"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Part-time (calculated)</FormLabel>
-                      <FormControl>
-                        <Input type="number" disabled {...field} />
-                      </FormControl>
-                      <FormDescription>
-                        Auto-calculated from total and full-time
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </div>
-
-            {/* Location Type */}
-            <FormField
-              control={control}
-              name="operations.locationType"
-              render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Location Type <span className="text-red-500">*</span></FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select location type" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {locationTypeOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    The type of business location
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Lease Information - Conditional on Location Type */}
-            {locationType === LocationType.LEASED_COMMERCIAL && (
-              <div className="border border-gray-200 rounded-lg p-4 space-y-4 bg-gray-50">
-                <h3 className="text-base font-medium">Lease Information</h3>
-                
-                <div className="grid md:grid-cols-2 gap-4">
-                  {/* Lease Expiry */}
-                  <FormField
+                  <FormLabel>Full-time <span className="text-red-500">*</span></FormLabel>
+                  <Controller
                     control={control}
-                    name="operations.leaseInformation.expiryDate"
+                    name="operations.employees.fullTime"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Lease Expiry Date <span className="text-red-500">*</span></FormLabel>
-                        <FormControl>
+                      <Input 
+                        type="number" 
+                        min="0" 
+                        {...field} 
+                        className={errors.operations?.employees?.fullTime ? "border-red-300" : ""}/>
+                      )}
+                    />
+                    <FormDescription>
+                      Number of full-time employees
+                    </FormDescription>
+                    <FormMessage>{errors.operations?.employees?.fullTime?.message}</FormMessage>
+                  </FormItem>
+  
+                  {/* Part-Time Employees */}
+                  <FormItem>
+                    <FormLabel>Part-time (calculated)</FormLabel>
+                    <Controller
+                      control={control}
+                      name="operations.employees.partTime"
+                      render={({ field }) => (
+                        <Input 
+                          type="number" 
+                          disabled 
+                          {...field} 
+                        />
+                      )}
+                    />
+                    <FormDescription>
+                      Auto-calculated from total and full-time
+                    </FormDescription>
+                    <FormMessage>{errors.operations?.employees?.partTime?.message}</FormMessage>
+                  </FormItem>
+                </div>
+              </div>
+  
+              {/* Location Type */}
+              <FormItem>
+                <FormLabel>Location Type <span className="text-red-500">*</span></FormLabel>
+                <Controller
+                  control={control}
+                  name="operations.locationType"
+                  render={({ field }) => (
+                    <SelectWrapper
+                      value={field.value}
+                      onChange={field.onChange}
+                      options={locationTypeOptions}
+                      placeholder="Select location type"
+                      error={errors.operations?.locationType}
+                    />
+                  )}
+                />
+                <FormDescription>
+                  The type of business location
+                </FormDescription>
+                <FormMessage>{errors.operations?.locationType?.message}</FormMessage>
+              </FormItem>
+  
+              {/* Lease Information - Conditional on Location Type */}
+              {locationType === LocationType.LEASED_COMMERCIAL && (
+                <div className="border border-gray-200 rounded-lg p-4 space-y-4 bg-gray-50">
+                  <h3 className="text-base font-medium">Lease Information</h3>
+                  
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {/* Lease Expiry */}
+                    <FormItem>
+                      <FormLabel>Lease Expiry Date <span className="text-red-500">*</span></FormLabel>
+                      <Controller
+                        control={control}
+                        name="operations.leaseInformation.expiryDate"
+                        render={({ field }) => (
                           <Input 
                             type="date" 
                             min={new Date().toISOString().split('T')[0]} 
                             onChange={(e) => field.onChange(new Date(e.target.value))}
                             value={field.value ? new Date(field.value).toISOString().split('T')[0] : ''}
+                            className={errors.operations?.leaseInformation?.expiryDate ? "border-red-300" : ""}
                           />
-                        </FormControl>
-                        <FormDescription>
-                          When the current lease expires
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {/* Monthly Lease Cost */}
-                  <FormField
-                    control={control}
-                    name="operations.leaseInformation.monthlyCost.value"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Monthly Lease Cost <span className="text-red-500">*</span></FormLabel>
-                        <FormControl>
+                        )}
+                      />
+                      <FormDescription>
+                        When the current lease expires
+                      </FormDescription>
+                      <FormMessage>{errors.operations?.leaseInformation?.expiryDate?.message}</FormMessage>
+                    </FormItem>
+  
+                    {/* Monthly Lease Cost */}
+                    <FormItem>
+                      <FormLabel>Monthly Lease Cost <span className="text-red-500">*</span></FormLabel>
+                      <Controller
+                        control={control}
+                        name="operations.leaseInformation.monthlyCost.value"
+                        render={({ field }) => (
                           <Input 
                             type="number" 
                             min="0" 
                             placeholder="Monthly rent amount"
                             {...field} 
+                            className={errors.operations?.leaseInformation?.monthlyCost?.value ? "border-red-300" : ""}
                           />
-                        </FormControl>
-                        <FormDescription>
-                          Monthly rent for the property
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                {/* Is Lease Transferable */}
-                <FormField
-                  control={control}
-                  name="operations.leaseInformation.isTransferable"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-                      <div className="space-y-0.5">
-                        <FormLabel>Is Lease Transferable?</FormLabel>
-                        <FormDescription>
-                          Can the lease be transferred to a new owner?
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                      <FormMessage />
+                        )}
+                      />
+                      <FormDescription>
+                        Monthly rent for the property
+                      </FormDescription>
+                      <FormMessage>{errors.operations?.leaseInformation?.monthlyCost?.value?.message}</FormMessage>
                     </FormItem>
-                  )}
-                />
-              </div>
-            )}
-
-            {/* Operation Description */}
-            <FormField
-              control={control}
-              name="operations.operationDescription"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Operation Description <span className="text-red-500">*</span></FormLabel>
-                  <FormControl>
+                  </div>
+  
+                  {/* Is Lease Transferable */}
+                  <div className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                    <div className="space-y-0.5">
+                      <FormLabel>Is Lease Transferable?</FormLabel>
+                      <FormDescription>
+                        Can the lease be transferred to a new owner?
+                      </FormDescription>
+                    </div>
+                    <Controller
+                      control={control}
+                      name="operations.leaseInformation.isTransferable"
+                      render={({ field }) => (
+                        <HeadlessSwitch
+                          checked={field.value}
+                          onChange={field.onChange}
+                          className={`${
+                            field.value ? 'bg-blue-600' : 'bg-gray-200'
+                          } relative inline-flex h-6 w-11 items-center rounded-full`}
+                        >
+                          <span
+                            className={`${
+                              field.value ? 'translate-x-6' : 'translate-x-1'
+                            } inline-block h-4 w-4 transform rounded-full bg-white transition`}
+                          />
+                        </HeadlessSwitch>
+                      )}
+                    />
+                  </div>
+                </div>
+              )}
+  
+              {/* Operation Description */}
+              <FormItem>
+                <FormLabel>Operation Description <span className="text-red-500">*</span></FormLabel>
+                <Controller
+                  control={control}
+                  name="operations.operationDescription"
+                  render={({ field }) => (
                     <Textarea
                       placeholder="Describe the day-to-day operations of the business"
-                      className="min-h-32 resize-y"
+                      className={`min-h-32 resize-y ${errors.operations?.operationDescription ? "border-red-300" : ""}`}
                       {...field}
                     />
-                  </FormControl>
-                  <div className="flex justify-between">
-                    <FormDescription>
-                      Explain how the business operates on a daily basis
-                    </FormDescription>
-                    <div className="text-xs text-gray-500">
-                      {field.value?.length || 0}/1000 characters
-                    </div>
+                  )}
+                />
+                <div className="flex justify-between">
+                  <FormDescription>
+                    Explain how the business operates on a daily basis
+                  </FormDescription>
+                  <div className="text-xs text-gray-500">
+                    {watch("operations.operationDescription")?.length || 0}/1000 characters
                   </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
-
-        {/* Financial Section */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle className="text-xl font-semibold flex items-center">
-              Financial Information
-              <Tooltip content="Details about the business's financial performance">
-                <HelpCircle className="h-4 w-4 ml-2 text-gray-400" />
-              </Tooltip>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Annual Revenue */}
-              <FormField
-                control={control}
-                name="financials.annualRevenue.value"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Annual Revenue <span className="text-red-500">*</span></FormLabel>
-                    <FormControl>
+                </div>
+                <FormMessage>{errors.operations?.operationDescription?.message}</FormMessage>
+              </FormItem>
+            </CardContent>
+          </Card>
+  
+          {/* Financial Section */}
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle className="text-xl font-semibold flex items-center">
+                Financial Information
+                <Tooltip content="Details about the business's financial performance">
+                  <HelpCircle className="h-4 w-4 ml-2 text-gray-400" />
+                </Tooltip>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Annual Revenue */}
+                <FormItem>
+                  <FormLabel>Annual Revenue <span className="text-red-500">*</span></FormLabel>
+                  <Controller
+                    control={control}
+                    name="financials.annualRevenue.value"
+                    render={({ field }) => (
                       <Input 
                         type="number" 
                         min="0"
                         step="1000"
                         placeholder="Annual revenue amount" 
                         {...field} 
+                        className={errors.financials?.annualRevenue?.value ? "border-red-300" : ""}
                       />
-                    </FormControl>
-                    <FormDescription>
-                      Total revenue for the past 12 months
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Monthly Revenue */}
-              <FormField
-                control={control}
-                name="financials.monthlyRevenue.value"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Monthly Revenue <span className="text-red-500">*</span></FormLabel>
-                    <FormControl>
+                    )}
+                  />
+                  <FormDescription>
+                    Total revenue for the past 12 months
+                  </FormDescription>
+                  <FormMessage>{errors.financials?.annualRevenue?.value?.message}</FormMessage>
+                </FormItem>
+  
+                {/* Monthly Revenue */}
+                <FormItem>
+                  <FormLabel>Monthly Revenue <span className="text-red-500">*</span></FormLabel>
+                  <Controller
+                    control={control}
+                    name="financials.monthlyRevenue.value"
+                    render={({ field }) => (
                       <Input 
                         type="number" 
                         min="0"
                         step="1000"
                         placeholder="Average monthly revenue" 
                         {...field} 
+                        className={errors.financials?.monthlyRevenue?.value ? "border-red-300" : ""}
                       />
-                    </FormControl>
-                    <FormDescription>
-                      Average monthly revenue (consistent with annual)
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Profit Margin */}
-              <FormField
-                control={control}
-                name="financials.profitMargin.percentage"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Profit Margin <span className="text-red-500">*</span></FormLabel>
-                    <div className="relative">
-                      <FormControl>
+                    )}
+                  />
+                  <FormDescription>
+                    Average monthly revenue (consistent with annual)
+                  </FormDescription>
+                  <FormMessage>{errors.financials?.monthlyRevenue?.value?.message}</FormMessage>
+                </FormItem>
+              </div>
+  
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Profit Margin */}
+                <FormItem>
+                  <FormLabel>Profit Margin <span className="text-red-500">*</span></FormLabel>
+                  <div className="relative">
+                    <Controller
+                      control={control}
+                      name="financials.profitMargin.percentage"
+                      render={({ field }) => (
                         <Input 
                           type="number" 
                           min="0" 
@@ -874,209 +996,192 @@ export default function BusinessForm({
                           step="0.1"
                           placeholder="Enter profit margin percentage" 
                           {...field} 
+                          className={errors.financials?.profitMargin?.percentage ? "border-red-300" : ""}
                         />
-                      </FormControl>
-                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                        <span className="text-gray-500">%</span>
-                      </div>
+                      )}
+                    />
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                      <span className="text-gray-500">%</span>
                     </div>
-                    <FormDescription>
-                      Net profit as a percentage of revenue
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Revenue Trend */}
-              <FormField
-                control={control}
-                name="financials.revenueTrend"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Revenue Trend <span className="text-red-500">*</span></FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select revenue trend" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {revenueTrendOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      The direction of revenue over the past year
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Inventory - Conditional based on business type */}
-            {shouldShowInventory() && (
-              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                <div className="mb-4">
-                  <FormField
+                  </div>
+                  <FormDescription>
+                    Net profit as a percentage of revenue
+                  </FormDescription>
+                  <FormMessage>{errors.financials?.profitMargin?.percentage?.message}</FormMessage>
+                </FormItem>
+  
+                {/* Revenue Trend */}
+                <FormItem>
+                  <FormLabel>Revenue Trend <span className="text-red-500">*</span></FormLabel>
+                  <Controller
                     control={control}
-                    name="financials.inventory.isIncluded"
+                    name="financials.revenueTrend"
                     render={({ field }) => (
-                      <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-2">
-                        <FormControl>
-                          <Checkbox
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                        <div className="space-y-1 leading-none">
-                          <FormLabel>Inventory Included in Sale</FormLabel>
-                          <FormDescription>
-                            Check if inventory is included in the asking price
-                          </FormDescription>
-                        </div>
-                      </FormItem>
+                      <SelectWrapper
+                        value={field.value}
+                        onChange={field.onChange}
+                        options={revenueTrendOptions}
+                        placeholder="Select revenue trend"
+                        error={errors.financials?.revenueTrend}
+                      />
                     )}
                   />
-                </div>
-
-                {inventoryIncluded && (
-                  <div className="space-y-4">
-                    <FormField
+                  <FormDescription>
+                    The direction of revenue over the past year
+                  </FormDescription>
+                  <FormMessage>{errors.financials?.revenueTrend?.message}</FormMessage>
+                </FormItem>
+              </div>
+  
+              {/* Inventory - Conditional based on business type */}
+              {shouldShowInventory() && (
+                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                  <div className="mb-4">
+                    <Controller
                       control={control}
-                      name="financials.inventory.value.value"
+                      name="financials.inventory.isIncluded"
                       render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Inventory Value <span className="text-red-500">*</span></FormLabel>
-                          <FormControl>
+                        <div className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-2">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            checked={field.value}
+                            onChange={(e) => field.onChange(e.target.checked)}
+                          />
+                          <div className="space-y-1 leading-none">
+                            <FormLabel>Inventory Included in Sale</FormLabel>
+                            <FormDescription>
+                              Check if inventory is included in the asking price
+                            </FormDescription>
+                          </div>
+                        </div>
+                      )}
+                    />
+                  </div>
+  
+                  {inventoryIncluded && (
+                    <div className="space-y-4">
+                      <FormItem>
+                        <FormLabel>Inventory Value <span className="text-red-500">*</span></FormLabel>
+                        <Controller
+                          control={control}
+                          name="financials.inventory.value.value"
+                          render={({ field }) => (
                             <Input 
                               type="number" 
                               min="0" 
                               placeholder="Current inventory value" 
                               {...field} 
+                              className={errors.financials?.inventory?.value?.value ? "border-red-300" : ""}
                             />
-                          </FormControl>
-                          <FormDescription>
-                            The current value of inventory included
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={control}
-                      name="financials.inventory.description"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Inventory Description</FormLabel>
-                          <FormControl>
+                          )}
+                        />
+                        <FormDescription>
+                          The current value of inventory included
+                        </FormDescription>
+                        <FormMessage>{errors.financials?.inventory?.value?.value?.message}</FormMessage>
+                      </FormItem>
+  
+                      <FormItem>
+                        <FormLabel>Inventory Description</FormLabel>
+                        <Controller
+                          control={control}
+                          name="financials.inventory.description"
+                          render={({ field }) => (
                             <Textarea
                               placeholder="Describe the inventory included in the sale"
-                              className="resize-y"
+                              className={`resize-y ${errors.financials?.inventory?.description ? "border-red-300" : ""}`}
                               {...field}
                             />
-                          </FormControl>
-                          <FormDescription>
-                            Brief description of the inventory included
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Equipment */}
-            <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-              <div className="mb-4">
-                <FormField
-                  control={control}
-                  name="financials.equipment.isIncluded"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-2">
-                      <FormControl>
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
+                          )}
                         />
-                      </FormControl>
-                      <div className="space-y-1 leading-none">
-                        <FormLabel>Equipment Included in Sale</FormLabel>
                         <FormDescription>
-                          Check if equipment is included in the asking price
+                          Brief description of the inventory included
                         </FormDescription>
-                      </div>
-                    </FormItem>
+                        <FormMessage>{errors.financials?.inventory?.description?.message}</FormMessage>
+                      </FormItem>
+                    </div>
                   )}
-                />
-              </div>
-
-              <div className="space-y-4">
-                <FormField
-                  control={control}
-                  name="financials.equipment.value.value"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Equipment Value <span className="text-red-500">*</span></FormLabel>
-                      <FormControl>
+                </div>
+              )}
+  
+              {/* Equipment */}
+              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <div className="mb-4">
+                  <Controller
+                    control={control}
+                    name="financials.equipment.isIncluded"
+                    render={({ field }) => (
+                      <div className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-2">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          checked={field.value}
+                          onChange={(e) => field.onChange(e.target.checked)}
+                        />
+                        <div className="space-y-1 leading-none">
+                          <FormLabel>Equipment Included in Sale</FormLabel>
+                          <FormDescription>
+                            Check if equipment is included in the asking price
+                          </FormDescription>
+                        </div>
+                      </div>
+                    )}
+                  />
+                </div>
+  
+                <div className="space-y-4">
+                  <FormItem>
+                    <FormLabel>Equipment Value <span className="text-red-500">*</span></FormLabel>
+                    <Controller
+                      control={control}
+                      name="financials.equipment.value.value"
+                      render={({ field }) => (
                         <Input 
                           type="number" 
                           min="0" 
                           placeholder="Value of equipment" 
                           {...field} 
+                          className={errors.financials?.equipment?.value?.value ? "border-red-300" : ""}
                         />
-                      </FormControl>
-                      <FormDescription>
-                        The value of equipment included in the sale
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={control}
-                  name="financials.equipment.description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Equipment Description <span className="text-red-500">*</span></FormLabel>
-                      <FormControl>
+                      )}
+                    />
+                    <FormDescription>
+                      The value of equipment included in the sale
+                    </FormDescription>
+                    <FormMessage>{errors.financials?.equipment?.value?.value?.message}</FormMessage>
+                  </FormItem>
+  
+                  <FormItem>
+                    <FormLabel>Equipment Description <span className="text-red-500">*</span></FormLabel>
+                    <Controller
+                      control={control}
+                      name="financials.equipment.description"
+                      render={({ field }) => (
                         <Textarea
                           placeholder="Describe the equipment included in the sale"
-                          className="resize-y"
+                          className={`resize-y ${errors.financials?.equipment?.description ? "border-red-300" : ""}`}
                           {...field}
                         />
-                      </FormControl>
-                      <FormDescription>
-                        List major equipment items included
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                      )}
+                    />
+                    <FormDescription>
+                      List major equipment items included
+                    </FormDescription>
+                    <FormMessage>{errors.financials?.equipment?.description?.message}</FormMessage>
+                  </FormItem>
+                </div>
               </div>
-            </div>
-
-            {/* Customer Concentration */}
-            <FormField
-              control={control}
-              name="financials.customerConcentration"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Customer Concentration <span className="text-red-500">*</span></FormLabel>
-                  <div className="space-y-4">
-                    <div className="relative">
-                      <FormControl>
+  
+              {/* Customer Concentration */}
+              <FormItem>
+                <FormLabel>Customer Concentration <span className="text-red-500">*</span></FormLabel>
+                <div className="space-y-4">
+                  <div className="relative">
+                    <Controller
+                      control={control}
+                      name="financials.customerConcentration"
+                      render={({ field }) => (
                         <Input 
                           type="number" 
                           min="0" 
@@ -1084,310 +1189,300 @@ export default function BusinessForm({
                           step="1"
                           placeholder="Percentage of revenue from top 3 clients" 
                           {...field} 
+                          className={errors.financials?.customerConcentration ? "border-red-300" : ""}
                         />
-                      </FormControl>
-                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                        <span className="text-gray-500">%</span>
-                      </div>
+                      )}
+                    />
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                      <span className="text-gray-500">%</span>
                     </div>
-                    {renderCustomerConcentrationWarning()}
                   </div>
-                  <FormDescription>
-                    Percentage of revenue from top 3 clients
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
-
-        {/* Sale Information Section */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle className="text-xl font-semibold flex items-center">
-              Sale Information
-              <Tooltip content="Details about the sale terms and conditions">
-                <HelpCircle className="h-4 w-4 ml-2 text-gray-400" />
-              </Tooltip>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Asking Price */}
-              <div className="space-y-6">
-                <FormField
-                  control={control}
-                  name="sale.askingPrice.value"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Asking Price <span className="text-red-500">*</span></FormLabel>
-                      <FormControl>
+                  {renderCustomerConcentrationWarning()}
+                </div>
+                <FormDescription>
+                  Percentage of revenue from top 3 clients
+                </FormDescription>
+                <FormMessage>{errors.financials?.customerConcentration?.message}</FormMessage>
+              </FormItem>
+            </CardContent>
+          </Card>
+  
+          {/* Sale Information Section */}
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle className="text-xl font-semibold flex items-center">
+                Sale Information
+                <Tooltip content="Details about the sale terms and conditions">
+                  <HelpCircle className="h-4 w-4 ml-2 text-gray-400" />
+                </Tooltip>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Asking Price */}
+                <div className="space-y-6">
+                  <FormItem>
+                    <FormLabel>Asking Price <span className="text-red-500">*</span></FormLabel>
+                    <Controller
+                      control={control}
+                      name="sale.askingPrice.value"
+                      render={({ field }) => (
                         <Input 
                           type="number" 
                           min="0" 
                           step="10000"
                           placeholder="Enter asking price" 
                           {...field} 
+                          className={errors.sale?.askingPrice?.value ? "border-red-300" : ""}
                         />
-                      </FormControl>
-                      <FormDescription>
-                        The requested selling price for the business
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={control}
-                  name="sale.askingPrice.isNegotiable"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-2 border border-gray-200">
-                      <FormControl>
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                      <div className="space-y-1 leading-none">
-                        <FormLabel>Price is Negotiable</FormLabel>
-                        <FormDescription>
-                          Check if the asking price is open to negotiation
-                        </FormDescription>
-                      </div>
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              {/* Price Multiple (Optional) */}
-              <FormField
-                control={control}
-                name="sale.askingPrice.priceMultiple"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Price Multiple</FormLabel>
-                    <FormControl>
+                      )}
+                    />
+                    <FormDescription>
+                      The requested selling price for the business
+                    </FormDescription>
+                    <FormMessage>{errors.sale?.askingPrice?.value?.message}</FormMessage>
+                  </FormItem>
+  
+                  <div className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-2 border border-gray-200">
+                    <Controller
+                      control={control}
+                      name="sale.askingPrice.isNegotiable"
+                      render={({ field }) => (
+                        <div className="flex items-start space-x-3">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            checked={field.value}
+                            onChange={(e) => field.onChange(e.target.checked)}
+                          />
+                          <div className="space-y-1 leading-none">
+                            <FormLabel>Price is Negotiable</FormLabel>
+                            <FormDescription>
+                              Check if the asking price is open to negotiation
+                            </FormDescription>
+                          </div>
+                        </div>
+                      )}
+                    />
+                  </div>
+                </div>
+  
+                {/* Price Multiple (Optional) */}
+                <FormItem>
+                  <FormLabel>Price Multiple</FormLabel>
+                  <Controller
+                    control={control}
+                    name="sale.askingPrice.priceMultiple"
+                    render={({ field }) => (
                       <Input 
                         type="number" 
                         min="0" 
                         step="0.1"
                         placeholder="e.g., 3.5x annual profit" 
                         {...field} 
+                        className={errors.sale?.askingPrice?.priceMultiple ? "border-red-300" : ""}
                       />
-                    </FormControl>
-                    <FormDescription>
-                      Valuation metric (e.g., 2.5x annual revenue)
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Reason for Selling */}
-            <FormField
-              control={control}
-              name="sale.reasonForSelling"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Reason for Selling <span className="text-red-500">*</span></FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Explain why you're selling the business"
-                      className="min-h-24 resize-y"
-                      {...field}
-                    />
-                  </FormControl>
-                  <div className="flex justify-between">
-                    <FormDescription>
-                      Be specific about your motivation for selling
-                    </FormDescription>
-                    <div className="text-xs text-gray-500">
-                      {field.value?.length || 0}/500 characters
-                    </div>
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Seller Financing */}
-            <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-              <FormField
-                control={control}
-                name="sale.sellerFinancing.isAvailable"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-2">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                    <div className="space-y-1 leading-none">
-                      <FormLabel>Seller Financing Available</FormLabel>
-                      <FormDescription>
-                        Indicate if you're willing to provide financing to the buyer
-                      </FormDescription>
-                    </div>
-                  </FormItem>
-                )}
-              />
-
-              {sellerFinancingAvailable && (
-                <div className="mt-4 space-y-4 pl-8">
-                  <FormField
-                    control={control}
-                    name="sale.sellerFinancing.details"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Financing Details</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            placeholder="Describe your financing terms"
-                            className="resize-y"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Explain your terms and conditions for financing
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
                     )}
                   />
-
-                  <FormField
-                    control={control}
-                    name="sale.sellerFinancing.downPaymentPercentage"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Down Payment Required <span className="text-red-500">*</span></FormLabel>
-                        <div className="relative">
-                          <FormControl>
+                  <FormDescription>
+                    Valuation metric (e.g., 2.5x annual revenue)
+                  </FormDescription>
+                  <FormMessage>{errors.sale?.askingPrice?.priceMultiple?.message}</FormMessage>
+                </FormItem>
+              </div>
+  
+              {/* Reason for Selling */}
+              <FormItem>
+                <FormLabel>Reason for Selling <span className="text-red-500">*</span></FormLabel>
+                <Controller
+                  control={control}
+                  name="sale.reasonForSelling"
+                  render={({ field }) => (
+                    <Textarea
+                      placeholder="Explain why you're selling the business"
+                      className={`min-h-24 resize-y ${errors.sale?.reasonForSelling ? "border-red-300" : ""}`}
+                      {...field}
+                    />
+                  )}
+                />
+                <div className="flex justify-between">
+                  <FormDescription>
+                    Be specific about your motivation for selling
+                  </FormDescription>
+                  <div className="text-xs text-gray-500">
+                    {watch("sale.reasonForSelling")?.length || 0}/500 characters
+                  </div>
+                </div>
+                <FormMessage>{errors.sale?.reasonForSelling?.message}</FormMessage>
+              </FormItem>
+  
+              {/* Seller Financing */}
+              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <Controller
+                  control={control}
+                  name="sale.sellerFinancing.isAvailable"
+                  render={({ field }) => (
+                    <div className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-2">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        checked={field.value}
+                        onChange={(e) => field.onChange(e.target.checked)}
+                      />
+                      <div className="space-y-1 leading-none">
+                        <FormLabel>Seller Financing Available</FormLabel>
+                        <FormDescription>
+                          Indicate if you're willing to provide financing to the buyer
+                        </FormDescription>
+                      </div>
+                    </div>
+                  )}
+                />
+  
+                {sellerFinancingAvailable && (
+                  <div className="mt-4 space-y-4 pl-8">
+                    <FormItem>
+                      <FormLabel>Financing Details</FormLabel>
+                      <Controller
+                        control={control}
+                        name="sale.sellerFinancing.details"
+                        render={({ field }) => (
+                          <Textarea
+                            placeholder="Describe your financing terms"
+                            className={`resize-y ${errors.sale?.sellerFinancing?.details ? "border-red-300" : ""}`}
+                            {...field}
+                          />
+                        )}
+                      />
+                      <FormDescription>
+                        Explain your terms and conditions for financing
+                      </FormDescription>
+                      <FormMessage>{errors.sale?.sellerFinancing?.details?.message}</FormMessage>
+                    </FormItem>
+  
+                    <FormItem>
+                      <FormLabel>Down Payment Required <span className="text-red-500">*</span></FormLabel>
+                      <div className="relative">
+                        <Controller
+                          control={control}
+                          name="sale.sellerFinancing.downPaymentPercentage"
+                          render={({ field }) => (
                             <Input 
                               type="number" 
                               min="10" 
                               max="100"
                               placeholder="Minimum down payment percentage" 
                               {...field} 
+                              className={errors.sale?.sellerFinancing?.downPaymentPercentage ? "border-red-300" : ""}
                             />
-                          </FormControl>
-                          <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                            <span className="text-gray-500">%</span>
-                          </div>
+                          )}
+                        />
+                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                          <span className="text-gray-500">%</span>
                         </div>
-                        <FormDescription>
-                          Minimum down payment required (10-100%)
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Transition Period */}
-              <FormField
-                control={control}
-                name="sale.transitionPeriod"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Transition Period <span className="text-red-500">*</span></FormLabel>
-                    <FormControl>
+                      </div>
+                      <FormDescription>
+                        Minimum down payment required (10-100%)
+                      </FormDescription>
+                      <FormMessage>{errors.sale?.sellerFinancing?.downPaymentPercentage?.message}</FormMessage>
+                    </FormItem>
+                  </div>
+                )}
+              </div>
+  
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Transition Period */}
+                <FormItem>
+                  <FormLabel>Transition Period <span className="text-red-500">*</span></FormLabel>
+                  <Controller
+                    control={control}
+                    name="sale.transitionPeriod"
+                    render={({ field }) => (
                       <Input 
                         type="number" 
                         min="0" 
                         max="12"
                         placeholder="Number of months" 
                         {...field} 
+                        className={errors.sale?.transitionPeriod ? "border-red-300" : ""}
                       />
-                    </FormControl>
-                    <FormDescription>
-                      Months you'll help with the transition (0-12)
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Training Included */}
-            <FormField
-              control={control}
-              name="sale.trainingIncluded"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Training Included <span className="text-red-500">*</span></FormLabel>
-                  <FormControl>
+                    )}
+                  />
+                  <FormDescription>
+                    Months you'll help with the transition (0-12)
+                  </FormDescription>
+                  <FormMessage>{errors.sale?.transitionPeriod?.message}</FormMessage>
+                </FormItem>
+              </div>
+  
+              {/* Training Included */}
+              <FormItem>
+                <FormLabel>Training Included <span className="text-red-500">*</span></FormLabel>
+                <Controller
+                  control={control}
+                  name="sale.trainingIncluded"
+                  render={({ field }) => (
                     <Textarea
                       placeholder="Describe the training you will provide to the buyer"
-                      className="min-h-24 resize-y"
+                      className={`min-h-24 resize-y ${errors.sale?.trainingIncluded ? "border-red-300" : ""}`}
                       {...field}
                     />
-                  </FormControl>
-                  <div className="flex justify-between">
-                    <FormDescription>
-                      Detail the training and support you'll provide
-                    </FormDescription>
-                    <div className="text-xs text-gray-500">
-                      {field.value?.length || 0}/500 characters
-                    </div>
+                  )}
+                />
+                <div className="flex justify-between">
+                  <FormDescription>
+                    Detail the training and support you'll provide
+                  </FormDescription>
+                  <div className="text-xs text-gray-500">
+                    {watch("sale.trainingIncluded")?.length || 0}/500 characters
                   </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Assets Included */}
-            <FormField
-              control={control}
-              name="sale.assetsIncluded"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Assets Included <span className="text-red-500">*</span></FormLabel>
-                  <FormControl>
+                </div>
+                <FormMessage>{errors.sale?.trainingIncluded?.message}</FormMessage>
+              </FormItem>
+  
+              {/* Assets Included */}
+              <FormItem>
+                <FormLabel>Assets Included <span className="text-red-500">*</span></FormLabel>
+                <Controller
+                  control={control}
+                  name="sale.assetsIncluded"
+                  render={({ field }) => (
                     <Textarea
                       placeholder="List all assets included in the sale"
-                      className="min-h-32 resize-y"
+                      className={`min-h-32 resize-y ${errors.sale?.assetsIncluded ? "border-red-300" : ""}`}
                       {...field}
                     />
-                  </FormControl>
-                  <div className="flex justify-between">
-                    <FormDescription>
-                      Provide a comprehensive list of all assets included
-                    </FormDescription>
-                    <div className="text-xs text-gray-500">
-                      {field.value?.length || 0}/1000 characters
-                    </div>
+                  )}
+                />
+                <div className="flex justify-between">
+                  <FormDescription>
+                    Provide a comprehensive list of all assets included
+                  </FormDescription>
+                  <div className="text-xs text-gray-500">
+                    {watch("sale.assetsIncluded")?.length || 0}/1000 characters
                   </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
-
-        {/* Form Submission */}
-        <div className="flex justify-end mt-8">
-          <button
-            type="submit"
-            className="bg-primary-700 text-white px-6 py-2 rounded-lg hover:bg-blue-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 disabled:opacity-70 disabled:cursor-not-allowed"
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? (
-              <>
-                <span className="animate-spin mr-2">⟳</span>
-                Saving...
-              </>
-            ) : isEdit ? 'Update Business Details' : 'Save Business Details'}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
+                </div>
+                <FormMessage>{errors.sale?.assetsIncluded?.message}</FormMessage>
+              </FormItem>
+            </CardContent>
+          </Card>
+  
+          {/* Form Submission */}
+          <div className="flex justify-end mt-8">
+            <button
+              type="submit"
+              className="bg-primary-700 text-white px-6 py-2 rounded-lg hover:bg-blue-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 disabled:opacity-70 disabled:cursor-not-allowed"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <span className="animate-spin mr-2">⟳</span>
+                  Saving...
+                </>
+              ) : isEdit ? 'Update Business Details' : 'Save Business Details'}
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }

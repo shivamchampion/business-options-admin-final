@@ -14,7 +14,7 @@ import {
     Users,
     Globe
 } from 'lucide-react';
-
+import { useNavigate } from 'react-router-dom';
 import usePageTitle from '@/hooks/usePageTitle';
 import Button from '@/components/ui/Button';
 import ListingFilters from '@/components/listings/ListingFilters';
@@ -80,6 +80,7 @@ export default function AllListings() {
         { name: "Investor", type: ListingType.INVESTOR, icon: <Users className="h-4 w-4" /> },
         { name: "Digital Asset", type: ListingType.DIGITAL_ASSET, icon: <Globe className="h-4 w-4" /> }
     ];
+    const navigate = useNavigate();
 
     // Tab change handler with smooth transition
     const handleTabChange = (index: number) => {
