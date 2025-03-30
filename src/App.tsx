@@ -1,3 +1,4 @@
+// Update to src/App.jsx
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/context/AuthContext";
 import { LoadingProvider } from "@/context/LoadingContext";
@@ -15,6 +16,9 @@ const Dashboard = React.lazy(() => import("@/pages/Dashboard"));
 const AllUsers = React.lazy(() => import("@/pages/users/AllUsers"));
 const UserRoles = React.lazy(() => import("@/pages/users/UserRoles"));
 const AllListings = React.lazy(() => import("@/pages/listings/AllListings"));
+const ListingCreate = React.lazy(() => import("@/pages/listings/ListingCreate"));
+const ListingDetail = React.lazy(() => import("@/pages/listings/ListingDetail"));
+const ListingEdit = React.lazy(() => import("@/pages/listings/ListingEdit"));
 
 // Using placeholder components as requested
 const AdvisorsPage = () => <div className="card"><h1 className="text-2xl font-bold">Advisors Page</h1></div>;
@@ -76,6 +80,21 @@ export default function App() {
                 <Route path="/listings" element={
                   <SuspenseBoundary>
                     <AllListings />
+                  </SuspenseBoundary>
+                } />
+                <Route path="/listings/create" element={
+                  <SuspenseBoundary>
+                    <ListingCreate />
+                  </SuspenseBoundary>
+                } />
+                <Route path="/listings/:id" element={
+                  <SuspenseBoundary>
+                    <ListingDetail />
+                  </SuspenseBoundary>
+                } />
+                <Route path="/listings/:id/edit" element={
+                  <SuspenseBoundary>
+                    <ListingEdit />
                   </SuspenseBoundary>
                 } />
                 

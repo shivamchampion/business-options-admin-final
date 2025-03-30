@@ -1,8 +1,8 @@
 import { Fragment } from 'react';
 import { Menu, Transition } from '@headlessui/react';
-import { 
-  Menu as MenuIcon, 
-  Bell, 
+import {
+  Menu as MenuIcon,
+  Bell,
   Settings,
   HelpCircle,
   LogOut,
@@ -26,11 +26,10 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
       console.error("Error signing out:", error);
     }
   };
-  
+
   return (
-    <header className={`bg-white z-20 transition-all duration-300 ${
-      isScrolled ? 'shadow-md' : 'border-b border-gray-200'
-    }`}>
+    <header className={`bg-white z-20 transition-all duration-300 ${isScrolled ? 'shadow-md' : 'border-b border-gray-200'
+      }`}>
       <div className="flex items-center justify-between h-16 px-4 sm:px-6">
         <div className="flex items-center">
           {/* Mobile menu toggle */}
@@ -43,7 +42,7 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
           >
             <MenuIcon className="h-5 w-5 text-gray-600" />
           </button>
-          
+
           {/* Logo when sidebar is collapsed - only on desktop */}
           <div className={`items-center ml-2 ${isSidebarOpen ? 'hidden lg:hidden' : 'flex'}`}>
             <img src="/logo.svg" alt="Business Options" className="h-8 w-auto mr-3" />
@@ -51,13 +50,13 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
               Business Options Admin Panel
             </span>
           </div>
-          
+
           {/* Page title when sidebar is open */}
           <div className={`font-semibold text-gray-800 text-lg ml-2 lg:ml-0 ${!isSidebarOpen ? 'hidden' : 'block'}`}>
             Business Options Admin Panel
           </div>
         </div>
-        
+
         <div className="flex items-center space-x-3">
           {/* Notification Bell */}
           <div className="relative">
@@ -67,7 +66,7 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
                 <Bell className="h-5 w-5" />
                 <span className="absolute top-1 right-1 block h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white"></span>
               </Menu.Button>
-              
+
               <Transition
                 as={Fragment}
                 enter="transition ease-out duration-200"
@@ -86,7 +85,7 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
                       </span>
                     </div>
                   </div>
-                  
+
                   <div className="max-h-80 overflow-y-auto">
                     <div className="p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100">
                       <div className="flex">
@@ -97,7 +96,7 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100">
                       <div className="flex">
                         <div className="flex-1">
@@ -108,7 +107,7 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="p-2 border-t border-gray-100">
                     <button className="w-full text-center text-xs text-[#0031ac] hover:text-blue-700 font-medium p-2 hover:bg-blue-50 rounded-md transition-colors duration-150">
                       View all notifications
@@ -118,7 +117,7 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
               </Transition>
             </Menu>
           </div>
-          
+
           {/* User Profile with Dropdown */}
           <Menu as="div" className="relative">
             <div>
@@ -126,17 +125,17 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
                 <div className="flex items-center">
                   <div className="relative">
                     <div className="h-8 w-8 rounded-full border-2 border-[#0031ac] overflow-hidden">
-                     {user.profileImageUrl ? (<img 
+                      {user.profileImageUrl ? (<img
                         src={user.profileImageUrl}
                         alt={user.name}
                         className="h-full w-full object-cover"
                       />) : (<div className="h-full w-full rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-medium">
                         {user.name.charAt(0).toUpperCase()}
-                      </div>)} 
+                      </div>)}
                     </div>
                     <div className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-green-400 border border-white"></div>
                   </div>
-                  
+
                   <div className="ml-2 mr-1 hidden md:block">
                     <div className="text-sm font-medium text-gray-800">
                       {user?.name || 'Admin User'}
@@ -148,7 +147,7 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
                 </div>
               </Menu.Button>
             </div>
-            
+
             <Transition
               as={Fragment}
               enter="transition ease-out duration-100"
@@ -172,9 +171,8 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
                     {({ active }) => (
                       <a
                         href="#"
-                        className={`${
-                          active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
-                        } group flex items-center px-4 py-2 text-sm`}
+                        className={`${active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
+                          } group flex items-center px-4 py-2 text-sm`}
                       >
                         <User className="mr-3 h-5 w-5 text-gray-500" aria-hidden="true" />
                         My Profile
@@ -185,9 +183,8 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
                     {({ active }) => (
                       <a
                         href="#"
-                        className={`${
-                          active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
-                        } group flex items-center px-4 py-2 text-sm`}
+                        className={`${active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
+                          } group flex items-center px-4 py-2 text-sm`}
                       >
                         <Settings className="mr-3 h-5 w-5 text-gray-500" aria-hidden="true" />
                         Settings
@@ -198,9 +195,8 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
                     {({ active }) => (
                       <a
                         href="#"
-                        className={`${
-                          active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
-                        } group flex items-center px-4 py-2 text-sm`}
+                        className={`${active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
+                          } group flex items-center px-4 py-2 text-sm`}
                       >
                         <HelpCircle className="mr-3 h-5 w-5 text-gray-500" aria-hidden="true" />
                         Help & Support
@@ -213,9 +209,8 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
                     {({ active }) => (
                       <button
                         onClick={handleSignOut}
-                        className={`${
-                          active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
-                        } group flex w-full items-center px-4 py-2 text-sm`}
+                        className={`${active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
+                          } group flex w-full items-center px-4 py-2 text-sm`}
                       >
                         <LogOut className="mr-3 h-5 w-5 text-red-500" aria-hidden="true" />
                         Sign Out

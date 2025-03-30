@@ -14,6 +14,7 @@ import {
     Users,
     Globe
 } from 'lucide-react';
+
 import usePageTitle from '@/hooks/usePageTitle';
 import Button from '@/components/ui/Button';
 import ListingFilters from '@/components/listings/ListingFilters';
@@ -279,6 +280,13 @@ export default function AllListings() {
         }
     };
 
+    // Handle editing (will be implemented later)
+    const handleEdit = (listing: Listing) => {
+        // Navigate to edit page or open edit modal
+        console.log('Edit listing:', listing);
+        toast.info('Listing edit functionality coming soon');
+    };
+
     // Handle feature toggle
     const handleFeatureToggle = async (listingId: string, isFeatured: boolean) => {
         try {
@@ -502,12 +510,7 @@ export default function AllListings() {
         }
     };
 
-    // Handle editing (will be implemented later)
-    const handleEdit = (listing: Listing) => {
-        // Navigate to edit page or open edit modal
-        console.log('Edit listing:', listing);
-        toast.info('Listing edit functionality coming soon');
-    };
+    
 
     // Display loading state during auth
     if (authLoading) {
@@ -547,7 +550,7 @@ export default function AllListings() {
                         <Button
                             variant="primary"
                             leftIcon={<Plus className="h-4 w-4" />}
-                            onClick={() => toast.info('Create listing functionality coming soon')}
+                            onClick={() => navigate('/listings/create')}
                         >
                             Add New Listing
                         </Button>
