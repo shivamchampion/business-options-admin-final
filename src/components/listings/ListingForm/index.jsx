@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -12,7 +12,8 @@ import {
   Save,
   AlertCircle,
   ArrowLeft,
-  X
+  X,
+  Loader
 } from 'lucide-react';
 import { useLoading } from '@/context/LoadingContext';
 import Button from '@/components/ui/Button';
@@ -215,16 +216,32 @@ const sanitizeImagesForStorage = (images) => {
   return images.map(image => {
     if (!image) return null;
     
-    // Create a new clean object
-    return {
+    // Create a new clean object with only the necessary data
+    const sanitizedImage = {
       id: image.id || `img-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       name: image.name || 'image',
       size: image.size || 0,
       url: image.url || image.preview || '',
       preview: image.preview || image.url || '',
-      path: image.path || '',
       type: image.type || 'image/jpeg'
     };
+    
+    // Add path only if it exists
+    if (image.path) {
+      sanitizedImage.path = image.path;
+    }
+    
+    // Preserve base64 data if it exists
+    if (image.base64) {
+      sanitizedImage.base64 = image.base64;
+    }
+    
+    // Remove any file objects which can't be serialized
+    if (sanitizedImage.file) {
+      delete sanitizedImage.file;
+    }
+    
+    return sanitizedImage;
   }).filter(Boolean); // Remove any nulls
 };
 
@@ -232,8 +249,9 @@ function ListingForm({ isEdit = false }) {
   const navigate = useNavigate();
   const { id } = useParams();
   const { startLoading, stopLoading } = useLoading();
-
-  // Synchronously load the stored step from localStorage first
+  
+  // IMPORTANT: Read from localStorage synchronously to avoid flicker
+  // This is crucial for proper tab preservation
   const initialStep = (() => {
     try {
       const savedStep = localStorage.getItem(STORAGE_KEYS.STEP);
@@ -248,11 +266,55 @@ function ListingForm({ isEdit = false }) {
     }
     return 0;
   })();
+  
+  // Pre-load saved images to prevent flicker
+  const initialImages = (() => {
+    try {
+      // Try multiple storage locations for better reliability
+      const primaryStorage = localStorage.getItem(STORAGE_KEYS.IMAGES);
+      const secondaryStorage = localStorage.getItem('listingFormImagesData');
+      
+      let savedImages = primaryStorage || secondaryStorage;
+      
+      if (savedImages) {
+        const parsed = JSON.parse(savedImages);
+        if (Array.isArray(parsed)) {
+          // Ensure all images have required properties
+          return parsed.map((img, idx) => ({
+            ...img,
+            id: img.id || `local-img-${Date.now()}-${idx}`,
+            // Prefer base64 data if available
+            url: img.base64 || img.url || img.preview || '',
+            preview: img.base64 || img.preview || img.url || '',
+            type: img.type || 'image/jpeg'
+          }));
+        }
+      }
+    } catch (e) {
+      console.error("Error loading saved images:", e);
+    }
+    return [];
+  })();
+  
+  // Pre-load featured image index
+  const initialFeaturedIndex = (() => {
+    try {
+      const savedIndex = localStorage.getItem(STORAGE_KEYS.FEATURED_IMAGE);
+      if (savedIndex !== null) {
+        const index = parseInt(savedIndex, 10);
+        return !isNaN(index) ? index : 0;
+      }
+    } catch (e) {
+      console.error("Error loading featured image index:", e);
+    }
+    return 0;
+  })();
 
+  // State variables
   const [currentStep, setCurrentStep] = useState(initialStep);
   const [listing, setListing] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [uploadedImages, setUploadedImages] = useState([]);
+  const [uploadedImages, setUploadedImages] = useState(initialImages);
   const [uploadedDocuments, setUploadedDocuments] = useState([]);
   const [imagesToDelete, setImagesToDelete] = useState([]);
   const [documentsToDelete, setDocumentsToDelete] = useState([]);
@@ -260,11 +322,16 @@ function ListingForm({ isEdit = false }) {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [stepErrors, setStepErrors] = useState({});
   const [showErrorSummary, setShowErrorSummary] = useState(false);
-  const [featuredImageIndex, setFeaturedImageIndex] = useState(0);
+  const [featuredImageIndex, setFeaturedImageIndex] = useState(initialFeaturedIndex);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [transitioningStep, setTransitioningStep] = useState(false);
 
-  // Initialize react-hook-form
+  // Refs for debouncing and tracking
+  const saveTimeout = useRef(null);
+  const pendingStep = useRef(null);
+
+  // Initialize react-hook-form with default values that can be loaded from localStorage
   const methods = useForm({
     resolver: zodResolver(listingSchema),
     mode: 'onChange',
@@ -292,55 +359,42 @@ function ListingForm({ isEdit = false }) {
         email: '',
         phone: '',
       },
-      mediaValidation: false
+      mediaValidation: initialImages.length >= 3
     },
     shouldUnregister: false
   });
 
-  const { handleSubmit, reset, trigger, formState: { errors }, watch, setValue } = methods;
+  const { handleSubmit, reset, trigger, formState: { errors }, watch, setValue, getValues } = methods;
 
   // Watch listing type to update type-specific forms
   const listingType = watch('type');
 
-  // INITIAL DATA LOAD - Load data from localStorage first, then from server if in edit mode
+  // Load saved data on component mount
   useEffect(() => {
+    // Flag to track if component is mounted
+    let isMounted = true;
+    
     const initForm = async () => {
-      setInitialLoading(true); // Start loading spinner
+      if (!isMounted) return;
+      setInitialLoading(true);
       
-      // Immediately load from localStorage (already loaded step in useState initialization)
-      // If in non-edit mode, load the rest from localStorage
-      if (!isEdit) {
-        const savedFormData = safeStorage.get(STORAGE_KEYS.FORM_DATA);
-        const savedImages = safeStorage.get(STORAGE_KEYS.IMAGES, []);
-        const savedFeatured = safeStorage.get(STORAGE_KEYS.FEATURED_IMAGE, 0);
-
-        if (savedFormData) {
-          reset(savedFormData);
-        }
-
-        if (savedImages && savedImages.length > 0) {
-          // Make sure images have all required properties
-          const processedImages = savedImages.map((img, idx) => ({
-            ...img,
-            id: img.id || `local-img-${idx}`,
-            url: img.url || img.preview || '',
-            preview: img.preview || img.url || '',
-            type: img.type || 'image/jpeg'
-          }));
+      try {
+        if (!isEdit) {
+          // Load form data from localStorage
+          const savedFormData = safeStorage.get(STORAGE_KEYS.FORM_DATA);
+          if (savedFormData) {
+            reset(savedFormData);
+          }
           
-          setUploadedImages(processedImages);
-          setValue('mediaValidation', processedImages.length >= 3);
-        }
-
-        if (savedFeatured !== null) {
-          setFeaturedImageIndex(parseInt(savedFeatured, 10));
+          // We already loaded images and featured index in initialization
+          if (initialImages.length >= 3) {
+            setValue('mediaValidation', true);
+          }
+          
+          setDataLoaded(true);
+          setInitialLoading(false);
         }
         
-        setDataLoaded(true);
-        setInitialLoading(false); // End loading spinner for localStorage load
-      }
-
-      try {
         // Seed industry data (can happen in background)
         await seedIndustriesData();
         
@@ -351,6 +405,8 @@ function ListingForm({ isEdit = false }) {
           
           try {
             const listingData = await getListingById(id);
+            if (!isMounted) return;
+            
             setListing(listingData);
             
             // Migrate and reset form data
@@ -361,7 +417,7 @@ function ListingForm({ isEdit = false }) {
             if (listingData.media?.galleryImages) {
               const processedImages = listingData.media.galleryImages.map((img, idx) => ({
                 ...img,
-                id: img.id || `server-img-${idx}`,
+                id: img.id || `server-img-${Date.now()}-${idx}`,
                 url: img.url || img.preview || '',
                 preview: img.preview || img.url || '',
                 type: img.type || 'image/jpeg'
@@ -384,69 +440,106 @@ function ListingForm({ isEdit = false }) {
             setDataLoaded(true);
           } catch (error) {
             console.error('Error loading listing:', error);
-            toast.error('Failed to load listing data. Please try again.');
-            navigate('/listings');
+            if (isMounted) {
+              toast.error('Failed to load listing data. Please try again.');
+              navigate('/listings');
+            }
           } finally {
-            setIsLoading(false);
-            stopLoading();
-            setInitialLoading(false); // End loading spinner after server load
+            if (isMounted) {
+              setIsLoading(false);
+              stopLoading();
+              setInitialLoading(false);
+            }
           }
         } else {
-          setInitialLoading(false); // Make sure loading ends if not in edit mode
+          if (isMounted) {
+            setInitialLoading(false);
+          }
         }
       } catch (error) {
         console.error('Error initializing form:', error);
-        setDataLoaded(true); // Continue despite errors
-        setInitialLoading(false); // End loading spinner if there's an error
+        if (isMounted) {
+          setDataLoaded(true);
+          setInitialLoading(false);
+        }
       }
     };
 
     initForm();
-  }, [id, isEdit, navigate, reset, startLoading, stopLoading, setValue]);
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    };
+  }, [id, isEdit, navigate, reset, setValue, startLoading, stopLoading, initialImages.length]);
 
-  // Save current step to localStorage whenever it changes
+  // Save form data when it changes
   useEffect(() => {
-    if (!isEdit) {
-      safeStorage.set(STORAGE_KEYS.STEP, currentStep);
-    }
-  }, [currentStep, isEdit]);
-  
-  // Save featured image index
-  useEffect(() => {
-    if (!isEdit) {
-      safeStorage.set(STORAGE_KEYS.FEATURED_IMAGE, featuredImageIndex);
-    }
-  }, [featuredImageIndex, isEdit]);
-  
-  // Save form data with debounce
+    // Don't save in edit mode
+    if (isEdit) return;
+    
+    // Clean up on unmount
+    let isMounted = true;
+    
+    const saveFormData = () => {
+      if (!isMounted) return;
+      
+      try {
+        const formData = getValues();
+        if (formData) {
+          const cleanData = { ...formData };
+          // Remove potentially problematic fields
+          delete cleanData.mediaUploads;
+          delete cleanData.file;
+          safeStorage.set(STORAGE_KEYS.FORM_DATA, cleanData);
+        }
+      } catch (error) {
+        console.error("Error saving form data:", error);
+      }
+    };
+    
+    // Debounced save
+    const debouncedSave = () => {
+      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+      saveTimeout.current = setTimeout(saveFormData, 500);
+    };
+    
+    const subscription = watch(debouncedSave);
+    
+    return () => {
+      isMounted = false;
+      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+      subscription.unsubscribe();
+    };
+  }, [isEdit, getValues, watch]);
+
+  // Save current step when it changes
   useEffect(() => {
     if (isEdit) return;
     
-    let timeout = null;
+    // IMPORTANT: Save step immediately to ensure it's saved before reload
+    localStorage.setItem(STORAGE_KEYS.STEP, currentStep);
     
-    const saveFormData = () => {
-      const formData = methods.getValues();
-      
-      // Create a clean copy
-      const cleanData = { ...formData };
-      delete cleanData.mediaUploads;
-      
-      safeStorage.set(STORAGE_KEYS.FORM_DATA, cleanData);
-    };
-    
-    const debouncedSave = () => {
-      if (timeout) clearTimeout(timeout);
-      timeout = setTimeout(saveFormData, 300);
-    };
-    
-    // Watch form changes
-    const subscription = methods.watch(debouncedSave);
-    
-    return () => {
-      if (timeout) clearTimeout(timeout);
-      subscription.unsubscribe();
-    };
-  }, [methods, isEdit]);
+    // Also save in our reference
+    pendingStep.current = currentStep;
+  }, [currentStep, isEdit]);
+  
+  // Save featured image index when it changes
+  useEffect(() => {
+    if (!isEdit) {
+      localStorage.setItem(STORAGE_KEYS.FEATURED_IMAGE, featuredImageIndex);
+    }
+  }, [featuredImageIndex, isEdit]);
+  
+  // Save images when they change
+  useEffect(() => {
+    if (!isEdit && dataLoaded) {
+      // Sanitize images before saving
+      const sanitizedImages = sanitizeImagesForStorage(uploadedImages);
+      localStorage.setItem(STORAGE_KEYS.IMAGES, JSON.stringify(sanitizedImages));
+    }
+  }, [uploadedImages, isEdit, dataLoaded]);
   
   // Update error state
   useEffect(() => {
@@ -478,7 +571,7 @@ function ListingForm({ isEdit = false }) {
     setStepErrors(newErrors);
   }, [errors, listingType, uploadedImages.length]);
 
-  // Handle image upload - Direct implementation
+  // Handle image upload
   const handleImageUpload = (files) => {
     // Validate files first
     if (!files || !Array.isArray(files) || files.length === 0) {
@@ -498,17 +591,37 @@ function ListingForm({ isEdit = false }) {
     
     // Set featured image if this is the first upload
     if (wasEmpty && files.length > 0) {
+      console.log("Setting first image as featured");
       setFeaturedImageIndex(0);
-      safeStorage.set(STORAGE_KEYS.FEATURED_IMAGE, 0);
+      
+      // Save featured index to localStorage
+      try {
+        localStorage.setItem(STORAGE_KEYS.FEATURED_IMAGE, "0");
+      } catch (e) {
+        console.error("Error saving featured index:", e);
+      }
     }
     
     // Update validation
     setValue('mediaValidation', newImages.length >= 3);
     
-    // Save to localStorage
-    safeStorage.set(STORAGE_KEYS.IMAGES, sanitizeImagesForStorage(newImages));
+    // Save to localStorage (for immediate persistence)
+    // But only save the IDs to avoid quota issues
+    try {
+      // Just save image IDs instead of full image data
+      const sanitizedImages = sanitizeImagesForStorage(newImages);
+      localStorage.setItem(STORAGE_KEYS.IMAGES, JSON.stringify(sanitizedImages));
+      
+      // Also save to secondary storage as backup
+      localStorage.setItem('listingFormImagesData', JSON.stringify(sanitizedImages));
+    } catch (e) {
+      console.error("Error saving images:", e);
+    }
     
     console.log("Images updated:", newImages.length);
+    
+    // Show success toast
+    toast.success(`${files.length} image${files.length > 1 ? 's' : ''} uploaded successfully`);
   };
 
   // Handle image deletion
@@ -523,7 +636,7 @@ function ListingForm({ isEdit = false }) {
       if (imageToDelete.id && img.id) return img.id === imageToDelete.id;
       if (imageToDelete.path && img.path) return img.path === imageToDelete.path;
       if (imageToDelete.url && img.url) return img.url === imageToDelete.url;
-      return img === imageToDelete;
+      return false;
     });
     
     // If image not found, exit
@@ -540,35 +653,43 @@ function ListingForm({ isEdit = false }) {
     setUploadedImages(newImages);
     
     // Handle featured image adjustment
+    let newFeaturedIndex = featuredImageIndex;
+    
     if (imageIndex === featuredImageIndex) {
       // If deleting the featured image, set the first remaining as featured
       if (newImages.length > 0) {
-        setFeaturedImageIndex(0);
-        safeStorage.set(STORAGE_KEYS.FEATURED_IMAGE, 0);
+        newFeaturedIndex = 0;
       } else {
-        setFeaturedImageIndex(-1);
-        safeStorage.set(STORAGE_KEYS.FEATURED_IMAGE, -1);
+        newFeaturedIndex = -1;
       }
+      setFeaturedImageIndex(newFeaturedIndex);
     } else if (imageIndex < featuredImageIndex) {
       // If deleting before the featured image, decrement index
-      const newIndex = featuredImageIndex - 1;
-      setFeaturedImageIndex(newIndex);
-      safeStorage.set(STORAGE_KEYS.FEATURED_IMAGE, newIndex);
+      newFeaturedIndex = featuredImageIndex - 1;
+      setFeaturedImageIndex(newFeaturedIndex);
     }
     
     // Update validation
     setValue('mediaValidation', newImages.length >= 3);
     
-    // Save to localStorage
-    safeStorage.set(STORAGE_KEYS.IMAGES, sanitizeImagesForStorage(newImages));
+    // Save to localStorage (for immediate persistence)
+    try {
+      const sanitizedImages = sanitizeImagesForStorage(newImages);
+      localStorage.setItem(STORAGE_KEYS.IMAGES, JSON.stringify(sanitizedImages));
+      localStorage.setItem('listingFormImagesData', JSON.stringify(sanitizedImages));
+      localStorage.setItem(STORAGE_KEYS.FEATURED_IMAGE, newFeaturedIndex.toString());
+    } catch (e) {
+      console.error("Error saving after deletion:", e);
+    }
     
-    console.log("Image deleted, remaining:", newImages.length);
+    // Show toast
+    toast.success("Image deleted");
   };
 
   // Handle setting featured image
   const handleSetFeatured = (index) => {
     setFeaturedImageIndex(index);
-    safeStorage.set(STORAGE_KEYS.FEATURED_IMAGE, index);
+    localStorage.setItem(STORAGE_KEYS.FEATURED_IMAGE, index.toString());
   };
 
   // Handle document upload
@@ -678,13 +799,26 @@ function ListingForm({ isEdit = false }) {
       }
     }
 
+    // Start transition
+    setTransitioningStep(true);
+    
     // If validation passes, move to next step or submit
     if (currentStep < steps.length - 1) {
-      setCurrentStep(currentStep + 1);
-      window.scrollTo(0, 0);
-      setShowErrorSummary(false);
+      const nextStep = currentStep + 1;
+      
+      // IMPORTANT: Immediately save the next step to localStorage
+      localStorage.setItem(STORAGE_KEYS.STEP, nextStep.toString());
+      pendingStep.current = nextStep;
+      
+      setTimeout(() => {
+        setCurrentStep(nextStep);
+        window.scrollTo(0, 0);
+        setShowErrorSummary(false);
+        setTransitioningStep(false);
+      }, 300);
     } else {
       // Submit form on final step
+      setTransitioningStep(false);
       handleSubmit(onSubmit)();
     }
   };
@@ -692,9 +826,20 @@ function ListingForm({ isEdit = false }) {
   // Handle previous step
   const handlePrevious = () => {
     if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
-      window.scrollTo(0, 0);
-      setShowErrorSummary(false);
+      setTransitioningStep(true);
+      
+      const prevStep = currentStep - 1;
+      
+      // IMPORTANT: Immediately save the previous step to localStorage
+      localStorage.setItem(STORAGE_KEYS.STEP, prevStep.toString());
+      pendingStep.current = prevStep;
+      
+      setTimeout(() => {
+        setCurrentStep(prevStep);
+        window.scrollTo(0, 0);
+        setShowErrorSummary(false);
+        setTransitioningStep(false);
+      }, 300);
     }
   };
 
@@ -757,7 +902,7 @@ function ListingForm({ isEdit = false }) {
   if (isLoading || initialLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
-        <LoadingSpinner size="lg" color="primary" text={initialLoading ? "Loading saved form data..." : "Loading listing data..."} />
+        <LoadingSpinner size="md" color="primary" text={initialLoading ? "Loading saved form data..." : "Loading listing data..."} />
       </div>
     );
   }
@@ -781,16 +926,16 @@ function ListingForm({ isEdit = false }) {
   });
 
   return (
-    <div className="w-full px-4 md:px-6 mx-auto">
+    <div className="w-full px-2 md:px-4 mx-auto">
       {/* Progress Stepper */}
-      <div className="mb-8 max-w-7xl mx-auto">
+      <div className="mb-4 max-w-full mx-auto">
         <div className="flex items-center justify-between">
           {steps.map((step, index) => (
             <React.Fragment key={step.id}>
               {/* Step indicator */}
               <div className="flex flex-col items-center relative">
                 <div
-                  className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center border-2 transition-colors duration-200 ${
+                  className={`w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center border-2 transition-colors duration-200 ${
                     index < currentStep
                       ? 'bg-[#0031ac] text-white border-[#0031ac]'
                       : index === currentStep
@@ -799,20 +944,20 @@ function ListingForm({ isEdit = false }) {
                   }`}
                 >
                   {index < currentStep ? (
-                    <CheckCircle className="h-5 w-5 md:h-6 md:w-6" />
+                    <CheckCircle className="h-4 w-4 md:h-5 md:w-5" />
                   ) : (
-                    <span className="text-sm md:text-base font-medium">{index + 1}</span>
+                    <span className="text-xs md:text-sm font-medium">{index + 1}</span>
                   )}
                 </div>
                 
                 {/* Error indicator */}
                 {stepErrors[index] && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-xs z-10">
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white text-[10px] z-10">
                     !
                   </span>
                 )}
                 
-                <span className={`text-xs md:text-sm mt-2 font-medium text-center ${
+                <span className={`text-[10px] md:text-xs mt-1 font-medium text-center ${
                   index <= currentStep ? 'text-[#0031ac]' : 'text-gray-500'
                 }`}>
                   {step.title}
@@ -821,7 +966,7 @@ function ListingForm({ isEdit = false }) {
 
               {/* Connector line */}
               {index < steps.length - 1 && (
-                <div className={`flex-1 h-[2px] mx-1 md:mx-3 ${
+                <div className={`flex-1 h-[2px] mx-1 md:mx-2 ${
                   index < currentStep ? 'bg-[#0031ac]' : 'bg-gray-300'
                 }`} />
               )}
@@ -832,12 +977,12 @@ function ListingForm({ isEdit = false }) {
 
       {/* Form */}
       <FormProvider {...methods}>
-        <form onSubmit={handleSubmit(onSubmit)} className="max-w-7xl mx-auto">
-          <div className="bg-white rounded-lg shadow border border-gray-100 p-4 md:p-6">
+        <form onSubmit={handleSubmit(onSubmit)} className="w-full">
+          <div className="bg-white rounded-lg shadow border border-gray-100 p-3 md:p-4">
             {/* Step title */}
-            <div className="mb-6 pb-4 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">{steps[currentStep].title}</h2>
-              <p className="text-sm text-gray-500 mt-1">
+            <div className="mb-3 pb-3 border-b border-gray-200">
+              <h2 className="text-base font-semibold text-gray-900">{steps[currentStep].title}</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
                 {currentStep === 0 && "Enter the basic information about your listing"}
                 {currentStep === 1 && "Upload images to showcase your listing"}
                 {currentStep === 2 && "Provide detailed information about your listing"}
@@ -848,24 +993,24 @@ function ListingForm({ isEdit = false }) {
 
             {/* Error summary if submission attempted */}
             {submitAttempted && showErrorSummary && currentStepErrorMessages.length > 0 && (
-              <div className="mb-6 p-4 border border-red-200 bg-red-50 rounded-lg">
+              <div className="mb-4 p-3 border border-red-200 bg-red-50 rounded-md">
                 <div className="flex items-start">
-                  <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
+                  <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-medium text-red-800">Please fix the following errors:</h3>
+                      <h3 className="text-xs font-medium text-red-800">Please fix the following errors:</h3>
                       <button 
                         type="button"
                         onClick={() => setShowErrorSummary(false)}
                         className="text-red-500 hover:text-red-700"
                       >
-                        <X className="h-4 w-4" />
+                        <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <ul className="mt-2 text-sm text-red-700 space-y-1">
+                    <ul className="mt-1 text-xs text-red-700 space-y-0.5">
                       {currentStepErrorMessages.map((error, index) => (
                         <li key={index} className="flex items-start">
-                          <span className="mr-2">•</span>
+                          <span className="mr-1.5">•</span>
                           <span>{error.message}</span>
                         </li>
                       ))}
@@ -875,8 +1020,8 @@ function ListingForm({ isEdit = false }) {
               </div>
             )}
             
-            {/* Step Content */}
-            <div className="mb-8">
+            {/* Step Content with transition */}
+            <div className={`mb-4 ${transitioningStep ? 'opacity-25' : 'opacity-100'} transition-opacity duration-300`}>
               <StepComponent
                 uploadedImages={uploadedImages}
                 onImageUpload={handleImageUpload}
@@ -892,15 +1037,28 @@ function ListingForm({ isEdit = false }) {
               />
             </div>
 
+            {/* Loading overlay while transitioning */}
+            {transitioningStep && (
+              <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-50 z-10">
+                <div className="flex flex-col items-center">
+                  <Loader className="h-6 w-6 text-[#0031ac] animate-spin" />
+                  <p className="mt-2 text-xs text-gray-600">Loading...</p>
+                </div>
+              </div>
+            )}
+
             {/* Navigation Buttons */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-gray-200">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-200">
               <div>
                 {currentStep > 0 ? (
                   <Button
                     type="button"
                     variant="outline"
+                    size="sm"
                     onClick={handlePrevious}
-                    leftIcon={<ChevronLeft className="h-4 w-4" />}
+                    leftIcon={<ChevronLeft className="h-3.5 w-3.5" />}
+                    disabled={transitioningStep}
+                    className={`text-xs ${transitioningStep ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     Previous
                   </Button>
@@ -908,20 +1066,26 @@ function ListingForm({ isEdit = false }) {
                   <Button
                     type="button"
                     variant="outline"
+                    size="sm"
                     onClick={() => navigate('/listings')}
-                    leftIcon={<ArrowLeft className="h-4 w-4" />}
+                    leftIcon={<ArrowLeft className="h-3.5 w-3.5" />}
+                    disabled={transitioningStep}
+                    className={`text-xs ${transitioningStep ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     Back to Listings
                   </Button>
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-wrap items-center gap-3">
                 <Button
                   type="button"
                   variant="outline"
+                  size="sm"
                   onClick={handleSaveAsDraft}
-                  leftIcon={<Save className="h-4 w-4" />}
+                  leftIcon={<Save className="h-3.5 w-3.5" />}
+                  disabled={transitioningStep}
+                  className={`text-xs ${transitioningStep ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   Save as Draft
                 </Button>
@@ -929,8 +1093,11 @@ function ListingForm({ isEdit = false }) {
                 <Button
                   type="button"
                   variant="primary"
+                  size="sm"
                   onClick={handleNext}
-                  rightIcon={currentStep < steps.length - 1 ? <ChevronRight className="h-4 w-4" /> : undefined}
+                  rightIcon={currentStep < steps.length - 1 ? <ChevronRight className="h-3.5 w-3.5" /> : undefined}
+                  disabled={transitioningStep}
+                  className={`text-xs ${transitioningStep ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {currentStep < steps.length - 1 ? 'Next' : 'Submit Listing'}
                 </Button>

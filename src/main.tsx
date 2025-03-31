@@ -10,8 +10,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <Toaster 
       position="top-right"
       toastOptions={{
-        duration: 5000,
+        duration: 4000,
         className: 'toast-custom',
+        // Important: 'custom-id' setting ensures only one toast is shown at a time
+        id: 'custom-id',
         style: {
           background: '#FFFFFF',
           color: '#111827',
@@ -38,7 +40,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           },
           style: {
             borderLeft: '4px solid #DC3545',
-          }
+          },
+          // Longer duration for errors
+          duration: 5000,
         },
       }}
     />

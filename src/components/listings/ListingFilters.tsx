@@ -1,4 +1,7 @@
-import React, { useState } from 'react';
+// src/components/listings/ListingFilters.tsx
+import React, { useState, useEffect } from 'react';
+import Select from 'react-select';
+import { Country, State, City } from 'country-state-city';
 import { 
   Search, 
   Filter, 
@@ -12,7 +15,8 @@ import {
   Users, 
   Globe,
   Star,
-  BadgeCheck
+  BadgeCheck,
+  MapPin
 } from 'lucide-react';
 import { Menu, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
@@ -34,11 +38,63 @@ const ListingFiltersComponent: React.FC<ListingFiltersProps> = ({
   industries = []
 }) => {
   const [localFilters, setLocalFilters] = useState<ListingFilters>(filters);
+  const [searchTerm, setSearchTerm] = useState(filters.search || '');
+  const [showFilters, setShowFilters] = useState(false);
+  
+  // State for location dropdowns
+  const [countries, setCountries] = useState([]);
+  const [states, setStates] = useState([]);
+  const [cities, setCities] = useState([]);
+  
+  // Load countries on component mount
+  useEffect(() => {
+    const countryList = Country.getAllCountries().map(country => ({
+      value: country.isoCode,
+      label: country.name
+    }));
+    setCountries(countryList);
+  }, []);
+
+  // Load states when country changes
+  useEffect(() => {
+    if (localFilters.location?.country) {
+      const stateList = State.getStatesOfCountry(localFilters.location.country).map(state => ({
+        value: state.isoCode,
+        label: state.name
+      }));
+      setStates(stateList);
+    } else {
+      setStates([]);
+    }
+  }, [localFilters.location?.country]);
+
+  // Load cities when state changes
+  useEffect(() => {
+    if (localFilters.location?.country && localFilters.location?.state) {
+      const cityList = City.getCitiesOfState(
+        localFilters.location.country, 
+        localFilters.location.state
+      ).map(city => ({
+        value: city.name,
+        label: city.name
+      }));
+      setCities(cityList);
+    } else {
+      setCities([]);
+    }
+  }, [localFilters.location?.country, localFilters.location?.state]);
   
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const search = e.target.value;
-    setLocalFilters(prev => ({ ...prev, search }));
-    onFilterChange({ ...filters, search });
+    setSearchTerm(search);
+  };
+  
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    onFilterChange({
+      ...localFilters,
+      search: searchTerm
+    });
   };
   
   const handleTypeToggle = (type: ListingType) => {
@@ -104,7 +160,7 @@ const ListingFiltersComponent: React.FC<ListingFiltersProps> = ({
   };
   
   const handleResetFilters = () => {
-    const resetFilters: ListingFilters = { search: localFilters.search };
+    const resetFilters: ListingFilters = { search: searchTerm };
     setLocalFilters(resetFilters);
     onFilterChange(resetFilters);
   };
@@ -146,6 +202,25 @@ const ListingFiltersComponent: React.FC<ListingFiltersProps> = ({
     ListingPlan.PREMIUM,
     ListingPlan.PLATINUM
   ];
+
+  // Custom styles for react-select
+  const selectStyles = {
+    control: (base) => ({
+      ...base,
+      minHeight: '36px',
+      borderRadius: '0.375rem',
+      borderColor: '#D1D5DB',
+      fontSize: '0.875rem'
+    }),
+    valueContainer: (base) => ({
+      ...base,
+      padding: '0 8px'
+    }),
+    placeholder: (base) => ({
+      ...base,
+      fontSize: '0.875rem'
+    })
+  };
   
   return (
     <div className={cn("flex flex-col space-y-4 sm:flex-row sm:space-y-0 sm:space-x-4", className)}>
@@ -154,13 +229,21 @@ const ListingFiltersComponent: React.FC<ListingFiltersProps> = ({
         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
           <Search className="h-5 w-5 text-gray-400" />
         </div>
-        <input
-          type="text"
-          placeholder="Search listings by name, description, or ID..."
-          className="pl-10 pr-4 py-2 w-full form-input"
-          value={filters.search || ''}
-          onChange={handleSearchChange}
-        />
+        <form onSubmit={handleSearch} className="flex w-full">
+          <input
+            type="text"
+            placeholder="Search listings by name, description, or ID..."
+            className="pl-10 pr-4 py-2 w-full form-input rounded-l-lg"
+            value={searchTerm}
+            onChange={handleSearchChange}
+          />
+          <Button
+            type="submit"
+            className="rounded-l-none"
+          >
+            Search
+          </Button>
+        </form>
       </div>
       
       {/* Filter dropdown */}
@@ -201,6 +284,69 @@ const ListingFiltersComponent: React.FC<ListingFiltersProps> = ({
                 >
                   Reset all
                 </button>
+              </div>
+              
+              {/* Location Filters */}
+              <div className="mb-3">
+                <div className="text-sm font-medium text-gray-700 mb-2 flex items-center">
+                  <MapPin className="w-4 h-4 mr-1" />
+                  Location
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <Select
+                    placeholder="Select Country"
+                    options={countries}
+                    value={countries.find(c => c.value === localFilters.location?.country) || null}
+                    onChange={(option) => {
+                      setLocalFilters({
+                        ...localFilters,
+                        location: { 
+                          ...localFilters.location,
+                          country: option?.value,
+                          state: undefined,
+                          city: undefined
+                        }
+                      });
+                    }}
+                    isClearable
+                    styles={selectStyles}
+                  />
+                  <Select
+                    placeholder="Select State"
+                    options={states}
+                    value={states.find(s => s.value === localFilters.location?.state) || null}
+                    onChange={(option) => {
+                      setLocalFilters({
+                        ...localFilters,
+                        location: { 
+                          ...localFilters.location,
+                          state: option?.value,
+                          city: undefined
+                        }
+                      });
+                    }}
+                    isDisabled={!localFilters.location?.country || states.length === 0}
+                    isClearable
+                    styles={selectStyles}
+                  />
+                  <Select
+                    placeholder="Select City"
+                    options={cities}
+                    value={cities.find(c => c.value === localFilters.location?.city) || null}
+                    onChange={(option) => {
+                      setLocalFilters({
+                        ...localFilters,
+                        location: { 
+                          ...localFilters.location,
+                          city: option?.value
+                        }
+                      });
+                    }}
+                    isDisabled={!localFilters.location?.state || cities.length === 0}
+                    isClearable
+                    styles={selectStyles}
+                  />
+                </div>
               </div>
               
               {/* Listing Type filters */}

@@ -56,13 +56,18 @@ export default function App() {
               } />
               <Route path="/unauthorized" element={<Unauthorized />} />
               
-              {/* Protected routes with layout */}
-              <Route element={
+               {/* Protected routes with layout */}
+               <Route element={
                 <ProtectedRoute allowedRoles={['super_admin', 'admin', 'moderator', 'advisor']}>
                   <MainLayout />
                 </ProtectedRoute>
               }>
                 {/* Dashboard with suspense for code splitting example */}
+                <Route index element={
+                  <SuspenseBoundary>
+                    <Dashboard />
+                  </SuspenseBoundary>
+                } />
                 <Route path="/" element={
                   <SuspenseBoundary>
                     <Dashboard />
@@ -112,17 +117,39 @@ export default function App() {
             </Routes>
           </AuthProvider>
           
-          {/* Toast Container */}
+          {/* Enhanced Toast Container */}
           <Toaster 
             position="top-right"
             toastOptions={{
               duration: 5000,
+              className: 'toast-custom',
               style: {
                 background: '#FFFFFF',
                 color: '#111827',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-                borderRadius: '0.5rem',
-                padding: '0.75rem 1rem',
+                maxWidth: '380px',
+                padding: '12px 16px',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                fontSize: '14px',
+                borderRadius: '6px',
+                border: '1px solid #E5E7EB',
+              },
+              success: {
+                iconTheme: {
+                  primary: '#00A651',
+                  secondary: '#FFFFFF',
+                },
+                style: {
+                  borderLeft: '4px solid #00A651',
+                }
+              },
+              error: {
+                iconTheme: {
+                  primary: '#DC3545',
+                  secondary: '#FFFFFF',
+                },
+                style: {
+                  borderLeft: '4px solid #DC3545',
+                }
               },
             }}
           />

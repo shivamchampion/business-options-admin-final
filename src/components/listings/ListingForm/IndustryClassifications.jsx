@@ -87,11 +87,6 @@ const IndustryClassifications = () => {
     loadIndustries();
   }, []);
 
-  // Debugging effect to verify industries
-  useEffect(() => {
-    console.log('Loaded industries:', allIndustries);
-  }, [allIndustries]);
-
   // Load categories for all selected industries
   useEffect(() => {
     const loadAllCategories = async () => {
@@ -262,8 +257,8 @@ const IndustryClassifications = () => {
   const selectStyles = {
     control: (base, state) => ({
       ...base,
-      minHeight: '40px',
-      borderRadius: '0.5rem',
+      minHeight: '36px',
+      borderRadius: '0.375rem',
       borderColor: state.isFocused ? '#0031ac' : errors.classifications?.[state.selectProps.fieldIndex]?.industry ? '#fca5a5' : '#D1D5DB',
       boxShadow: state.isFocused ? '0 0 0 1px #0031ac' : 'none',
       '&:hover': {
@@ -273,11 +268,29 @@ const IndustryClassifications = () => {
     option: (base, state) => ({
       ...base,
       backgroundColor: state.isSelected ? '#0031ac' : state.isFocused ? '#E6EEFF' : null,
-      color: state.isSelected ? 'white' : '#333333'
+      color: state.isSelected ? 'white' : '#333333',
+      fontSize: '0.8125rem'
     }),
     // Add menuPortal to make dropdown float above other elements
     menuPortal: base => ({ ...base, zIndex: 9999 }),
     menu: base => ({ ...base, zIndex: 9999 }),
+    placeholder: base => ({
+      ...base,
+      fontSize: '0.8125rem'
+    }),
+    singleValue: base => ({
+      ...base,
+      fontSize: '0.8125rem'
+    }),
+    valueContainer: base => ({
+      ...base,
+      padding: '0 8px'
+    }),
+    input: base => ({
+      ...base,
+      margin: '0',
+      padding: '0'
+    })
   };
 
   // Check if we have any array-level validation errors
@@ -285,34 +298,53 @@ const IndustryClassifications = () => {
 
   return (
     <div className="space-y-3">
+      {/* Header area with title and Add button */}
       <div className="flex items-center justify-between">
-        <label className="block text-sm font-medium text-gray-700">
-          Industry Classification <span className="text-red-500">*</span>
-        </label>
-        <Tooltip content="Select up to 3 industries that best describe your listing, along with categories and subcategories.">
-          <HelpCircle className="h-4 w-4 text-gray-400" />
-        </Tooltip>
+        <div className="flex items-center">
+          <label className="block text-xs font-medium text-gray-700">
+            Industry Classification <span className="text-red-500">*</span>
+          </label>
+          <Tooltip content="Select up to 3 industries that best describe your listing">
+            <HelpCircle className="h-3.5 w-3.5 text-gray-400 ml-1" />
+          </Tooltip>
+        </div>
+        
+        {/* Add button moved to the header area */}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={addClassification}
+          disabled={fields.length >= 3}
+          className={cn(
+            "h-8 text-xs border-[#0031ac] text-[#0031ac] hover:bg-blue-50",
+            fields.length >= 3 ? "opacity-50 cursor-not-allowed" : ""
+          )}
+        >
+          <Plus className="h-3.5 w-3.5 mr-1.5" />
+          Add Industry
+        </Button>
       </div>
 
       {/* Error for classifications array */}
       {hasArrayValidationError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-          <p className="text-sm text-red-600 flex items-center">
-            <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+        <div className="bg-red-50 border border-red-200 rounded-lg p-2">
+          <p className="text-xs text-red-600 flex items-center">
+            <AlertCircle className="h-3 w-3 mr-1 flex-shrink-0" />
             {errors.classifications.message}
           </p>
         </div>
       )}
 
       {/* Display industry classifications */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         {fields.length === 0 ? (
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
-            <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-blue-100">
-              <Briefcase className="h-6 w-6 text-blue-700" />
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+            <div className="mx-auto h-10 w-10 flex items-center justify-center rounded-full bg-blue-100">
+              <Briefcase className="h-5 w-5 text-blue-700" />
             </div>
-            <h3 className="mt-4 text-sm font-medium text-gray-900">No industry classifications added</h3>
-            <p className="mt-2 text-sm text-gray-500">
+            <h3 className="mt-3 text-xs font-medium text-gray-900">No industry classifications added</h3>
+            <p className="mt-1 text-xs text-gray-500">
               Add at least one industry classification to continue.
             </p>
           </div>
@@ -325,16 +357,16 @@ const IndustryClassifications = () => {
               {/* Section header with toggle and remove */}
               <div
                 className={cn(
-                  "px-4 py-3 flex items-center justify-between cursor-pointer", 
+                  "px-3 py-2 flex items-center justify-between cursor-pointer", 
                   watch(`classifications.${index}.industry`) ? "bg-blue-50 border-b border-blue-100" : "bg-gray-50 border-b border-gray-200"
                 )}
                 onClick={() => toggleSection(index)}
               >
                 <div className="flex items-center">
-                  <span className="w-6 h-6 flex items-center justify-center bg-[#0031ac] text-white rounded-full mr-2 text-sm">
+                  <span className="w-5 h-5 flex items-center justify-center bg-[#0031ac] text-white rounded-full mr-2 text-xs">
                     {index + 1}
                   </span>
-                  <h3 className="font-medium text-gray-800">
+                  <h3 className="text-xs font-medium text-gray-800">
                     {watch(`classifications.${index}.industryName`) || `Industry Classification ${index + 1}`}
                     {watch(`classifications.${index}.categoryName`) && (
                       <span className="text-gray-500 ml-1 font-normal">
@@ -350,15 +382,15 @@ const IndustryClassifications = () => {
                       e.stopPropagation();
                       removeClassification(index);
                     }}
-                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
                     aria-label="Remove classification"
                   >
-                    <Trash className="h-4 w-4" />
+                    <Trash className="h-3.5 w-3.5" />
                   </button>
                   {expandedSections[index] ? (
-                    <ChevronUp className="h-5 w-5 text-gray-400 ml-2" />
+                    <ChevronUp className="h-4 w-4 text-gray-400 ml-1" />
                   ) : (
-                    <ChevronDown className="h-5 w-5 text-gray-400 ml-2" />
+                    <ChevronDown className="h-4 w-4 text-gray-400 ml-1" />
                   )}
                 </div>
               </div>
@@ -370,7 +402,7 @@ const IndustryClassifications = () => {
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                     {/* Industry Select - takes more space */}
                     <div className="md:col-span-5">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
                         Industry <span className="text-red-500">*</span>
                       </label>
                       <Select
@@ -400,8 +432,8 @@ const IndustryClassifications = () => {
                         noOptionsMessage={() => allIndustries.length === 0 ? "No industries found" : "No matches found"}
                       />
                       {errors.classifications?.[index]?.industry && (
-                        <p className="mt-1 text-sm text-red-600 flex items-center">
-                          <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+                        <p className="mt-1 text-xs text-red-600 flex items-center">
+                          <AlertCircle className="h-3 w-3 mr-1 flex-shrink-0" />
                           {errors.classifications[index].industry.message}
                         </p>
                       )}
@@ -410,7 +442,7 @@ const IndustryClassifications = () => {
                     {/* Category Select */}
                     {watch(`classifications.${index}.industry`) && (
                       <div className="md:col-span-3">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
                           Category <span className="text-red-500">*</span>
                         </label>
                         <Select
@@ -443,8 +475,8 @@ const IndustryClassifications = () => {
                           noOptionsMessage={() => "No categories found"}
                         />
                         {errors.classifications?.[index]?.category && (
-                          <p className="mt-1 text-sm text-red-600 flex items-center">
-                            <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
+                          <p className="mt-1 text-xs text-red-600 flex items-center">
+                            <AlertCircle className="h-3 w-3 mr-1 flex-shrink-0" />
                             {errors.classifications[index].category.message}
                           </p>
                         )}
@@ -454,29 +486,29 @@ const IndustryClassifications = () => {
                     {/* Subcategory Selection */}
                     {watch(`classifications.${index}.category`) && (
                       <div className="md:col-span-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
                           Subcategories <span className="text-red-500">*</span> (1-3)
                         </label>
 
                         {!subCategoriesMap[watch(`classifications.${index}.category`)] ? (
-                          <div className="text-sm text-gray-500 flex items-center p-2 bg-gray-50 rounded border border-gray-200">
-                            <div className="animate-spin mr-2 h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                          <div className="text-xs text-gray-500 flex items-center p-2 bg-gray-50 rounded border border-gray-200">
+                            <div className="animate-spin mr-2 h-3 w-3 border-2 border-blue-600 border-t-transparent rounded-full"></div>
                             Loading subcategories...
                           </div>
                         ) : (
                           <>
                             {(subCategoriesMap[watch(`classifications.${index}.category`)] || []).length === 0 ? (
-                              <div className="text-sm text-amber-600 p-2 bg-amber-50 rounded border border-amber-200 flex items-center">
-                                <AlertCircle className="h-4 w-4 mr-2 text-amber-500" />
+                              <div className="text-xs text-amber-600 p-2 bg-amber-50 rounded border border-amber-200 flex items-center">
+                                <AlertCircle className="h-3 w-3 mr-1 text-amber-500" />
                                 No subcategories found
                               </div>
                             ) : (
-                              <div className="flex flex-wrap gap-1.5 bg-gray-50 p-2 rounded-md border border-gray-200">
+                              <div className="flex flex-wrap gap-1 bg-gray-50 p-1.5 rounded-md border border-gray-200">
                                 {(subCategoriesMap[watch(`classifications.${index}.category`)] || []).map((subCategory) => (
                                   <div
                                     key={subCategory.id}
                                     className={cn(
-                                      "flex items-center px-2 py-0.5 text-xs rounded cursor-pointer transition-colors",
+                                      "flex items-center px-1.5 py-0.5 text-[10px] rounded cursor-pointer transition-colors",
                                       watch(`classifications.${index}.subCategories`, []).includes(subCategory.id)
                                         ? "bg-blue-100 text-blue-800 border border-blue-200"
                                         : "bg-white border border-gray-300 hover:bg-gray-100"
@@ -484,7 +516,7 @@ const IndustryClassifications = () => {
                                     onClick={() => handleSubCategoryToggle(subCategory.id, subCategory.name, index)}
                                   >
                                     {watch(`classifications.${index}.subCategories`, []).includes(subCategory.id) && (
-                                      <svg className="w-3 h-3 text-blue-600 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <svg className="w-2.5 h-2.5 text-blue-600 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                                       </svg>
                                     )}
@@ -501,7 +533,7 @@ const IndustryClassifications = () => {
                               </p>
                             )}
 
-                            <p className="text-xs text-gray-500 mt-1 flex items-center">
+                            <p className="text-[10px] text-gray-500 mt-1 flex items-center">
                               Selected: {watch(`classifications.${index}.subCategories`, []).length}/3
                               {watch(`classifications.${index}.subCategories`, []).length >= 3 && (
                                 <span className="text-amber-600 ml-1">(Max)</span>
@@ -516,33 +548,6 @@ const IndustryClassifications = () => {
               )}
             </div>
           ))
-        )}
-
-        {/* Add classification button */}
-        <div className="flex justify-center mt-4">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={addClassification}
-            disabled={fields.length >= 3}
-            className={cn(
-              "shadow-sm transition-all duration-200",
-              fields.length < 3 ? "hover:shadow" : "opacity-50 cursor-not-allowed"
-            )}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Industry Classification
-            {fields.length >= 3 && " (Maximum reached)"}
-          </Button>
-        </div>
-
-        {/* Help text */}
-        {fields.length > 0 && fields.length < 3 && (
-          <div className="mt-2">
-            <p className="text-xs text-center text-gray-500">
-              You can add up to {3 - fields.length} more industry classification{fields.length === 2 ? '' : 's'}.
-            </p>
-          </div>
         )}
       </div>
     </div>

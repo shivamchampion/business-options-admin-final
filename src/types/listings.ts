@@ -208,9 +208,12 @@ export interface DocumentObject {
 }
 
 export interface LocationInfo {
-  country: string;
-  state: string;
-  city: string;
+  country: string;          // ISO country code (e.g., 'IN')
+  countryName: string;      // Full country name (e.g., 'India')
+  state: string;            // State code
+  stateName: string;        // Full state name
+  city: string;             // City name
+  cityName: string;         // City display name (same as city in most cases)
   address?: string;
   pincode?: string;
   coordinates?: {
@@ -218,7 +221,7 @@ export interface LocationInfo {
     longitude: number;
   };
   displayLocation: string;
-  locationRef?: any; // Document reference
+  locationRef?: any;
 }
 
 export interface ContactInfo {
@@ -578,6 +581,15 @@ export interface DigitalAssetDetails {
   sale: DigitalAssetSale;
 }
 
+// Add a new interface for classification
+export interface ClassificationItem {
+  industry: string;            // Industry ID
+  industryName: string;        // Industry display name
+  category: string;            // Category ID for this industry
+  categoryName: string;        // Category display name
+  subCategories: string[];     // Array of subcategory IDs (1-3)
+  subCategoryNames: string[];  // Subcategory display names
+}
 /**
  * Main Listing interface
  */
@@ -589,72 +601,73 @@ export interface Listing {
   slug: string;
   description: string;
   shortDescription?: string;
-  
+
   // Media & Visuals
   media: {
     featuredImage?: ImageObject;
     galleryImages: ImageObject[];
     totalImages: number;
   };
-  
+
   // Location Information
   location: LocationInfo;
-  
+
+  // Industry classification - now an array for multiple selections (1-3)
+  classifications: ClassificationItem[];
   // Contact Information
   contactInfo: ContactInfo;
-  
-  // Industries & Classification
-  industry: string;
-  industryRef?: any; // Document reference
-  industryName?: string;
-  category: string;
-  categoryRef?: any; // Document reference
-  categoryName?: string;
-  subCategories: string[];
-  subCategoryRefs?: any[]; // Document references
-  subCategoryNames?: string[];
-  
+
   // Legacy fields for backward compatibility
+  industry?: string;
+  industryRef?: any;
+  industryName?: string;
+  category?: string;
+  categoryRef?: any;
+  categoryName?: string;
+  subCategories?: string[];
+  subCategoryRefs?: any[];
+  subCategoryNames?: string[];
   industries?: string[];
-  industryRefs?: any[]; // Document references
+  industryRefs?: any[];
+
   tags?: string[];
   tagRefs?: any[]; // Document references
-  
+
   // Ratings and Verification
   rating?: Rating;
   reviewCount?: number;
   isVerified: boolean;
   isFeatured: boolean;
   featuredUntil?: Date;
-  
+
   // Subscription and Status
   plan: ListingPlan;
   planRef?: any; // Document reference
   status: ListingStatus;
   statusReason?: string;
   statusHistory: StatusHistory[];
-  
+
   // Ownership
   ownerId: string;
   ownerRef?: any; // Document reference
   ownerName: string;
-  
+
   // Documents
   documents: DocumentObject[];
-  
+
   // Analytics
   analytics?: AnalyticsData;
-  
+
   // Timestamps
   createdAt: Date;
   updatedAt: Date;
   publishedAt?: Date;
   expiresAt?: Date;
-  
+
   // Deletion
   isDeleted: boolean;
   deletedAt?: Date;
-  
+
   // Type-specific details - only one of these will be populated based on the listing type
   businessDetails?: BusinessDetails;
   franchiseDetails?: FranchiseDetails;

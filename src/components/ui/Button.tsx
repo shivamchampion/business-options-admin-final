@@ -6,6 +6,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
   size?: 'sm' | 'md' | 'lg';
   isLoading?: boolean;
+  loadingText?: string; // Added loading text property
   leftIcon?: ReactNode;
   rightIcon?: ReactNode;
   fullWidth?: boolean;
@@ -17,6 +18,7 @@ const Button: React.FC<ButtonProps> = ({
   variant = 'primary',
   size = 'md',
   isLoading = false,
+  loadingText, // New prop
   leftIcon,
   rightIcon,
   fullWidth = false,
@@ -69,7 +71,7 @@ const Button: React.FC<ButtonProps> = ({
       {isLoading ? (
         <>
           <LoadingSpinner />
-          <span>{children}</span>
+          <span>{loadingText || children}</span>
         </>
       ) : (
         <>

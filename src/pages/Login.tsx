@@ -1,23 +1,30 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useLoading } from '@/context/LoadingContext';
-import { Mail, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, AlertCircle, Eye, EyeOff, Check } from 'lucide-react';
 import { z } from 'zod';
 import Button from '@/components/ui/Button';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import toast from 'react-hot-toast';
 
-// Simple validation schema
+// Enhanced validation schema with more specific error messages
 const loginSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters")
+  email: z.string()
+    .min(1, "Email is required")
+    .email("Please enter a valid email address"),
+  password: z.string()
+    .min(1, "Password is required")
+    .min(6, "Password must be at least 6 characters")
 });
 
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signIn, error, isAuthenticated } = useAuth();
+  const { signIn, isAuthenticated } = useAuth();
   const { startLoading, stopLoading } = useLoading();
+  
+  // Form state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(false);
@@ -25,14 +32,46 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [formErrors, setFormErrors] = useState<{email?: string, password?: string}>({});
   const [authError, setAuthError] = useState<string | null>(null);
+  
+  // Refs to track form state
+  const isRedirecting = useRef(false);
+  const toastIdRef = useRef<string | null>(null);
+  const authSuccessful = useRef(false);
+  
+  // Cleanup function to dismiss any existing toasts
+  const dismissToasts = () => {
+    if (toastIdRef.current) {
+      toast.dismiss(toastIdRef.current);
+      toastIdRef.current = null;
+    }
+  };
 
   // Handle redirection once authenticated
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !isRedirecting.current) {
+      isRedirecting.current = true;
+      authSuccessful.current = true;
+      
       const from = location.state?.from?.pathname || '/';
-      navigate(from, { replace: true });
+      
+      // Start full-screen loading state for redirect phase ONLY
+      startLoading('Redirecting to dashboard...');
+      
+      // Delay navigation slightly to show transition
+      const redirectTimer = setTimeout(() => {
+        navigate(from, { replace: true });
+      }, 1000);
+      
+      return () => clearTimeout(redirectTimer);
     }
-  }, [isAuthenticated, navigate, location]);
+    
+    // Return cleanup function
+    return () => {
+      if (authSuccessful.current) {
+        stopLoading();
+      }
+    };
+  }, [isAuthenticated, navigate, location, startLoading, stopLoading]);
 
   // Clear auth error when user types
   useEffect(() => {
@@ -41,13 +80,36 @@ export default function Login() {
     }
   }, [email, password]);
 
-  // Cleanup loading state when component unmounts
+  // Cleanup when component mounts and unmounts
   useEffect(() => {
+    // Ensure any lingering loading state is cleared when Login page mounts
+    stopLoading();
+    
     return () => {
-      stopLoading();
+      dismissToasts();
     };
-  }, []);
+  }, [stopLoading]);
 
+  // Field validation on blur
+  const validateField = (field: 'email' | 'password', value: string) => {
+    try {
+      // Try to parse the field value through Zod
+      loginSchema.shape[field].parse(value);
+      
+      // Update form errors - remove error for this field if valid
+      setFormErrors(prev => ({ ...prev, [field]: undefined }));
+      return true;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const message = error.errors[0]?.message;
+        setFormErrors(prev => ({ ...prev, [field]: message }));
+        return false;
+      }
+      return true;
+    }
+  };
+
+  // Validate entire form before submission
   const validateForm = () => {
     try {
       loginSchema.parse({ email, password });
@@ -55,6 +117,9 @@ export default function Login() {
       return true;
     } catch (error) {
       if (error instanceof z.ZodError) {
+        // Dismiss any existing toasts first
+        dismissToasts();
+        
         const newErrors: {email?: string, password?: string} = {};
         error.errors.forEach(err => {
           if (err.path[0] === 'email' || err.path[0] === 'password') {
@@ -62,6 +127,12 @@ export default function Login() {
           }
         });
         setFormErrors(newErrors);
+        
+        // Show toast for critical validation errors
+        const errorMessages = Object.values(newErrors).filter(Boolean);
+        if (errorMessages.length > 0) {
+          toastIdRef.current = toast.error(errorMessages[0] || 'Please check your form input');
+        }
       }
       return false;
     }
@@ -73,24 +144,35 @@ export default function Login() {
     // Clear previous auth errors
     setAuthError(null);
     
+    // Dismiss any existing toasts
+    dismissToasts();
+    
+    // Reset any previous success state
+    authSuccessful.current = false;
+    isRedirecting.current = false;
+    
+    // Validate form before submission
     if (!validateForm()) {
       return;
     }
     
+    // Set button loading state only
     setIsSubmitting(true);
-    // We'll only show loading on the button for initial submission
-    // but not the full-screen overlay yet
     
     try {
-      // Authenticate the user
+      // Attempt authentication - this will only show loading on the button
       await signIn(email, password, remember);
       
-      // Only show full-screen loading if authentication succeeded
-      startLoading('Redirecting to dashboard...');
+      // Handle successful authentication
+      authSuccessful.current = true;
+      toastIdRef.current = toast.success('Authentication successful');
+      
+      // Note: we don't need to call startLoading here as the useEffect for isAuthenticated
+      // will handle showing the loading state during redirect
       
     } catch (err: any) {
       console.error('Login error:', err);
-      setIsSubmitting(false); // Stop button loading immediately
+      setIsSubmitting(false);
       
       // Create user-friendly error message
       let errorMessage = 'Login failed. Please check your credentials.';
@@ -126,6 +208,9 @@ export default function Login() {
       
       // Set the error message in the form
       setAuthError(errorMessage);
+      
+      // Show toast notification for error (with custom ID)
+      toastIdRef.current = toast.error(errorMessage);
     }
   };
 
@@ -153,7 +238,7 @@ export default function Login() {
               <form onSubmit={handleSubmit} className="space-y-5" noValidate>
                 {/* Authentication Error Message */}
                 {authError && (
-                  <div className="p-3 bg-red-50 text-red-700 rounded-lg flex items-start text-sm border border-red-200">
+                  <div className="p-3 bg-red-50 text-red-700 rounded-lg flex items-start text-sm border border-red-200 animate-fade-in">
                     <AlertCircle className="h-5 w-5 text-red-500 mr-2 mt-0.5 flex-shrink-0" />
                     <span>{authError}</span>
                   </div>
@@ -175,15 +260,23 @@ export default function Login() {
                       autoComplete="email"
                       required
                       className={`block w-full pl-10 pr-3 py-2.5 border ${
-                        formErrors.email ? 'border-red-300' : 'border-gray-300'
-                      } rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac]`}
+                        formErrors.email ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 focus:ring-[#0031ac] focus:border-[#0031ac]'
+                      } rounded-lg focus:outline-none focus:ring-1 transition duration-150`}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
+                      onBlur={() => validateField('email', email)}
                       disabled={isSubmitting}
+                      aria-invalid={!!formErrors.email}
+                      aria-describedby={formErrors.email ? "email-error" : undefined}
                     />
+                    {!formErrors.email && email && (
+                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                        <Check className="h-5 w-5 text-green-500" />
+                      </div>
+                    )}
                   </div>
                   {formErrors.email && (
-                    <p className="mt-1 text-sm text-red-600 flex items-center">
+                    <p id="email-error" className="mt-1 text-sm text-red-600 flex items-center" role="alert">
                       <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                       {formErrors.email}
                     </p>
@@ -196,7 +289,15 @@ export default function Login() {
                     <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                       Password
                     </label>
-                    <a href="#" className="text-xs font-medium text-[#0031ac] hover:text-blue-700">
+                    <a 
+                      href="#" 
+                      className="text-xs font-medium text-[#0031ac] hover:text-blue-700 transition duration-150"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        dismissToasts();
+                        toastIdRef.current = toast.error('Password reset functionality not implemented yet');
+                      }}
+                    >
                       Forgot password?
                     </a>
                   </div>
@@ -211,17 +312,21 @@ export default function Login() {
                       autoComplete="current-password"
                       required
                       className={`block w-full pl-10 pr-10 py-2.5 border ${
-                        formErrors.password ? 'border-red-300' : 'border-gray-300'
-                      } rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac]`}
+                        formErrors.password ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 focus:ring-[#0031ac] focus:border-[#0031ac]'
+                      } rounded-lg focus:outline-none focus:ring-1 transition duration-150`}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
+                      onBlur={() => validateField('password', password)}
                       disabled={isSubmitting}
+                      aria-invalid={!!formErrors.password}
+                      aria-describedby={formErrors.password ? "password-error" : undefined}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute inset-y-0 right-0 pr-3 flex items-center"
                       tabIndex={-1}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
                     >
                       {showPassword ? (
                         <EyeOff className="h-5 w-5 text-gray-500 hover:text-gray-700" />
@@ -231,7 +336,7 @@ export default function Login() {
                     </button>
                   </div>
                   {formErrors.password && (
-                    <p className="mt-1 text-sm text-red-600 flex items-center">
+                    <p id="password-error" className="mt-1 text-sm text-red-600 flex items-center" role="alert">
                       <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                       {formErrors.password}
                     </p>
