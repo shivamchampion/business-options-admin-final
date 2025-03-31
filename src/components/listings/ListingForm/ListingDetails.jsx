@@ -4,12 +4,9 @@ import { motion } from 'framer-motion';
 import { 
   AlertTriangle, 
   Info, 
-  HelpCircle,
-  AlertCircle,
-  ChevronRight
+  HelpCircle
 } from 'lucide-react';
 import { ListingType } from '@/types/listings';
-import { cn } from '@/lib/utils';
 
 // Import type-specific forms
 import BusinessForm from '../business/BusinessForm';
@@ -40,11 +37,10 @@ const Tooltip = ({ content, children }) => {
   );
 };
 
-const ListingDetails = () => {
-  const { control, formState: { errors } } = useFormContext();
-  const [isLoading, setIsLoading] = useState(false);
+const ListingDetails = ({ submitAttempted = false, isLoading: formLoading = false }) => {
+  const { control } = useFormContext();
+  const [isLoading, setIsLoading] = useState(formLoading);
   const [prevType, setPrevType] = useState(null);
-  const [expandedErrors, setExpandedErrors] = useState(false);
   
   // Watch the listing type to render the appropriate form
   const listingType = useWatch({
@@ -114,15 +110,15 @@ const ListingDetails = () => {
 
     switch (listingType) {
       case ListingType.BUSINESS:
-        return <BusinessForm />;
+        return <BusinessForm submitAttempted={submitAttempted} />;
       case ListingType.FRANCHISE:
-        return <FranchiseForm />;
+        return <FranchiseForm submitAttempted={submitAttempted} />;
       case ListingType.STARTUP:
-        return <StartupForm />;
+        return <StartupForm submitAttempted={submitAttempted} />;
       case ListingType.INVESTOR:
-        return <InvestorForm />;
+        return <InvestorForm submitAttempted={submitAttempted} />;
       case ListingType.DIGITAL_ASSET:
-        return <DigitalAssetForm />;
+        return <DigitalAssetForm submitAttempted={submitAttempted} />;
       default:
         return (
           <div className="flex justify-center items-center min-h-[300px]">
@@ -134,48 +130,6 @@ const ListingDetails = () => {
         );
     }
   };
-
-  // Check for errors in this step
-  const hasTypeErrors = () => {
-    const errorKeys = Object.keys(errors);
-    
-    switch (listingType) {
-      case ListingType.BUSINESS:
-        return errorKeys.some(key => key.startsWith('businessDetails'));
-      case ListingType.FRANCHISE:
-        return errorKeys.some(key => key.startsWith('franchiseDetails'));
-      case ListingType.STARTUP:
-        return errorKeys.some(key => key.startsWith('startupDetails'));
-      case ListingType.INVESTOR:
-        return errorKeys.some(key => key.startsWith('investorDetails'));
-      case ListingType.DIGITAL_ASSET:
-        return errorKeys.some(key => key.startsWith('digitalAssetDetails'));
-      default:
-        return false;
-    }
-  };
-
-  // Get all errors for the current listing type
-  const getTypeErrors = () => {
-    const result = [];
-    const prefix = listingType ? listingType + 'Details' : '';
-    
-    if (!prefix) return result;
-    
-    Object.entries(errors).forEach(([key, value]) => {
-      if (key.startsWith(prefix)) {
-        const field = key.replace(prefix + '.', '');
-        result.push({
-          field: field.charAt(0).toUpperCase() + field.slice(1).replace(/([A-Z])/g, ' $1'),
-          message: value.message
-        });
-      }
-    });
-    
-    return result;
-  };
-
-  const typeErrors = getTypeErrors();
 
   return (
     <div className="space-y-6">
@@ -198,41 +152,6 @@ const ListingDetails = () => {
           <p className="mt-2">All fields marked with an asterisk (*) are required.</p>
         </div>
       </div>
-
-      {/* Error Warning */}
-      {hasTypeErrors() && (
-        <div className="p-4 border border-red-200 bg-red-50 rounded-lg">
-          <div className="flex items-start">
-            <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
-            <div className="text-sm text-red-700 flex-1">
-              <p className="font-medium mb-1">There are errors in your form</p>
-              <p>Please review the highlighted fields and correct the errors before proceeding.</p>
-              
-              {typeErrors.length > 0 && (
-                <div className="mt-2">
-                  <button 
-                    onClick={() => setExpandedErrors(!expandedErrors)}
-                    className="flex items-center text-sm font-medium text-red-700 hover:text-red-800"
-                  >
-                    <ChevronRight className={`h-4 w-4 mr-1 transition-transform ${expandedErrors ? 'rotate-90' : ''}`} />
-                    {expandedErrors ? 'Hide error details' : 'Show error details'}
-                  </button>
-                  
-                  {expandedErrors && (
-                    <ul className="mt-2 space-y-1 pl-6 list-disc">
-                      {typeErrors.map((error, index) => (
-                        <li key={index}>
-                          <span className="font-medium">{error.field}:</span> {error.message}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Dynamic Form Content */}
       <motion.div

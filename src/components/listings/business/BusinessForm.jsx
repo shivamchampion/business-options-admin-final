@@ -1,229 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { useForm, Controller } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-import { Info, HelpCircle, ChevronDownIcon, CheckIcon } from 'lucide-react';
-import  Tooltip  from '@/components/ui/Tooltip';
-import { Listbox, Transition, Disclosure, Switch as HeadlessSwitch, RadioGroup, Combobox } from '@headlessui/react';
-
-import { Fragment } from 'react';
+import { useFormContext } from 'react-hook-form';
+import Select from 'react-select';
+import { 
+  Info, 
+  AlertCircle, 
+  HelpCircle, 
+  CheckIcon,
+  Calendar
+} from 'lucide-react';
 import { BusinessType, EntityType, LocationType, RevenueTrend } from '@/types/listings';
-
 import { cn } from '@/lib/utils';
 
-// Validation schema for the Business form
-const businessFormSchema = z.object({
-  // Business Information section
-  businessType: z.enum(Object.values(BusinessType), {
-    required_error: "Business type is required",
-  }),
-  entityType: z.enum(Object.values(EntityType), {
-    required_error: "Entity type is required",
-  }),
-  establishedYear: z.string()
-    .refine((val) => !isNaN(parseInt(val)), "Year must be a number")
-    .refine((val) => {
-      const year = parseInt(val);
-      return year >= 1900 && year <= new Date().getFullYear();
-    }, `Year must be between 1900 and ${new Date().getFullYear()}`),
-  registrationNumber: z.string().min(1, "Registration number is required"),
-  gstNumber: z.string().optional(),
-  panNumber: z.string().optional(),
-
-  // Operations section
-  operations: z.object({
-    employees: z.object({
-      count: z.string()
-        .refine((val) => !isNaN(parseInt(val)), "Employee count must be a number")
-        .refine((val) => parseInt(val) >= 0, "Employee count must be a positive number"),
-      fullTime: z.string()
-        .refine((val) => !isNaN(parseInt(val)), "Full-time employee count must be a number")
-        .refine((val) => parseInt(val) >= 0, "Full-time count must be a positive number"),
-      partTime: z.string()
-        .refine((val) => !isNaN(parseInt(val)), "Part-time employee count must be a number")
-        .refine((val) => parseInt(val) >= 0, "Part-time count must be a positive number")
-        .optional(),
-    }).refine((data) => {
-      const total = parseInt(data.count);
-      const fullTime = parseInt(data.fullTime);
-      const partTime = parseInt(data.partTime || '0');
-      return fullTime + partTime === total;
-    }, {
-      message: "Full-time and part-time employees must add up to total employees",
-      path: ["count"],
-    }),
-    locationType: z.enum(Object.values(LocationType), {
-      required_error: "Location type is required",
-    }),
-    leaseInformation: z.object({
-      expiryDate: z.date({
-        required_error: "Lease expiry date is required",
-      }),
-      monthlyCost: z.object({
-        value: z.string()
-          .refine((val) => !isNaN(parseFloat(val)), "Lease cost must be a number")
-          .refine((val) => parseFloat(val) >= 0, "Lease cost must be a positive number"),
-        currency: z.string().default("INR"),
-      }),
-      isTransferable: z.boolean(),
-    }).optional(),
-    operationDescription: z.string()
-      .min(100, "Description must be at least 100 characters")
-      .max(1000, "Description cannot exceed 1000 characters"),
-  }),
-
-  // Financial section
-  financials: z.object({
-    annualRevenue: z.object({
-      value: z.string()
-        .refine((val) => !isNaN(parseFloat(val)), "Annual revenue must be a number")
-        .refine((val) => parseFloat(val) >= 0, "Annual revenue must be a positive number"),
-      currency: z.string().default("INR"),
-    }),
-    monthlyRevenue: z.object({
-      value: z.string()
-        .refine((val) => !isNaN(parseFloat(val)), "Monthly revenue must be a number")
-        .refine((val) => parseFloat(val) >= 0, "Monthly revenue must be a positive number"),
-      currency: z.string().default("INR"),
-    }),
-    profitMargin: z.object({
-      percentage: z.string()
-        .refine((val) => !isNaN(parseFloat(val)), "Profit margin must be a number")
-        .refine((val) => parseFloat(val) >= 0 && parseFloat(val) <= 100, "Profit margin must be between 0 and 100%"),
-      trend: z.string().default("stable"),
-    }),
-    revenueTrend: z.enum(Object.values(RevenueTrend), {
-      required_error: "Revenue trend is required",
-    }),
-    inventory: z.object({
-      isIncluded: z.boolean(),
-      value: z.object({
-        value: z.string()
-          .refine((val) => !isNaN(parseFloat(val)), "Inventory value must be a number")
-          .refine((val) => parseFloat(val) >= 0, "Inventory value must be a positive number"),
-        currency: z.string().default("INR"),
-      }),
-      description: z.string().optional(),
-    }).optional(),
-    equipment: z.object({
-      isIncluded: z.boolean(),
-      value: z.object({
-        value: z.string()
-          .refine((val) => !isNaN(parseFloat(val)), "Equipment value must be a number")
-          .refine((val) => parseFloat(val) >= 0, "Equipment value must be a positive number"),
-        currency: z.string().default("INR"),
-      }),
-      description: z.string().min(1, "Equipment description is required"),
-    }),
-    customerConcentration: z.string()
-      .refine((val) => !isNaN(parseFloat(val)), "Customer concentration must be a number")
-      .refine((val) => parseFloat(val) >= 0 && parseFloat(val) <= 100, "Customer concentration must be between 0 and 100%"),
-  }),
-
-  // Sale section
-  sale: z.object({
-    askingPrice: z.object({
-      value: z.string()
-        .refine((val) => !isNaN(parseFloat(val)), "Asking price must be a number")
-        .refine((val) => parseFloat(val) >= 0, "Asking price must be a positive number"),
-      currency: z.string().default("INR"),
-      priceMultiple: z.string()
-        .refine((val) => val === '' || !isNaN(parseFloat(val)), "Price multiple must be a number if provided")
-        .refine((val) => val === '' || (parseFloat(val) >= 0), "Price multiple must be a positive number")
-        .optional(),
-      isNegotiable: z.boolean(),
-    }),
-    reasonForSelling: z.string()
-      .min(50, "Reason must be at least 50 characters")
-      .max(500, "Reason cannot exceed 500 characters"),
-    sellerFinancing: z.object({
-      isAvailable: z.boolean(),
-      details: z.string().optional(),
-      downPaymentPercentage: z.string()
-        .refine((val) => val === '' || !isNaN(parseFloat(val)), "Down payment must be a number if provided")
-        .refine((val) => val === '' || (parseFloat(val) >= 10 && parseFloat(val) <= 100), "Down payment must be between 10% and 100%")
-        .optional(),
-    }),
-    transitionPeriod: z.string()
-      .refine((val) => !isNaN(parseInt(val)), "Transition period must be a number")
-      .refine((val) => parseInt(val) >= 0 && parseInt(val) <= 12, "Transition period must be between 0 and 12 months"),
-    trainingIncluded: z.string()
-      .min(50, "Training details must be at least 50 characters")
-      .max(500, "Training details cannot exceed 500 characters"),
-    assetsIncluded: z.string()
-      .min(100, "Assets description must be at least 100 characters")
-      .max(1000, "Assets description cannot exceed 1000 characters"),
-  }),
-});
-
-// Default values for the form
-const defaultBusinessFormValues = {
-  businessType: BusinessType.RETAIL,
-  entityType: EntityType.PRIVATE_LIMITED,
-  establishedYear: new Date().getFullYear().toString(),
-  registrationNumber: "",
-  gstNumber: "",
-  panNumber: "",
-  operations: {
-    employees: {
-      count: "0",
-      fullTime: "0",
-      partTime: "0",
-    },
-    locationType: LocationType.LEASED_COMMERCIAL,
-    operationDescription: "",
-  },
-  financials: {
-    annualRevenue: {
-      value: "0",
-      currency: "INR",
-    },
-    monthlyRevenue: {
-      value: "0",
-      currency: "INR",
-    },
-    profitMargin: {
-      percentage: "0",
-      trend: "stable",
-    },
-    revenueTrend: RevenueTrend.STABLE,
-    equipment: {
-      isIncluded: true,
-      value: {
-        value: "0",
-        currency: "INR",
-      },
-      description: "",
-    },
-    inventory: {
-      isIncluded: false,
-      value: {
-        value: "0",
-        currency: "INR",
-      },
-      description: "",
-    },
-    customerConcentration: "0",
-  },
-  sale: {
-    askingPrice: {
-      value: "0",
-      currency: "INR",
-      priceMultiple: "",
-      isNegotiable: true,
-    },
-    reasonForSelling: "",
-    sellerFinancing: {
-      isAvailable: false,
-      details: "",
-      downPaymentPercentage: "",
-    },
-    transitionPeriod: "1",
-    trainingIncluded: "",
-    assetsIncluded: "",
-  },
-};
-
+// Options for dropdowns
 const businessTypeOptions = [
   { value: BusinessType.RETAIL, label: "Retail" },
   { value: BusinessType.MANUFACTURING, label: "Manufacturing" },
@@ -258,1231 +46,1281 @@ const revenueTrendOptions = [
   { value: RevenueTrend.DECLINING, label: "Declining (<-10%)" },
 ];
 
-// Custom form components using Headless UI
-const Card = ({ children, className }) => {
+// Tooltip component - exact match with BasicInfo
+const Tooltip = ({ content, children }) => {
   return (
-    <div className={`bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden ${className}`}>
+    <div className="group relative inline-block">
       {children}
-    </div>
-  );
-};
-
-const CardHeader = ({ children, className }) => {
-  return <div className={`px-6 py-4 border-b border-gray-100 ${className}`}>{children}</div>;
-};
-
-const CardTitle = ({ children, className }) => {
-  return <h3 className={`text-xl font-semibold text-gray-900 ${className}`}>{children}</h3>;
-};
-
-const CardContent = ({ children, className }) => {
-  return <div className={`p-6 ${className}`}>{children}</div>;
-};
-
-const Input = React.forwardRef(({ type = "text", className, ...props }, ref) => {
-  return (
-    <input
-      type={type}
-      className={`w-full rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 ${className}`}
-      ref={ref}
-      {...props}
-    />
-  );
-});
-
-const Textarea = React.forwardRef(({ className, ...props }, ref) => {
-  return (
-    <textarea
-      className={`w-full rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 ${className}`}
-      ref={ref}
-      {...props}
-    />
-  );
-});
-
-const FormItem = ({ children, className }) => {
-  return <div className={`space-y-1 ${className}`}>{children}</div>;
-};
-
-const FormLabel = ({ children, className }) => {
-  return (
-    <label className={`block text-sm font-medium text-gray-700 ${className}`}>
-      {children}
-    </label>
-  );
-};
-
-const FormDescription = ({ children, className }) => {
-  return (
-    <p className={`text-sm text-gray-500 ${className}`}>
-      {children}
-    </p>
-  );
-};
-
-const FormMessage = ({ children, className }) => {
-  if (!children) return null;
-  
-  return (
-    <p className={`mt-1 text-sm text-red-600 ${className}`}>
-      {children}
-    </p>
-  );
-};
-
-// Custom Headless UI Select component
-const SelectWrapper = ({ value, onChange, options, placeholder, error }) => {
-  const selectedOption = options.find(option => option.value === value) || null;
-  
-  return (
-    <Listbox value={value} onChange={onChange}>
-      {({ open }) => (
-        <div className="relative">
-          <Listbox.Button
-            className={`relative w-full rounded-md border ${error ? 'border-red-300' : 'border-gray-300'} bg-white py-2 pl-3 pr-10 text-left shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm`}
-          >
-            <span className="block truncate">
-              {selectedOption ? selectedOption.label : placeholder}
-            </span>
-            <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-              <ChevronDownIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
-            </span>
-          </Listbox.Button>
-
-          <Transition
-            show={open}
-            as={Fragment}
-            leave="transition ease-in duration-100"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
-            <Listbox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
-              {options.map((option) => (
-                <Listbox.Option
-                  key={option.value}
-                  className={({ active }) =>
-                    `relative cursor-default select-none py-2 pl-10 pr-4 ${
-                      active ? 'bg-blue-100 text-blue-900' : 'text-gray-900'
-                    }`
-                  }
-                  value={option.value}
-                >
-                  {({ selected, active }) => (
-                    <>
-                      <span
-                        className={`block truncate ${
-                          selected ? 'font-medium' : 'font-normal'
-                        }`}
-                      >
-                        {option.label}
-                      </span>
-                      {selected ? (
-                        <span
-                          className={`absolute inset-y-0 left-0 flex items-center pl-3 ${
-                            active ? 'text-blue-600' : 'text-blue-600'
-                          }`}
-                        >
-                          <CheckIcon className="h-5 w-5" aria-hidden="true" />
-                        </span>
-                      ) : null}
-                    </>
-                  )}
-                </Listbox.Option>
-              ))}
-            </Listbox.Options>
-          </Transition>
+      <div className="absolute z-50 w-64 opacity-0 invisible group-hover:opacity-100 group-hover:visible 
+        transform -translate-x-1/2 left-1/2 bottom-full mb-2 transition-all duration-200 ease-in-out pointer-events-none">
+        <div className="relative bg-gray-800 text-white text-xs rounded-md p-2 text-center shadow-lg">
+          {content}
+          <div className="absolute w-2.5 h-2.5 bg-gray-800 transform rotate-45 -bottom-[5px] left-1/2 -translate-x-1/2"></div>
         </div>
-      )}
-    </Listbox>
-  );
-};
-
-// Custom checkbox component
-const CheckboxComponent = ({ checked, onChange, label, description }) => {
-  return (
-    <div className="flex items-start space-x-3">
-      <div className="flex h-5 items-center">
-        <input
-          type="checkbox"
-          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-          checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
-        />
       </div>
-      {(label || description) && (
-        <div className="leading-none">
-          {label && <span className="text-sm font-medium text-gray-700">{label}</span>}
-          {description && <p className="text-sm text-gray-500">{description}</p>}
-        </div>
-      )}
     </div>
   );
 };
 
-/**
- * Business Form Component - Step 3 of listing creation
- * Includes all sections as specified in the documentation:
- * - Business Information
- * - Operations
- * - Financial
- * - Sale Information
- * 
- * @param {Object} props - Component props
- * @param {Object} props.defaultValues - Default values for the form 
- * @param {Function} props.onSubmit - Callback for form submission
- * @param {boolean} props.isSubmitting - Whether the form is currently submitting
- * @param {boolean} props.isEdit - Whether we're editing an existing listing
- */
-export default function BusinessForm({ 
-  defaultValues = {}, 
-  onSubmit, 
-  isSubmitting = false, 
-  isEdit = false 
-}) {
-  // Set up form with schema validation
-  const form = useForm({
-    resolver: zodResolver(businessFormSchema),
-    defaultValues: { ...defaultBusinessFormValues, ...defaultValues },
-    mode: "onChange",
-  });
+// Switch component (Toggle)
+const Switch = ({ checked, onChange, label }) => {
+  return (
+    <div className="flex items-center space-x-2">
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 transition-colors duration-200 ease-in-out focus:outline-none ${
+          checked ? 'bg-[#0031ac] border-[#0031ac]' : 'bg-gray-200 border-gray-200'
+        }`}
+      >
+        <span
+          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+            checked ? 'translate-x-5' : 'translate-x-0'
+          }`}
+        />
+      </button>
+      <span className="text-sm text-gray-700">{label}</span>
+    </div>
+  );
+};
 
+// Main Business Form Component
+export default function BusinessForm({ submitAttempted = false }) {
+  // Use parent form context
   const { 
     control, 
+    register,
     watch, 
     setValue, 
     getValues, 
-    handleSubmit, 
+    trigger,
     formState: { errors } 
-  } = form;
+  } = useFormContext();
 
   // Watch for values that affect conditional rendering
-  const locationType = watch("operations.locationType");
-  const businessType = watch("businessType");
-  const sellerFinancingAvailable = watch("sale.sellerFinancing.isAvailable");
-  const inventoryIncluded = watch("financials.inventory.isIncluded");
+  const locationType = watch("businessDetails.operations.locationType");
+  const sellerFinancingAvailable = watch("businessDetails.sale.sellerFinancing.isAvailable");
+  const inventoryIncluded = watch("businessDetails.financials.inventory.isIncluded");
 
   // Effect to update part-time employees based on total and full-time
   useEffect(() => {
-    const total = parseInt(getValues("operations.employees.count") || '0');
-    const fullTime = parseInt(getValues("operations.employees.fullTime") || '0');
+    const total = parseInt(getValues("businessDetails.operations.employees.count") || '0');
+    const fullTime = parseInt(getValues("businessDetails.operations.employees.fullTime") || '0');
     
     if (!isNaN(total) && !isNaN(fullTime)) {
       const partTime = Math.max(0, total - fullTime);
-      setValue("operations.employees.partTime", partTime.toString());
+      setValue("businessDetails.operations.employees.partTime", partTime.toString());
+      
+      // Validate employees fields if form has been submitted
+      if (submitAttempted) {
+        trigger("businessDetails.operations.employees");
+      }
     }
-  }, [watch("operations.employees.count"), watch("operations.employees.fullTime")]);
+  }, [
+    watch("businessDetails.operations.employees.count"), 
+    watch("businessDetails.operations.employees.fullTime"), 
+    getValues, 
+    setValue, 
+    trigger, 
+    submitAttempted
+  ]);
 
+  // Validate all fields when form submission is attempted
+  useEffect(() => {
+    if (submitAttempted) {
+      trigger("businessDetails");
+    }
+  }, [submitAttempted, trigger]);
 
-  // Handler for form submission
-  const onFormSubmit = (data) => {
-    // Process the data here before sending it to the parent component
-    // For example, convert string numbers to actual number types
-    const processedData = {
-      ...data,
-      establishedYear: parseInt(data.establishedYear),
-      operations: {
-        ...data.operations,
-        employees: {
-          count: parseInt(data.operations.employees.count),
-          fullTime: parseInt(data.operations.employees.fullTime),
-          partTime: data.operations.employees.partTime ? parseInt(data.operations.employees.partTime) : 0,
-        },
+  // Custom styles for react-select - match exactly with BasicInfo form
+  const selectStyles = {
+    control: (base, state) => ({
+      ...base,
+      minHeight: '42px',
+      fontSize: '0.875rem',
+      borderRadius: '0.5rem',
+      borderColor: state.isFocused ? '#0031ac' : '#D1D5DB',
+      boxShadow: state.isFocused ? '0 0 0 1px #0031ac' : 'none',
+      '&:hover': {
+        borderColor: state.isFocused ? '#0031ac' : '#9CA3AF'
       },
-      financials: {
-        ...data.financials,
-        annualRevenue: {
-          ...data.financials.annualRevenue,
-          value: parseFloat(data.financials.annualRevenue.value),
-        },
-        monthlyRevenue: {
-          ...data.financials.monthlyRevenue,
-          value: parseFloat(data.financials.monthlyRevenue.value),
-        },
-        profitMargin: {
-          ...data.financials.profitMargin,
-          percentage: parseFloat(data.financials.profitMargin.percentage),
-        },
-        equipment: {
-          ...data.financials.equipment,
-          value: {
-            ...data.financials.equipment.value,
-            value: parseFloat(data.financials.equipment.value.value),
-          },
-        },
-        customerConcentration: parseFloat(data.financials.customerConcentration),
-      },
-      sale: {
-        ...data.sale,
-        askingPrice: {
-          ...data.sale.askingPrice,
-          value: parseFloat(data.sale.askingPrice.value),
-          priceMultiple: data.sale.askingPrice.priceMultiple 
-            ? parseFloat(data.sale.askingPrice.priceMultiple) 
-            : undefined,
-        },
-        transitionPeriod: parseInt(data.sale.transitionPeriod),
-      },
-    };
-
-    // Handle inventory conditionally
-    if (data.financials.inventory && data.financials.inventory.isIncluded) {
-      processedData.financials.inventory = {
-        ...data.financials.inventory,
-        value: {
-          ...data.financials.inventory.value,
-          value: parseFloat(data.financials.inventory.value.value),
-        },
-      };
-    }
-
-    // Handle seller financing conditionally
-    if (data.sale.sellerFinancing && data.sale.sellerFinancing.isAvailable && data.sale.sellerFinancing.downPaymentPercentage) {
-      processedData.sale.sellerFinancing.downPaymentPercentage = parseFloat(data.sale.sellerFinancing.downPaymentPercentage);
-    }
-
-    onSubmit(processedData);
-  };
-
-  // Check if retail or manufacturing to show inventory conditional field
-  const shouldShowInventory = () => {
-    return [BusinessType.RETAIL, BusinessType.MANUFACTURING, BusinessType.DISTRIBUTION].includes(businessType);
-  };
-
-  // Render warning for high customer concentration
-  const renderCustomerConcentrationWarning = () => {
-    const concentration = parseFloat(watch("financials.customerConcentration") || '0');
-    if (concentration > 50) {
-      return (
-        <div className="text-amber-600 text-sm flex items-center mt-1">
-          <Info className="h-4 w-4 mr-1" />
-          <span>High customer concentration may be seen as a risk by potential buyers.</span>
-        </div>
-      );
-    }
-    return null;
+      "&:focus": {
+        borderColor: '#0031ac',
+        boxShadow: '0 0 0 1px #0031ac'
+      }
+    }),
+    option: (base, state) => ({
+      ...base,
+      padding: '8px 12px',
+      fontSize: '0.875rem',
+      backgroundColor: state.isSelected ? '#0031ac' : state.isFocused ? '#E6EEFF' : null,
+      color: state.isSelected ? 'white' : '#333333'
+    }),
+    placeholder: base => ({
+      ...base,
+      fontSize: '0.875rem'
+    }),
+    singleValue: base => ({
+      ...base,
+      fontSize: '0.875rem'
+    }),
+    valueContainer: base => ({
+      ...base,
+      padding: '0 12px'
+    }),
+    input: base => ({
+      ...base,
+      margin: '0',
+      padding: '0'
+    })
   };
 
   return (
-    <div className="space-y-8">
-      <form onSubmit={handleSubmit(onFormSubmit)}>
-        {/* Business Information Section */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle className="text-xl font-semibold flex items-center">
-              Business Information
-              <Tooltip content="Basic information about the business entity">
-                <HelpCircle className="h-4 w-4 ml-2 text-gray-400" />
+    <div className="space-y-6">
+      {/* Info Message */}
+      <div className="p-4 border border-blue-200 bg-blue-50 rounded-lg flex items-start">
+        <Info className="h-5 w-5 text-blue-500 mr-3 mt-0.5 flex-shrink-0" />
+        <div className="text-sm text-blue-700">
+          <p className="font-semibold mb-1">Business Details</p>
+          <p>
+            Provide comprehensive information about your business operations, financials, and sale terms.
+            All fields marked with an asterisk (*) are required.
+          </p>
+        </div>
+      </div>
+
+      {/* Business Information Section */}
+      <div className="space-y-6">
+        <h3 className="text-base font-semibold text-gray-800">Business Information</h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Business Type */}
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label className="block text-sm font-semibold text-gray-800 mr-2">
+                Business Type <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Select the primary category that best describes your business operations">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
               </Tooltip>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Business Type */}
-              <FormItem>
-                <FormLabel>Business Type <span className="text-red-500">*</span></FormLabel>
-                <Controller
-                  control={control}
-                  name="businessType"
-                  render={({ field }) => (
-                    <SelectWrapper
-                      value={field.value}
-                      onChange={field.onChange}
-                      options={businessTypeOptions}
-                      placeholder="Select business type"
-                      error={errors.businessType}
-                    />
-                  )}
-                />
-                <FormDescription>
-                  The primary business category or industry
-                </FormDescription>
-                <FormMessage>{errors.businessType?.message}</FormMessage>
-              </FormItem>
-
-              {/* Entity Type */}
-              <FormItem>
-                <FormLabel>Entity Type <span className="text-red-500">*</span></FormLabel>
-                <Controller
-                  control={control}
-                  name="entityType"
-                  render={({ field }) => (
-                    <SelectWrapper
-                      value={field.value}
-                      onChange={field.onChange}
-                      options={entityTypeOptions}
-                      placeholder="Select entity type"
-                      error={errors.entityType}
-                    />
-                  )}
-                />
-                <FormDescription>
-                  The legal structure of the business
-                </FormDescription>
-                <FormMessage>{errors.entityType?.message}</FormMessage>
-              </FormItem>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Year Established */}
-              <FormItem>
-                <FormLabel>Year Established <span className="text-red-500">*</span></FormLabel>
-                <Controller
-                  control={control}
-                  name="establishedYear"
-                  render={({ field }) => (
-                    <Input 
-                      type="number" 
-                      placeholder="YYYY" 
-                      min={1900} 
-                      max={new Date().getFullYear()} 
-                      {...field} 
-                      className={errors.establishedYear ? "border-red-300" : ""}
-                    />
-                  )}
-                />
-                <FormDescription>
-                  The year when the business was founded
-                </FormDescription>
-                <FormMessage>{errors.establishedYear?.message}</FormMessage>
-              </FormItem>
+            <Select
+              inputId="businessDetails.businessType"
+              options={businessTypeOptions}
+              value={businessTypeOptions.find(option => option.value === watch("businessDetails.businessType"))}
+              onChange={(option) => {
+                setValue("businessDetails.businessType", option.value);
+                trigger("businessDetails.businessType");
+              }}
+              onBlur={() => trigger("businessDetails.businessType")}
+              placeholder="Select business type"
+              styles={selectStyles}
+              className={cn(
+                errors.businessDetails?.businessType ? "select-error" : ""
+              )}
+            />
 
-              {/* Registration Number */}
-              <FormItem>
-                <FormLabel>Registration Number <span className="text-red-500">*</span></FormLabel>
-                <Controller
-                  control={control}
-                  name="registrationNumber"
-                  render={({ field }) => (
-                    <Input 
-                      placeholder="Enter business registration number" 
-                      {...field} 
-                      className={errors.registrationNumber ? "border-red-300" : ""}
-                    />
-                  )}
-                />
-                <FormDescription>
-                  The official business registration ID
-                </FormDescription>
-                <FormMessage>{errors.registrationNumber?.message}</FormMessage>
-              </FormItem>
-            </div>
+            {errors.businessDetails?.businessType && (
+              <p className="text-sm text-red-600 flex items-center mt-1">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.businessDetails.businessType.message}
+              </p>
+            )}
+          </div>
 
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* GST Number */}
-              <FormItem>
-                <FormLabel>GST Number</FormLabel>
-                <Controller
-                  control={control}
-                  name="gstNumber"
-                  render={({ field }) => (
-                    <Input 
-                      placeholder="Enter GST registration number (if applicable)" 
-                      {...field} 
-                      className={errors.gstNumber ? "border-red-300" : ""}
-                    />
-                  )}
-                />
-                <FormDescription>
-                  The tax registration number (optional)
-                </FormDescription>
-                <FormMessage>{errors.gstNumber?.message}</FormMessage>
-              </FormItem>
-
-              {/* PAN Number */}
-              <FormItem>
-                <FormLabel>PAN Number</FormLabel>
-                <Controller
-                  control={control}
-                  name="panNumber"
-                  render={({ field }) => (
-                    <Input 
-                      placeholder="Enter business PAN number (if applicable)" 
-                      {...field} 
-                      className={errors.panNumber ? "border-red-300" : ""}
-                    />
-                  )}
-                />
-                <FormDescription>
-                  The business tax ID (optional)
-                </FormDescription>
-                <FormMessage>{errors.panNumber?.message}</FormMessage>
-              </FormItem>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Operations Section */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle className="text-xl font-semibold flex items-center">
-              Operations
-              <Tooltip content="Information about how the business operates">
-                <HelpCircle className="h-4 w-4 ml-2 text-gray-400" />
+          {/* Entity Type */}
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label className="block text-sm font-semibold text-gray-800 mr-2">
+                Entity Type <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="The legal structure under which your business operates">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
               </Tooltip>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Employees */}
-            <div className="space-y-4">
-              <h3 className="text-base font-medium">Employee Information</h3>
-              
-              <div className="grid md:grid-cols-3 gap-4">
-                {/* Total Employees */}
-                <FormItem>
-                  <FormLabel>Total Employees <span className="text-red-500">*</span></FormLabel>
-                  <Controller
-                    control={control}
-                    name="operations.employees.count"
-                    render={({ field }) => (
-                      <Input 
-                        type="number" 
-                        min="0" 
-                        {...field} 
-                        className={errors.operations?.employees?.count ? "border-red-300" : ""}
-                      />
-                    )}
-                  />
-                  <FormDescription>
-                    Total number of employees
-                  </FormDescription>
-                  <FormMessage>{errors.operations?.employees?.count?.message}</FormMessage>
-                </FormItem>
+            </div>
 
-                {/* Full-Time Employees */}
-                <FormItem>
-                  <FormLabel>Full-time <span className="text-red-500">*</span></FormLabel>
-                  <Controller
-                    control={control}
-                    name="operations.employees.fullTime"
-                    render={({ field }) => (
-                      <Input 
-                        type="number" 
-                        min="0" 
-                        {...field} 
-                        className={errors.operations?.employees?.fullTime ? "border-red-300" : ""}/>
-                      )}
-                    />
-                    <FormDescription>
-                      Number of full-time employees
-                    </FormDescription>
-                    <FormMessage>{errors.operations?.employees?.fullTime?.message}</FormMessage>
-                  </FormItem>
-  
-                  {/* Part-Time Employees */}
-                  <FormItem>
-                    <FormLabel>Part-time (calculated)</FormLabel>
-                    <Controller
-                      control={control}
-                      name="operations.employees.partTime"
-                      render={({ field }) => (
-                        <Input 
-                          type="number" 
-                          disabled 
-                          {...field} 
-                        />
-                      )}
-                    />
-                    <FormDescription>
-                      Auto-calculated from total and full-time
-                    </FormDescription>
-                    <FormMessage>{errors.operations?.employees?.partTime?.message}</FormMessage>
-                  </FormItem>
-                </div>
-              </div>
-  
-              {/* Location Type */}
-              <FormItem>
-                <FormLabel>Location Type <span className="text-red-500">*</span></FormLabel>
-                <Controller
-                  control={control}
-                  name="operations.locationType"
-                  render={({ field }) => (
-                    <SelectWrapper
-                      value={field.value}
-                      onChange={field.onChange}
-                      options={locationTypeOptions}
-                      placeholder="Select location type"
-                      error={errors.operations?.locationType}
-                    />
-                  )}
-                />
-                <FormDescription>
-                  The type of business location
-                </FormDescription>
-                <FormMessage>{errors.operations?.locationType?.message}</FormMessage>
-              </FormItem>
-  
-              {/* Lease Information - Conditional on Location Type */}
-              {locationType === LocationType.LEASED_COMMERCIAL && (
-                <div className="border border-gray-200 rounded-lg p-4 space-y-4 bg-gray-50">
-                  <h3 className="text-base font-medium">Lease Information</h3>
-                  
-                  <div className="grid md:grid-cols-2 gap-4">
-                    {/* Lease Expiry */}
-                    <FormItem>
-                      <FormLabel>Lease Expiry Date <span className="text-red-500">*</span></FormLabel>
-                      <Controller
-                        control={control}
-                        name="operations.leaseInformation.expiryDate"
-                        render={({ field }) => (
-                          <Input 
-                            type="date" 
-                            min={new Date().toISOString().split('T')[0]} 
-                            onChange={(e) => field.onChange(new Date(e.target.value))}
-                            value={field.value ? new Date(field.value).toISOString().split('T')[0] : ''}
-                            className={errors.operations?.leaseInformation?.expiryDate ? "border-red-300" : ""}
-                          />
-                        )}
-                      />
-                      <FormDescription>
-                        When the current lease expires
-                      </FormDescription>
-                      <FormMessage>{errors.operations?.leaseInformation?.expiryDate?.message}</FormMessage>
-                    </FormItem>
-  
-                    {/* Monthly Lease Cost */}
-                    <FormItem>
-                      <FormLabel>Monthly Lease Cost <span className="text-red-500">*</span></FormLabel>
-                      <Controller
-                        control={control}
-                        name="operations.leaseInformation.monthlyCost.value"
-                        render={({ field }) => (
-                          <Input 
-                            type="number" 
-                            min="0" 
-                            placeholder="Monthly rent amount"
-                            {...field} 
-                            className={errors.operations?.leaseInformation?.monthlyCost?.value ? "border-red-300" : ""}
-                          />
-                        )}
-                      />
-                      <FormDescription>
-                        Monthly rent for the property
-                      </FormDescription>
-                      <FormMessage>{errors.operations?.leaseInformation?.monthlyCost?.value?.message}</FormMessage>
-                    </FormItem>
-                  </div>
-  
-                  {/* Is Lease Transferable */}
-                  <div className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-                    <div className="space-y-0.5">
-                      <FormLabel>Is Lease Transferable?</FormLabel>
-                      <FormDescription>
-                        Can the lease be transferred to a new owner?
-                      </FormDescription>
-                    </div>
-                    <Controller
-                      control={control}
-                      name="operations.leaseInformation.isTransferable"
-                      render={({ field }) => (
-                        <HeadlessSwitch
-                          checked={field.value}
-                          onChange={field.onChange}
-                          className={`${
-                            field.value ? 'bg-blue-600' : 'bg-gray-200'
-                          } relative inline-flex h-6 w-11 items-center rounded-full`}
-                        >
-                          <span
-                            className={`${
-                              field.value ? 'translate-x-6' : 'translate-x-1'
-                            } inline-block h-4 w-4 transform rounded-full bg-white transition`}
-                          />
-                        </HeadlessSwitch>
-                      )}
-                    />
-                  </div>
-                </div>
+            <Select
+              inputId="businessDetails.entityType"
+              options={entityTypeOptions}
+              value={entityTypeOptions.find(option => option.value === watch("businessDetails.entityType"))}
+              onChange={(option) => {
+                setValue("businessDetails.entityType", option.value);
+                trigger("businessDetails.entityType");
+              }}
+              onBlur={() => trigger("businessDetails.entityType")}
+              placeholder="Select entity type"
+              styles={selectStyles}
+              className={cn(
+                errors.businessDetails?.entityType ? "select-error" : ""
               )}
-  
-              {/* Operation Description */}
-              <FormItem>
-                <FormLabel>Operation Description <span className="text-red-500">*</span></FormLabel>
-                <Controller
-                  control={control}
-                  name="operations.operationDescription"
-                  render={({ field }) => (
-                    <Textarea
-                      placeholder="Describe the day-to-day operations of the business"
-                      className={`min-h-32 resize-y ${errors.operations?.operationDescription ? "border-red-300" : ""}`}
-                      {...field}
-                    />
-                  )}
-                />
-                <div className="flex justify-between">
-                  <FormDescription>
-                    Explain how the business operates on a daily basis
-                  </FormDescription>
-                  <div className="text-xs text-gray-500">
-                    {watch("operations.operationDescription")?.length || 0}/1000 characters
-                  </div>
-                </div>
-                <FormMessage>{errors.operations?.operationDescription?.message}</FormMessage>
-              </FormItem>
-            </CardContent>
-          </Card>
-  
-          {/* Financial Section */}
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle className="text-xl font-semibold flex items-center">
-                Financial Information
-                <Tooltip content="Details about the business's financial performance">
-                  <HelpCircle className="h-4 w-4 ml-2 text-gray-400" />
-                </Tooltip>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid md:grid-cols-2 gap-6">
-                {/* Annual Revenue */}
-                <FormItem>
-                  <FormLabel>Annual Revenue <span className="text-red-500">*</span></FormLabel>
-                  <Controller
-                    control={control}
-                    name="financials.annualRevenue.value"
-                    render={({ field }) => (
-                      <Input 
-                        type="number" 
-                        min="0"
-                        step="1000"
-                        placeholder="Annual revenue amount" 
-                        {...field} 
-                        className={errors.financials?.annualRevenue?.value ? "border-red-300" : ""}
-                      />
-                    )}
-                  />
-                  <FormDescription>
-                    Total revenue for the past 12 months
-                  </FormDescription>
-                  <FormMessage>{errors.financials?.annualRevenue?.value?.message}</FormMessage>
-                </FormItem>
-  
-                {/* Monthly Revenue */}
-                <FormItem>
-                  <FormLabel>Monthly Revenue <span className="text-red-500">*</span></FormLabel>
-                  <Controller
-                    control={control}
-                    name="financials.monthlyRevenue.value"
-                    render={({ field }) => (
-                      <Input 
-                        type="number" 
-                        min="0"
-                        step="1000"
-                        placeholder="Average monthly revenue" 
-                        {...field} 
-                        className={errors.financials?.monthlyRevenue?.value ? "border-red-300" : ""}
-                      />
-                    )}
-                  />
-                  <FormDescription>
-                    Average monthly revenue (consistent with annual)
-                  </FormDescription>
-                  <FormMessage>{errors.financials?.monthlyRevenue?.value?.message}</FormMessage>
-                </FormItem>
+            />
+
+            {errors.businessDetails?.entityType && (
+              <p className="text-sm text-red-600 flex items-center mt-1">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.businessDetails.entityType.message}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Established Year */}
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label htmlFor="businessDetails.establishedYear" className="block text-sm font-semibold text-gray-800 mr-2">
+                Established Year <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="The year your business was founded or incorporated">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <div className="relative">
+              <input
+                id="businessDetails.establishedYear"
+                type="number"
+                placeholder={`1900-${new Date().getFullYear()}`}
+                className={cn(
+                  "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.businessDetails?.establishedYear ? "border-red-300" : "border-gray-300"
+                )}
+                {...register("businessDetails.establishedYear", {
+                  onBlur: () => trigger("businessDetails.establishedYear")
+                })}
+              />
+              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                <Calendar className="h-4 w-4 text-gray-400" />
               </div>
-  
-              <div className="grid md:grid-cols-2 gap-6">
-                {/* Profit Margin */}
-                <FormItem>
-                  <FormLabel>Profit Margin <span className="text-red-500">*</span></FormLabel>
-                  <div className="relative">
-                    <Controller
-                      control={control}
-                      name="financials.profitMargin.percentage"
-                      render={({ field }) => (
-                        <Input 
-                          type="number" 
-                          min="0" 
-                          max="100"
-                          step="0.1"
-                          placeholder="Enter profit margin percentage" 
-                          {...field} 
-                          className={errors.financials?.profitMargin?.percentage ? "border-red-300" : ""}
-                        />
-                      )}
-                    />
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                      <span className="text-gray-500">%</span>
-                    </div>
-                  </div>
-                  <FormDescription>
-                    Net profit as a percentage of revenue
-                  </FormDescription>
-                  <FormMessage>{errors.financials?.profitMargin?.percentage?.message}</FormMessage>
-                </FormItem>
-  
-                {/* Revenue Trend */}
-                <FormItem>
-                  <FormLabel>Revenue Trend <span className="text-red-500">*</span></FormLabel>
-                  <Controller
-                    control={control}
-                    name="financials.revenueTrend"
-                    render={({ field }) => (
-                      <SelectWrapper
-                        value={field.value}
-                        onChange={field.onChange}
-                        options={revenueTrendOptions}
-                        placeholder="Select revenue trend"
-                        error={errors.financials?.revenueTrend}
-                      />
-                    )}
-                  />
-                  <FormDescription>
-                    The direction of revenue over the past year
-                  </FormDescription>
-                  <FormMessage>{errors.financials?.revenueTrend?.message}</FormMessage>
-                </FormItem>
-              </div>
-  
-              {/* Inventory - Conditional based on business type */}
-              {shouldShowInventory() && (
-                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                  <div className="mb-4">
-                    <Controller
-                      control={control}
-                      name="financials.inventory.isIncluded"
-                      render={({ field }) => (
-                        <div className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-2">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            checked={field.value}
-                            onChange={(e) => field.onChange(e.target.checked)}
-                          />
-                          <div className="space-y-1 leading-none">
-                            <FormLabel>Inventory Included in Sale</FormLabel>
-                            <FormDescription>
-                              Check if inventory is included in the asking price
-                            </FormDescription>
-                          </div>
-                        </div>
-                      )}
-                    />
-                  </div>
-  
-                  {inventoryIncluded && (
-                    <div className="space-y-4">
-                      <FormItem>
-                        <FormLabel>Inventory Value <span className="text-red-500">*</span></FormLabel>
-                        <Controller
-                          control={control}
-                          name="financials.inventory.value.value"
-                          render={({ field }) => (
-                            <Input 
-                              type="number" 
-                              min="0" 
-                              placeholder="Current inventory value" 
-                              {...field} 
-                              className={errors.financials?.inventory?.value?.value ? "border-red-300" : ""}
-                            />
-                          )}
-                        />
-                        <FormDescription>
-                          The current value of inventory included
-                        </FormDescription>
-                        <FormMessage>{errors.financials?.inventory?.value?.value?.message}</FormMessage>
-                      </FormItem>
-  
-                      <FormItem>
-                        <FormLabel>Inventory Description</FormLabel>
-                        <Controller
-                          control={control}
-                          name="financials.inventory.description"
-                          render={({ field }) => (
-                            <Textarea
-                              placeholder="Describe the inventory included in the sale"
-                              className={`resize-y ${errors.financials?.inventory?.description ? "border-red-300" : ""}`}
-                              {...field}
-                            />
-                          )}
-                        />
-                        <FormDescription>
-                          Brief description of the inventory included
-                        </FormDescription>
-                        <FormMessage>{errors.financials?.inventory?.description?.message}</FormMessage>
-                      </FormItem>
-                    </div>
-                  )}
-                </div>
+            </div>
+
+            {errors.businessDetails?.establishedYear ? (
+              <p className="text-sm text-red-600 flex items-center mt-1">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.businessDetails.establishedYear.message}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                Enter the year when your business was founded
+              </p>
+            )}
+          </div>
+
+          {/* Registration Number */}
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label htmlFor="businessDetails.registrationNumber" className="block text-sm font-semibold text-gray-800 mr-2">
+                Registration Number <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Official business registration or CIN number">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <input
+              id="businessDetails.registrationNumber"
+              type="text"
+              placeholder="e.g. U72200MH2019PTC123456"
+              className={cn(
+                "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                errors.businessDetails?.registrationNumber ? "border-red-300" : "border-gray-300"
               )}
-  
-              {/* Equipment */}
-              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                <div className="mb-4">
-                  <Controller
-                    control={control}
-                    name="financials.equipment.isIncluded"
-                    render={({ field }) => (
-                      <div className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-2">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                          checked={field.value}
-                          onChange={(e) => field.onChange(e.target.checked)}
-                        />
-                        <div className="space-y-1 leading-none">
-                          <FormLabel>Equipment Included in Sale</FormLabel>
-                          <FormDescription>
-                            Check if equipment is included in the asking price
-                          </FormDescription>
-                        </div>
-                      </div>
-                    )}
-                  />
+              {...register("businessDetails.registrationNumber", {
+                onBlur: () => trigger("businessDetails.registrationNumber")
+              })}
+            />
+
+            {errors.businessDetails?.registrationNumber ? (
+              <p className="text-sm text-red-600 flex items-center mt-1">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.businessDetails.registrationNumber.message}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                Enter your business registration or CIN number
+              </p>
+            )}
+          </div>
+
+          {/* GST Number */}
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label htmlFor="businessDetails.gstNumber" className="block text-sm font-semibold text-gray-800 mr-2">
+                GST Number (Optional)
+              </label>
+              <Tooltip content="Goods and Services Tax identification number">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <input
+              id="businessDetails.gstNumber"
+              type="text"
+              placeholder="e.g. 27AAPFU0939F1ZV"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
+              {...register("businessDetails.gstNumber")}
+            />
+
+            <p className="text-xs text-gray-500 mt-1">
+              Enter your GST number if applicable
+            </p>
+          </div>
+        </div>
+
+        {/* PAN Number */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label htmlFor="businessDetails.panNumber" className="block text-sm font-semibold text-gray-800 mr-2">
+                PAN Number (Optional)
+              </label>
+              <Tooltip content="Permanent Account Number issued by the Income Tax Department">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <input
+              id="businessDetails.panNumber"
+              type="text"
+              placeholder="e.g. ABCDE1234F"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
+              {...register("businessDetails.panNumber")}
+            />
+
+            <p className="text-xs text-gray-500 mt-1">
+              Enter your PAN number if applicable
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Operations Section */}
+      <div className="space-y-6">
+        <h3 className="text-base font-semibold text-gray-800">Operations</h3>
+
+        {/* Employee Information */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label htmlFor="businessDetails.operations.employees.count" className="block text-sm font-semibold text-gray-800 mr-2">
+                Total Employees <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Number of people currently employed by your business">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <input
+              id="businessDetails.operations.employees.count"
+              type="number"
+              min="0"
+              placeholder="e.g. 10"
+              className={cn(
+                "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                errors.businessDetails?.operations?.employees?.count ? "border-red-300" : "border-gray-300"
+              )}
+              {...register("businessDetails.operations.employees.count", {
+                onBlur: () => trigger("businessDetails.operations.employees.count")
+              })}
+            />
+
+            {errors.businessDetails?.operations?.employees?.count ? (
+              <p className="text-sm text-red-600 flex items-center mt-1">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.businessDetails.operations.employees.count.message}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                Total number of employees in your business
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label htmlFor="businessDetails.operations.employees.fullTime" className="block text-sm font-semibold text-gray-800 mr-2">
+                Full-time Employees <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Number of full-time employees (40+ hours per week)">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <input
+              id="businessDetails.operations.employees.fullTime"
+              type="number"
+              min="0"
+              placeholder="e.g. 8"
+              className={cn(
+                "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                errors.businessDetails?.operations?.employees?.fullTime ? "border-red-300" : "border-gray-300"
+              )}
+              {...register("businessDetails.operations.employees.fullTime", {
+                onBlur: () => trigger("businessDetails.operations.employees.fullTime")
+              })}
+            />
+
+            {errors.businessDetails?.operations?.employees?.fullTime ? (
+              <p className="text-sm text-red-600 flex items-center mt-1">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.businessDetails.operations.employees.fullTime.message}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                Number of employees working full-time
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label htmlFor="businessDetails.operations.employees.partTime" className="block text-sm font-semibold text-gray-800 mr-2">
+                Part-time Employees
+              </label>
+              <Tooltip content="This field is calculated automatically (Total - Full-time)">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <input
+              id="businessDetails.operations.employees.partTime"
+              type="number"
+              readOnly
+              className="w-full px-3 py-2 text-sm border bg-gray-50 border-gray-300 rounded-md focus:outline-none"
+              {...register("businessDetails.operations.employees.partTime")}
+            />
+
+            <p className="text-xs text-gray-500 mt-1">
+              Automatically calculated (Total - Full-time)
+            </p>
+          </div>
+        </div>
+
+        {/* Location Type */}
+        <div className="space-y-2">
+          <div className="flex items-center">
+            <label className="block text-sm font-semibold text-gray-800 mr-2">
+              Location Type <span className="text-red-500">*</span>
+            </label>
+            <Tooltip content="The type of location or property where your business operates">
+              <HelpCircle className="h-4 w-4 text-gray-500" />
+            </Tooltip>
+          </div>
+
+          <Select
+            inputId="businessDetails.operations.locationType"
+            options={locationTypeOptions}
+            value={locationTypeOptions.find(option => option.value === locationType)}
+            onChange={(option) => {
+              setValue("businessDetails.operations.locationType", option.value);
+              trigger("businessDetails.operations.locationType");
+            }}
+            onBlur={() => trigger("businessDetails.operations.locationType")}
+            placeholder="Select location type"
+            styles={selectStyles}
+            className={cn(
+              errors.businessDetails?.operations?.locationType ? "select-error" : ""
+            )}
+          />
+
+          {errors.businessDetails?.operations?.locationType ? (
+            <p className="text-sm text-red-600 flex items-center mt-1">
+              <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+              {errors.businessDetails.operations.locationType.message}
+            </p>
+          ) : (
+            <p className="text-xs text-gray-500 mt-1">
+              Select the type of location where your business operates
+            </p>
+          )}
+        </div>
+
+        {/* Lease information (conditionally shown) */}
+        {locationType === LocationType.LEASED_COMMERCIAL && (
+          <div className="space-y-4 p-4 border border-gray-200 rounded-md bg-gray-50">
+            <h4 className="text-sm font-semibold text-gray-800">Lease Information</h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Lease Expiry Date */}
+              <div className="space-y-2">
+                <div className="flex items-center">
+                  <label htmlFor="businessDetails.operations.leaseInformation.expiryDate" className="block text-sm font-semibold text-gray-800 mr-2">
+                    Lease Expiry Date <span className="text-red-500">*</span>
+                  </label>
+                  <Tooltip content="When the current lease agreement expires">
+                    <HelpCircle className="h-4 w-4 text-gray-500" />
+                  </Tooltip>
                 </div>
-  
-                <div className="space-y-4">
-                  <FormItem>
-                    <FormLabel>Equipment Value <span className="text-red-500">*</span></FormLabel>
-                    <Controller
-                      control={control}
-                      name="financials.equipment.value.value"
-                      render={({ field }) => (
-                        <Input 
-                          type="number" 
-                          min="0" 
-                          placeholder="Value of equipment" 
-                          {...field} 
-                          className={errors.financials?.equipment?.value?.value ? "border-red-300" : ""}
-                        />
-                      )}
-                    />
-                    <FormDescription>
-                      The value of equipment included in the sale
-                    </FormDescription>
-                    <FormMessage>{errors.financials?.equipment?.value?.value?.message}</FormMessage>
-                  </FormItem>
-  
-                  <FormItem>
-                    <FormLabel>Equipment Description <span className="text-red-500">*</span></FormLabel>
-                    <Controller
-                      control={control}
-                      name="financials.equipment.description"
-                      render={({ field }) => (
-                        <Textarea
-                          placeholder="Describe the equipment included in the sale"
-                          className={`resize-y ${errors.financials?.equipment?.description ? "border-red-300" : ""}`}
-                          {...field}
-                        />
-                      )}
-                    />
-                    <FormDescription>
-                      List major equipment items included
-                    </FormDescription>
-                    <FormMessage>{errors.financials?.equipment?.description?.message}</FormMessage>
-                  </FormItem>
-                </div>
-              </div>
-  
-              {/* Customer Concentration */}
-              <FormItem>
-                <FormLabel>Customer Concentration <span className="text-red-500">*</span></FormLabel>
-                <div className="space-y-4">
-                  <div className="relative">
-                    <Controller
-                      control={control}
-                      name="financials.customerConcentration"
-                      render={({ field }) => (
-                        <Input 
-                          type="number" 
-                          min="0" 
-                          max="100"
-                          step="1"
-                          placeholder="Percentage of revenue from top 3 clients" 
-                          {...field} 
-                          className={errors.financials?.customerConcentration ? "border-red-300" : ""}
-                        />
-                      )}
-                    />
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                      <span className="text-gray-500">%</span>
-                    </div>
-                  </div>
-                  {renderCustomerConcentrationWarning()}
-                </div>
-                <FormDescription>
-                  Percentage of revenue from top 3 clients
-                </FormDescription>
-                <FormMessage>{errors.financials?.customerConcentration?.message}</FormMessage>
-              </FormItem>
-            </CardContent>
-          </Card>
-  
-          {/* Sale Information Section */}
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle className="text-xl font-semibold flex items-center">
-                Sale Information
-                <Tooltip content="Details about the sale terms and conditions">
-                  <HelpCircle className="h-4 w-4 ml-2 text-gray-400" />
-                </Tooltip>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid md:grid-cols-2 gap-6">
-                {/* Asking Price */}
-                <div className="space-y-6">
-                  <FormItem>
-                    <FormLabel>Asking Price <span className="text-red-500">*</span></FormLabel>
-                    <Controller
-                      control={control}
-                      name="sale.askingPrice.value"
-                      render={({ field }) => (
-                        <Input 
-                          type="number" 
-                          min="0" 
-                          step="10000"
-                          placeholder="Enter asking price" 
-                          {...field} 
-                          className={errors.sale?.askingPrice?.value ? "border-red-300" : ""}
-                        />
-                      )}
-                    />
-                    <FormDescription>
-                      The requested selling price for the business
-                    </FormDescription>
-                    <FormMessage>{errors.sale?.askingPrice?.value?.message}</FormMessage>
-                  </FormItem>
-  
-                  <div className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-2 border border-gray-200">
-                    <Controller
-                      control={control}
-                      name="sale.askingPrice.isNegotiable"
-                      render={({ field }) => (
-                        <div className="flex items-start space-x-3">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            checked={field.value}
-                            onChange={(e) => field.onChange(e.target.checked)}
-                          />
-                          <div className="space-y-1 leading-none">
-                            <FormLabel>Price is Negotiable</FormLabel>
-                            <FormDescription>
-                              Check if the asking price is open to negotiation
-                            </FormDescription>
-                          </div>
-                        </div>
-                      )}
-                    />
-                  </div>
-                </div>
-  
-                {/* Price Multiple (Optional) */}
-                <FormItem>
-                  <FormLabel>Price Multiple</FormLabel>
-                  <Controller
-                    control={control}
-                    name="sale.askingPrice.priceMultiple"
-                    render={({ field }) => (
-                      <Input 
-                        type="number" 
-                        min="0" 
-                        step="0.1"
-                        placeholder="e.g., 3.5x annual profit" 
-                        {...field} 
-                        className={errors.sale?.askingPrice?.priceMultiple ? "border-red-300" : ""}
-                      />
-                    )}
-                  />
-                  <FormDescription>
-                    Valuation metric (e.g., 2.5x annual revenue)
-                  </FormDescription>
-                  <FormMessage>{errors.sale?.askingPrice?.priceMultiple?.message}</FormMessage>
-                </FormItem>
-              </div>
-  
-              {/* Reason for Selling */}
-              <FormItem>
-                <FormLabel>Reason for Selling <span className="text-red-500">*</span></FormLabel>
-                <Controller
-                  control={control}
-                  name="sale.reasonForSelling"
-                  render={({ field }) => (
-                    <Textarea
-                      placeholder="Explain why you're selling the business"
-                      className={`min-h-24 resize-y ${errors.sale?.reasonForSelling ? "border-red-300" : ""}`}
-                      {...field}
-                    />
+
+                <input
+                  type="date"
+                  className={cn(
+                    "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                    errors.businessDetails?.operations?.leaseInformation?.expiryDate ? "border-red-300" : "border-gray-300"
                   )}
+                  {...register("businessDetails.operations.leaseInformation.expiryDate", {
+                    onBlur: () => trigger("businessDetails.operations.leaseInformation.expiryDate")
+                  })}
                 />
-                <div className="flex justify-between">
-                  <FormDescription>
-                    Be specific about your motivation for selling
-                  </FormDescription>
-                  <div className="text-xs text-gray-500">
-                    {watch("sale.reasonForSelling")?.length || 0}/500 characters
-                  </div>
-                </div>
-                <FormMessage>{errors.sale?.reasonForSelling?.message}</FormMessage>
-              </FormItem>
-  
-              {/* Seller Financing */}
-              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                <Controller
-                  control={control}
-                  name="sale.sellerFinancing.isAvailable"
-                  render={({ field }) => (
-                    <div className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-2">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        checked={field.value}
-                        onChange={(e) => field.onChange(e.target.checked)}
-                      />
-                      <div className="space-y-1 leading-none">
-                        <FormLabel>Seller Financing Available</FormLabel>
-                        <FormDescription>
-                          Indicate if you're willing to provide financing to the buyer
-                        </FormDescription>
-                      </div>
-                    </div>
-                  )}
-                />
-  
-                {sellerFinancingAvailable && (
-                  <div className="mt-4 space-y-4 pl-8">
-                    <FormItem>
-                      <FormLabel>Financing Details</FormLabel>
-                      <Controller
-                        control={control}
-                        name="sale.sellerFinancing.details"
-                        render={({ field }) => (
-                          <Textarea
-                            placeholder="Describe your financing terms"
-                            className={`resize-y ${errors.sale?.sellerFinancing?.details ? "border-red-300" : ""}`}
-                            {...field}
-                          />
-                        )}
-                      />
-                      <FormDescription>
-                        Explain your terms and conditions for financing
-                      </FormDescription>
-                      <FormMessage>{errors.sale?.sellerFinancing?.details?.message}</FormMessage>
-                    </FormItem>
-  
-                    <FormItem>
-                      <FormLabel>Down Payment Required <span className="text-red-500">*</span></FormLabel>
-                      <div className="relative">
-                        <Controller
-                          control={control}
-                          name="sale.sellerFinancing.downPaymentPercentage"
-                          render={({ field }) => (
-                            <Input 
-                              type="number" 
-                              min="10" 
-                              max="100"
-                              placeholder="Minimum down payment percentage" 
-                              {...field} 
-                              className={errors.sale?.sellerFinancing?.downPaymentPercentage ? "border-red-300" : ""}
-                            />
-                          )}
-                        />
-                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                          <span className="text-gray-500">%</span>
-                        </div>
-                      </div>
-                      <FormDescription>
-                        Minimum down payment required (10-100%)
-                      </FormDescription>
-                      <FormMessage>{errors.sale?.sellerFinancing?.downPaymentPercentage?.message}</FormMessage>
-                    </FormItem>
-                  </div>
+
+                {errors.businessDetails?.operations?.leaseInformation?.expiryDate && (
+                  <p className="text-sm text-red-600 flex items-center mt-1">
+                    <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                    {errors.businessDetails.operations.leaseInformation.expiryDate.message}
+                  </p>
                 )}
               </div>
-  
-              <div className="grid md:grid-cols-2 gap-6">
-                {/* Transition Period */}
-                <FormItem>
-                  <FormLabel>Transition Period <span className="text-red-500">*</span></FormLabel>
-                  <Controller
-                    control={control}
-                    name="sale.transitionPeriod"
-                    render={({ field }) => (
-                      <Input 
-                        type="number" 
-                        min="0" 
-                        max="12"
-                        placeholder="Number of months" 
-                        {...field} 
-                        className={errors.sale?.transitionPeriod ? "border-red-300" : ""}
-                      />
+
+              {/* Monthly Lease Cost */}
+              <div className="space-y-2">
+                <div className="flex items-center">
+                  <label htmlFor="businessDetails.operations.leaseInformation.monthlyCost.value" className="block text-sm font-semibold text-gray-800 mr-2">
+                    Monthly Lease Cost <span className="text-red-500">*</span>
+                  </label>
+                  <Tooltip content="Monthly amount paid for leasing the property">
+                    <HelpCircle className="h-4 w-4 text-gray-500" />
+                  </Tooltip>
+                </div>
+
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                    <span className="text-gray-500 text-sm">₹</span>
+                  </div>
+                  <input
+                    id="businessDetails.operations.leaseInformation.monthlyCost.value"
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 50000"
+                    className={cn(
+                      "w-full pl-8 pr-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                      errors.businessDetails?.operations?.leaseInformation?.monthlyCost?.value ? "border-red-300" : "border-gray-300"
                     )}
+                    {...register("businessDetails.operations.leaseInformation.monthlyCost.value", {
+                      onBlur: () => trigger("businessDetails.operations.leaseInformation.monthlyCost.value")
+                    })}
                   />
-                  <FormDescription>
-                    Months you'll help with the transition (0-12)
-                  </FormDescription>
-                  <FormMessage>{errors.sale?.transitionPeriod?.message}</FormMessage>
-                </FormItem>
+                </div>
+
+                {errors.businessDetails?.operations?.leaseInformation?.monthlyCost?.value && (
+                  <p className="text-sm text-red-600 flex items-center mt-1">
+                    <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                    {errors.businessDetails.operations.leaseInformation.monthlyCost.value.message}
+                  </p>
+                )}
               </div>
-  
-              {/* Training Included */}
-              <FormItem>
-                <FormLabel>Training Included <span className="text-red-500">*</span></FormLabel>
-                <Controller
-                  control={control}
-                  name="sale.trainingIncluded"
-                  render={({ field }) => (
-                    <Textarea
-                      placeholder="Describe the training you will provide to the buyer"
-                      className={`min-h-24 resize-y ${errors.sale?.trainingIncluded ? "border-red-300" : ""}`}
-                      {...field}
-                    />
-                  )}
-                />
-                <div className="flex justify-between">
-                  <FormDescription>
-                    Detail the training and support you'll provide
-                  </FormDescription>
-                  <div className="text-xs text-gray-500">
-                    {watch("sale.trainingIncluded")?.length || 0}/500 characters
-                  </div>
+            </div>
+
+            {/* Lease Transferable */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <label className="text-sm font-semibold text-gray-800 mr-2">
+                    Lease Transferable
+                  </label>
+                  <Tooltip content="Whether the lease can be transferred to the new owner">
+                    <HelpCircle className="h-4 w-4 text-gray-500" />
+                  </Tooltip>
                 </div>
-                <FormMessage>{errors.sale?.trainingIncluded?.message}</FormMessage>
-              </FormItem>
-  
-              {/* Assets Included */}
-              <FormItem>
-                <FormLabel>Assets Included <span className="text-red-500">*</span></FormLabel>
-                <Controller
-                  control={control}
-                  name="sale.assetsIncluded"
-                  render={({ field }) => (
-                    <Textarea
-                      placeholder="List all assets included in the sale"
-                      className={`min-h-32 resize-y ${errors.sale?.assetsIncluded ? "border-red-300" : ""}`}
-                      {...field}
-                    />
-                  )}
+
+                <Switch
+                  checked={watch("businessDetails.operations.leaseInformation.isTransferable") || false}
+                  onChange={(value) => setValue("businessDetails.operations.leaseInformation.isTransferable", value)}
+                  label={watch("businessDetails.operations.leaseInformation.isTransferable") ? "Yes" : "No"}
                 />
-                <div className="flex justify-between">
-                  <FormDescription>
-                    Provide a comprehensive list of all assets included
-                  </FormDescription>
-                  <div className="text-xs text-gray-500">
-                    {watch("sale.assetsIncluded")?.length || 0}/1000 characters
-                  </div>
-                </div>
-                <FormMessage>{errors.sale?.assetsIncluded?.message}</FormMessage>
-              </FormItem>
-            </CardContent>
-          </Card>
-  
-          {/* Form Submission */}
-          <div className="flex justify-end mt-8">
-            <button
-              type="submit"
-              className="bg-primary-700 text-white px-6 py-2 rounded-lg hover:bg-blue-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 disabled:opacity-70 disabled:cursor-not-allowed"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <>
-                  <span className="animate-spin mr-2">⟳</span>
-                  Saving...
-                </>
-              ) : isEdit ? 'Update Business Details' : 'Save Business Details'}
-            </button>
+              </div>
+            </div>
           </div>
-        </form>
+        )}
+
+        {/* Operation Description */}
+        <div className="space-y-2">
+          <div className="flex items-center">
+            <label htmlFor="businessDetails.operations.operationDescription" className="block text-sm font-semibold text-gray-800 mr-2">
+              Operation Description <span className="text-red-500">*</span>
+            </label>
+            <Tooltip content="Describe how your business operates on a day-to-day basis">
+              <HelpCircle className="h-4 w-4 text-gray-500" />
+            </Tooltip>
+          </div>
+
+          <textarea
+            id="businessDetails.operations.operationDescription"
+            rows="5"
+            placeholder="Describe your business operations in detail..."
+            className={cn(
+              "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+              errors.businessDetails?.operations?.operationDescription ? "border-red-300" : "border-gray-300"
+            )}
+            {...register("businessDetails.operations.operationDescription", {
+              onBlur: () => trigger("businessDetails.operations.operationDescription")
+            })}
+          ></textarea>
+
+          {errors.businessDetails?.operations?.operationDescription ? (
+            <p className="text-sm text-red-600 flex items-center mt-1">
+              <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+              {errors.businessDetails.operations.operationDescription.message}
+            </p>
+          ) : (
+            <p className="text-xs text-gray-500 mt-1">
+              100-1000 characters. Include details about daily operations, business processes, and key activities.
+            </p>
+          )}
+        </div>
       </div>
-    );
-  }
+
+      {/* Financial Section */}
+      <div className="space-y-6">
+        <h3 className="text-base font-semibold text-gray-800">Financial Information</h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Annual Revenue */}
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label htmlFor="businessDetails.financials.annualRevenue.value" className="block text-sm font-semibold text-gray-800 mr-2">
+                Annual Revenue <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Total revenue generated in the last financial year">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                <span className="text-gray-500 text-sm">₹</span>
+              </div>
+              <input
+                id="businessDetails.financials.annualRevenue.value"
+                type="number"
+                min="0"
+                placeholder="e.g. 5000000"
+                className={cn(
+                  "w-full pl-8 pr-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.businessDetails?.financials?.annualRevenue?.value ? "border-red-300" : "border-gray-300"
+                )}
+                {...register("businessDetails.financials.annualRevenue.value", {
+                  onBlur: () => trigger("businessDetails.financials.annualRevenue.value")
+                })}
+              />
+            </div>
+
+            {errors.businessDetails?.financials?.annualRevenue?.value ? (
+              <p className="text-sm text-red-600 flex items-center mt-1">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.businessDetails.financials.annualRevenue.value.message}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                Total revenue for the last complete financial year
+              </p>
+            )}
+          </div>
+
+          {/* Monthly Revenue */}
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label htmlFor="businessDetails.financials.monthlyRevenue.value" className="block text-sm font-semibold text-gray-800 mr-2">
+                Average Monthly Revenue <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Average monthly revenue in the last 12 months">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                <span className="text-gray-500 text-sm">₹</span>
+              </div>
+              <input
+                id="businessDetails.financials.monthlyRevenue.value"
+                type="number"
+                min="0"
+                placeholder="e.g. 400000"
+                className={cn(
+                  "w-full pl-8 pr-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.businessDetails?.financials?.monthlyRevenue?.value ? "border-red-300" : "border-gray-300"
+                )}
+                {...register("businessDetails.financials.monthlyRevenue.value", {
+                  onBlur: () => trigger("businessDetails.financials.monthlyRevenue.value")
+                })}
+              />
+            </div>
+
+            {errors.businessDetails?.financials?.monthlyRevenue?.value ? (
+              <p className="text-sm text-red-600 flex items-center mt-1">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.businessDetails.financials.monthlyRevenue.value.message}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                Average monthly revenue over the past 12 months
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Profit Margin */}
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label htmlFor="businessDetails.financials.profitMargin.percentage" className="block text-sm font-semibold text-gray-800 mr-2">
+                Profit Margin <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Net profit as a percentage of revenue">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <div className="relative">
+              <input
+                id="businessDetails.financials.profitMargin.percentage"
+                type="number"
+                min="0"
+                max="100"
+                placeholder="e.g. 25"
+                className={cn(
+                  "w-full pr-8 px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.businessDetails?.financials?.profitMargin?.percentage ? "border-red-300" : "border-gray-300"
+                )}
+                {...register("businessDetails.financials.profitMargin.percentage", {
+                  onBlur: () => trigger("businessDetails.financials.profitMargin.percentage")
+                })}
+              />
+              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                <span className="text-gray-500 text-sm">%</span>
+              </div>
+            </div>
+
+            {errors.businessDetails?.financials?.profitMargin?.percentage ? (
+              <p className="text-sm text-red-600 flex items-center mt-1">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.businessDetails.financials.profitMargin.percentage.message}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                Net profit as a percentage of total revenue (0-100%)
+              </p>
+            )}
+          </div>
+
+          {/* Revenue Trend */}
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label className="block text-sm font-semibold text-gray-800 mr-2">
+                Revenue Trend <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Overall trend in revenue over the past 12-24 months">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <Select
+              inputId="businessDetails.financials.revenueTrend"
+              options={revenueTrendOptions}
+              value={revenueTrendOptions.find(option => option.value === watch("businessDetails.financials.revenueTrend"))}
+              onChange={(option) => {
+                setValue("businessDetails.financials.revenueTrend", option.value);
+                trigger("businessDetails.financials.revenueTrend");
+              }}
+              onBlur={() => trigger("businessDetails.financials.revenueTrend")}
+              placeholder="Select revenue trend"
+              styles={selectStyles}
+              className={cn(
+                errors.businessDetails?.financials?.revenueTrend ? "select-error" : ""
+              )}
+            />
+
+            {errors.businessDetails?.financials?.revenueTrend ? (
+              <p className="text-sm text-red-600 flex items-center mt-1">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.businessDetails.financials.revenueTrend.message}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                Select the trend that best describes your revenue growth
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Inventory */}
+        <div className="space-y-3 p-4 border border-gray-200 rounded-md">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <h4 className="text-sm font-semibold text-gray-800 mr-2">Inventory</h4>
+              <Tooltip content="Stock of goods held by the business">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <Switch
+              checked={inventoryIncluded || false}
+              onChange={(value) => setValue("businessDetails.financials.inventory.isIncluded", value)}
+              label={inventoryIncluded ? "Included in sale" : "Not included"}
+            />
+          </div>
+
+          {inventoryIncluded && (
+            <div className="mt-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Inventory Value */}
+                <div className="space-y-2">
+                  <div className="flex items-center">
+                    <label htmlFor="businessDetails.financials.inventory.value.value" className="block text-sm font-semibold text-gray-800 mr-2">
+                      Inventory Value <span className="text-red-500">*</span>
+                    </label>
+                  </div>
+
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                      <span className="text-gray-500 text-sm">₹</span>
+                    </div>
+                    <input
+                      id="businessDetails.financials.inventory.value.value"
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 500000"
+                      className={cn(
+                        "w-full pl-8 pr-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                        errors.businessDetails?.financials?.inventory?.value?.value ? "border-red-300" : "border-gray-300"
+                      )}
+                      {...register("businessDetails.financials.inventory.value.value", {
+                        onBlur: () => trigger("businessDetails.financials.inventory.value.value")
+                      })}
+                    />
+                  </div>
+
+                  {errors.businessDetails?.financials?.inventory?.value?.value && (
+                    <p className="text-sm text-red-600 flex items-center mt-1">
+                      <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                      {errors.businessDetails.financials.inventory.value.value.message}
+                    </p>
+                  )}
+                </div>
+
+                {/* Inventory Description */}
+                <div className="space-y-2">
+                  <div className="flex items-center">
+                    <label htmlFor="businessDetails.financials.inventory.description" className="block text-sm font-semibold text-gray-800 mr-2">
+                      Inventory Description
+                    </label>
+                  </div>
+
+                  <input
+                    id="businessDetails.financials.inventory.description"
+                    type="text"
+                    placeholder="Brief description of inventory included"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
+                    {...register("businessDetails.financials.inventory.description")}
+                  />
+
+                  <p className="text-xs text-gray-500 mt-1">
+                    Brief description of the inventory included in the sale
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Additional financial fields... */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Customer Concentration */}
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label htmlFor="businessDetails.financials.customerConcentration" className="block text-sm font-semibold text-gray-800 mr-2">
+                Customer Concentration <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Percentage of revenue from your top 3 customers">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <div className="relative">
+              <input
+                id="businessDetails.financials.customerConcentration"
+                type="number"
+                min="0"
+                max="100"
+                placeholder="e.g. 30"
+                className={cn(
+                  "w-full pr-8 px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.businessDetails?.financials?.customerConcentration ? "border-red-300" : "border-gray-300"
+                )}
+                {...register("businessDetails.financials.customerConcentration", {
+                  onBlur: () => trigger("businessDetails.financials.customerConcentration")
+                })}
+              />
+              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                <span className="text-gray-500 text-sm">%</span>
+              </div>
+            </div>
+
+            {errors.businessDetails?.financials?.customerConcentration ? (
+              <p className="text-sm text-red-600 flex items-center mt-1">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.businessDetails.financials.customerConcentration.message}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                Percentage of revenue from your top 3 customers
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Sale Section */}
+      <div className="space-y-6">
+        <h3 className="text-base font-semibold text-gray-800">Sale Details</h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Asking Price */}
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label htmlFor="businessDetails.sale.askingPrice.value" className="block text-sm font-semibold text-gray-800 mr-2">
+                Asking Price <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="The amount you're asking for your business">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                <span className="text-gray-500 text-sm">₹</span>
+              </div>
+              <input
+                id="businessDetails.sale.askingPrice.value"
+                type="number"
+                min="0"
+                placeholder="e.g. 10000000"
+                className={cn(
+                  "w-full pl-8 pr-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.businessDetails?.sale?.askingPrice?.value ? "border-red-300" : "border-gray-300"
+                )}
+                {...register("businessDetails.sale.askingPrice.value", {
+                  onBlur: () => trigger("businessDetails.sale.askingPrice.value")
+                })}
+              />
+            </div>
+
+            {errors.businessDetails?.sale?.askingPrice?.value ? (
+              <p className="text-sm text-red-600 flex items-center mt-1">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.businessDetails.sale.askingPrice.value.message}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                The price you're asking for your business
+              </p>
+            )}
+          </div>
+
+          {/* Price Multiple */}
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label htmlFor="businessDetails.sale.askingPrice.priceMultiple" className="block text-sm font-semibold text-gray-800 mr-2">
+                Price Multiple (Optional)
+              </label>
+              <Tooltip content="Multiple of annual profit used to determine asking price">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <input
+              id="businessDetails.sale.askingPrice.priceMultiple"
+              type="number"
+              min="0"
+              step="0.1"
+              placeholder="e.g. 3.5"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
+              {...register("businessDetails.sale.askingPrice.priceMultiple")}
+            />
+
+            {errors.businessDetails?.sale?.askingPrice?.priceMultiple ? (
+              <p className="text-sm text-red-600 flex items-center mt-1">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.businessDetails.sale.askingPrice.priceMultiple.message}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                Multiple of yearly profit (e.g., 3x annual profit)
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Price Negotiable */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <label className="text-sm font-semibold text-gray-800 mr-2">
+                Price Negotiable
+              </label>
+              <Tooltip content="Whether you're open to negotiating the asking price">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <Switch
+              checked={watch("businessDetails.sale.askingPrice.isNegotiable") || false}
+              onChange={(value) => setValue("businessDetails.sale.askingPrice.isNegotiable", value)}
+              label={watch("businessDetails.sale.askingPrice.isNegotiable") ? "Yes" : "No"}
+            />
+          </div>
+        </div>
+
+        {/* Reason for Selling */}
+        <div className="space-y-2">
+          <div className="flex items-center">
+            <label htmlFor="businessDetails.sale.reasonForSelling" className="block text-sm font-semibold text-gray-800 mr-2">
+              Reason for Selling <span className="text-red-500">*</span>
+            </label>
+            <Tooltip content="Explain why you're selling your business">
+              <HelpCircle className="h-4 w-4 text-gray-500" />
+            </Tooltip>
+          </div>
+
+          <textarea
+            id="businessDetails.sale.reasonForSelling"
+            rows="3"
+            placeholder="Explain why you are selling the business..."
+            className={cn(
+              "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+              errors.businessDetails?.sale?.reasonForSelling ? "border-red-300" : "border-gray-300"
+            )}
+            {...register("businessDetails.sale.reasonForSelling", {
+              onBlur: () => trigger("businessDetails.sale.reasonForSelling")
+            })}
+          ></textarea>
+
+          {errors.businessDetails?.sale?.reasonForSelling ? (
+            <p className="text-sm text-red-600 flex items-center mt-1">
+              <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+              {errors.businessDetails.sale.reasonForSelling.message}
+            </p>
+          ) : (
+            <p className="text-xs text-gray-500 mt-1">
+              50-500 characters. Be honest about your reasons for selling.
+            </p>
+          )}
+        </div>
+
+        {/* Seller Financing */}
+        <div className="space-y-3 p-4 border border-gray-200 rounded-md">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <h4 className="text-sm font-semibold text-gray-800 mr-2">Seller Financing</h4>
+              <Tooltip content="Whether you're willing to finance part of the sale price">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <Switch
+              checked={sellerFinancingAvailable || false}
+              onChange={(value) => setValue("businessDetails.sale.sellerFinancing.isAvailable", value)}
+              label={sellerFinancingAvailable ? "Available" : "Not available"}
+            />
+          </div>
+
+          {sellerFinancingAvailable && (
+            <div className="mt-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Down Payment Percentage */}
+                <div className="space-y-2">
+                  <div className="flex items-center">
+                    <label htmlFor="businessDetails.sale.sellerFinancing.downPaymentPercentage" className="block text-sm font-semibold text-gray-800 mr-2">
+                      Minimum Down Payment <span className="text-red-500">*</span>
+                    </label>
+                    <Tooltip content="Minimum percentage required as down payment">
+                      <HelpCircle className="h-4 w-4 text-gray-500" />
+                    </Tooltip>
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      id="businessDetails.sale.sellerFinancing.downPaymentPercentage"
+                      type="number"
+                      min="10"
+                      max="100"
+                      placeholder="e.g. 30"
+                      className={cn(
+                        "w-full pr-8 px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                        errors.businessDetails?.sale?.sellerFinancing?.downPaymentPercentage ? "border-red-300" : "border-gray-300"
+                      )}
+                      {...register("businessDetails.sale.sellerFinancing.downPaymentPercentage", {
+                        onBlur: () => trigger("businessDetails.sale.sellerFinancing.downPaymentPercentage")
+                      })}
+                    />
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                      <span className="text-gray-500 text-sm">%</span>
+                    </div>
+                  </div>
+
+                  {errors.businessDetails?.sale?.sellerFinancing?.downPaymentPercentage ? (
+                    <p className="text-sm text-red-600 flex items-center mt-1">
+                      <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                      {errors.businessDetails.sale.sellerFinancing.downPaymentPercentage.message}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Minimum down payment required (10%-100%)
+                    </p>
+                  )}
+                </div>
+
+                {/* Financing Details */}
+                <div className="space-y-2">
+                  <div className="flex items-center">
+                    <label htmlFor="businessDetails.sale.sellerFinancing.details" className="block text-sm font-semibold text-gray-800 mr-2">
+                      Financing Details <span className="text-red-500">*</span>
+                    </label>
+                  </div>
+
+                  <input
+                    id="businessDetails.sale.sellerFinancing.details"
+                    type="text"
+                    placeholder="e.g. 5-year term at 8% interest"
+                    className={cn(
+                      "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                      errors.businessDetails?.sale?.sellerFinancing?.details ? "border-red-300" : "border-gray-300"
+                    )}
+                    {...register("businessDetails.sale.sellerFinancing.details", {
+                      onBlur: () => trigger("businessDetails.sale.sellerFinancing.details")
+                    })}
+                  />
+
+                  {errors.businessDetails?.sale?.sellerFinancing?.details ? (
+                    <p className="text-sm text-red-600 flex items-center mt-1">
+                      <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                      {errors.businessDetails.sale.sellerFinancing.details.message}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Terms of financing (interest rate, time period, etc.)
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Transition and Training */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Transition Period */}
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <label htmlFor="businessDetails.sale.transitionPeriod" className="block text-sm font-semibold text-gray-800 mr-2">
+                Transition Period (Months) <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="How long you'll stay to help the new owner transition">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+
+            <input
+              id="businessDetails.sale.transitionPeriod"
+              type="number"
+              min="0"
+              max="12"
+              placeholder="e.g. 3"
+              className={cn(
+                "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                errors.businessDetails?.sale?.transitionPeriod ? "border-red-300" : "border-gray-300"
+              )}
+              {...register("businessDetails.sale.transitionPeriod", {
+                onBlur: () => trigger("businessDetails.sale.transitionPeriod")
+              })}
+            />
+
+            {errors.businessDetails?.sale?.transitionPeriod ? (
+              <p className="text-sm text-red-600 flex items-center mt-1">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.businessDetails.sale.transitionPeriod.message}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                Number of months you'll help with transition (0-12)
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Training Details */}
+        <div className="space-y-2">
+          <div className="flex items-center">
+            <label htmlFor="businessDetails.sale.trainingIncluded" className="block text-sm font-semibold text-gray-800 mr-2">
+              Training Details <span className="text-red-500">*</span>
+            </label>
+            <Tooltip content="Training and support you'll provide to the new owner">
+              <HelpCircle className="h-4 w-4 text-gray-500" />
+            </Tooltip>
+          </div>
+
+          <textarea
+            id="businessDetails.sale.trainingIncluded"
+            rows="3"
+            placeholder="Describe the training you will provide to the new owner..."
+            className={cn(
+              "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+              errors.businessDetails?.sale?.trainingIncluded ? "border-red-300" : "border-gray-300"
+            )}
+            {...register("businessDetails.sale.trainingIncluded", {
+              onBlur: () => trigger("businessDetails.sale.trainingIncluded")
+            })}
+          ></textarea>
+
+          {errors.businessDetails?.sale?.trainingIncluded ? (
+            <p className="text-sm text-red-600 flex items-center mt-1">
+              <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+              {errors.businessDetails.sale.trainingIncluded.message}
+            </p>
+          ) : (
+            <p className="text-xs text-gray-500 mt-1">
+              50-500 characters. Describe the training and support you'll provide.
+            </p>
+          )}
+        </div>
+
+        {/* Assets Included */}
+        <div className="space-y-2">
+          <div className="flex items-center">
+            <label htmlFor="businessDetails.sale.assetsIncluded" className="block text-sm font-semibold text-gray-800 mr-2">
+              Assets Included <span className="text-red-500">*</span>
+            </label>
+            <Tooltip content="Description of physical and intangible assets included in the sale">
+              <HelpCircle className="h-4 w-4 text-gray-500" />
+            </Tooltip>
+          </div>
+
+          <textarea
+            id="businessDetails.sale.assetsIncluded"
+            rows="4"
+            placeholder="List all assets included in the sale (equipment, inventory, intellectual property, etc.)..."
+            className={cn(
+              "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+              errors.businessDetails?.sale?.assetsIncluded ? "border-red-300" : "border-gray-300"
+            )}
+            {...register("businessDetails.sale.assetsIncluded", {
+              onBlur: () => trigger("businessDetails.sale.assetsIncluded")
+            })}
+          ></textarea>
+
+          {errors.businessDetails?.sale?.assetsIncluded ? (
+            <p className="text-sm text-red-600 flex items-center mt-1">
+              <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+              {errors.businessDetails.sale.assetsIncluded.message}
+            </p>
+          ) : (
+            <p className="text-xs text-gray-500 mt-1">
+              100-1000 characters. List and describe all assets included in the sale.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

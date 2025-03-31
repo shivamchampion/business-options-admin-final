@@ -4,12 +4,12 @@ import {
   Info, 
   PlusCircle, 
   Trash2, 
-  InfoIcon, 
+  HelpCircle, 
   Calendar, 
   AlertCircle, 
-  Link as LinkIcon, 
-  Check, 
-  X
+  Link as LinkIcon,
+  ArrowUpRight,
+  Globe
 } from 'lucide-react';
 import { DevelopmentStage, ProductStage, FundingStage } from '@/types/listings';
 import { cn, formatCurrency } from '@/lib/utils';
@@ -21,7 +21,7 @@ import Tooltip from '@/components/ui/Tooltip';
  * This component implements all fields according to the Business Options Platform specifications
  * for startup listings, including validation and conditional fields.
  */
-const StartupForm = ({ editMode = false }) => {
+const StartupForm = ({ submitAttempted = false, editMode = false }) => {
   const { 
     control, 
     register, 
@@ -56,6 +56,18 @@ const StartupForm = ({ editMode = false }) => {
 
   return (
     <div className="space-y-6">
+      {/* Info Message */}
+      <div className="p-4 border border-blue-200 bg-blue-50 rounded-lg flex items-start">
+        <Info className="h-5 w-5 text-blue-500 mr-3 mt-0.5 flex-shrink-0" />
+        <div className="text-sm text-blue-700">
+          <p className="font-semibold mb-1">Startup Information</p>
+          <p>
+            Complete this form with your startup's key details. All fields marked with an asterisk (*) are required.
+            This information will help potential investors evaluate your startup.
+          </p>
+        </div>
+      </div>
+
       {/* Startup Information Section */}
       <div className="card border border-gray-200 bg-white rounded-lg p-6">
         <div className="mb-6">
@@ -66,15 +78,20 @@ const StartupForm = ({ editMode = false }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Development Stage */}
           <div className="col-span-1">
-            <label htmlFor="developmentStage" className="block text-sm font-medium text-gray-700 mb-1">
-              Development Stage <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="developmentStage" className="block text-sm font-semibold text-gray-800 mr-2">
+                Development Stage <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="This helps investors understand your current growth phase">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <select
                 id="developmentStage"
                 className={cn(
-                  "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                  errors.startupDetails?.developmentStage && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.developmentStage ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("startupDetails.developmentStage", { 
                   required: "Development stage is required" 
@@ -93,28 +110,35 @@ const StartupForm = ({ editMode = false }) => {
                 </div>
               )}
             </div>
-            {errors.startupDetails?.developmentStage && (
-              <p className="mt-1 text-sm text-red-600">
+            {errors.startupDetails?.developmentStage ? (
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                 {errors.startupDetails.developmentStage.message}
               </p>
+            ) : (
+              <p className="mt-1 text-xs text-gray-500">
+                This helps investors understand your current growth phase
+              </p>
             )}
-            <p className="mt-1 text-xs text-gray-500">
-              This helps investors understand your current growth phase
-            </p>
           </div>
 
           {/* Registered Name */}
           <div className="col-span-1">
-            <label htmlFor="registeredName" className="block text-sm font-medium text-gray-700 mb-1">
-              Registered Name <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="registeredName" className="block text-sm font-semibold text-gray-800 mr-2">
+                Registered Name <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="The official registered name of your company">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <input
                 type="text"
                 id="registeredName"
                 className={cn(
-                  "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                  errors.startupDetails?.registeredName && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.registeredName ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("startupDetails.registeredName", { 
                   required: "Registered name is required",
@@ -129,22 +153,29 @@ const StartupForm = ({ editMode = false }) => {
                 </div>
               )}
             </div>
-            {errors.startupDetails?.registeredName && (
-              <p className="mt-1 text-sm text-red-600">
+            {errors.startupDetails?.registeredName ? (
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                 {errors.startupDetails.registeredName.message}
               </p>
+            ) : (
+              <p className="mt-1 text-xs text-gray-500">
+                The official registered name of your company
+              </p>
             )}
-            <p className="mt-1 text-xs text-gray-500">
-              The official registered name of your company
-            </p>
           </div>
 
           {/* Founded Date */}
           <div className="col-span-1">
-            <label htmlFor="foundedDate" className="block text-sm font-medium text-gray-700 mb-1">
-              Founded Date <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="foundedDate" className="block text-sm font-semibold text-gray-800 mr-2">
+                Founded Date <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="When your startup was officially established">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <Controller
                 control={control}
                 name="startupDetails.foundedDate"
@@ -155,8 +186,8 @@ const StartupForm = ({ editMode = false }) => {
                       type="date"
                       id="foundedDate"
                       className={cn(
-                        "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                        errors.startupDetails?.foundedDate && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                        "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                        errors.startupDetails?.foundedDate ? "border-red-300" : "border-gray-300"
                       )}
                       value={field.value ? new Date(field.value).toISOString().split('T')[0] : ''}
                       onChange={(e) => {
@@ -174,22 +205,29 @@ const StartupForm = ({ editMode = false }) => {
                 )}
               />
             </div>
-            {errors.startupDetails?.foundedDate && (
-              <p className="mt-1 text-sm text-red-600">
+            {errors.startupDetails?.foundedDate ? (
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                 {errors.startupDetails.foundedDate.message}
               </p>
+            ) : (
+              <p className="mt-1 text-xs text-gray-500">
+                When your startup was officially established
+              </p>
             )}
-            <p className="mt-1 text-xs text-gray-500">
-              When your startup was officially established
-            </p>
           </div>
 
           {/* Launch Date - Optional */}
           <div className="col-span-1">
-            <label htmlFor="launchDate" className="block text-sm font-medium text-gray-700 mb-1">
-              Launch Date <span className="text-gray-400">(Optional)</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="launchDate" className="block text-sm font-semibold text-gray-800 mr-2">
+                Launch Date <span className="text-gray-400">(Optional)</span>
+              </label>
+              <Tooltip content="When your product was/will be launched to market (if applicable)">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <Controller
                 control={control}
                 name="startupDetails.launchDate"
@@ -198,7 +236,7 @@ const StartupForm = ({ editMode = false }) => {
                     <input
                       type="date"
                       id="launchDate"
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                      className="block w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
                       value={field.value ? new Date(field.value).toISOString().split('T')[0] : ''}
                       onChange={(e) => {
                         const date = e.target.value ? new Date(e.target.value) : null;
@@ -219,16 +257,21 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Mission Statement */}
           <div className="col-span-full">
-            <label htmlFor="missionStatement" className="block text-sm font-medium text-gray-700 mb-1">
-              Mission Statement <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="missionStatement" className="block text-sm font-semibold text-gray-800 mr-2">
+                Mission Statement <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Your startup's core purpose and philosophy">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <textarea
                 id="missionStatement"
                 rows={2}
                 className={cn(
-                  "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                  errors.startupDetails?.missionStatement && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.missionStatement ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("startupDetails.missionStatement", { 
                   required: "Mission statement is required",
@@ -245,7 +288,8 @@ const StartupForm = ({ editMode = false }) => {
             </div>
             <div className="flex justify-between mt-1">
               {errors.startupDetails?.missionStatement ? (
-                <p className="text-sm text-red-600">
+                <p className="text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                   {errors.startupDetails.missionStatement.message}
                 </p>
               ) : (
@@ -261,16 +305,21 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Problem Statement */}
           <div className="col-span-full">
-            <label htmlFor="problemStatement" className="block text-sm font-medium text-gray-700 mb-1">
-              Problem Statement <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="problemStatement" className="block text-sm font-semibold text-gray-800 mr-2">
+                Problem Statement <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="The specific problem your startup is trying to solve">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <textarea
                 id="problemStatement"
                 rows={2}
                 className={cn(
-                  "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                  errors.startupDetails?.problemStatement && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.problemStatement ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("startupDetails.problemStatement", { 
                   required: "Problem statement is required",
@@ -287,7 +336,8 @@ const StartupForm = ({ editMode = false }) => {
             </div>
             <div className="flex justify-between mt-1">
               {errors.startupDetails?.problemStatement ? (
-                <p className="text-sm text-red-600">
+                <p className="text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                   {errors.startupDetails.problemStatement.message}
                 </p>
               ) : (
@@ -303,16 +353,21 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Solution Description */}
           <div className="col-span-full">
-            <label htmlFor="solutionDescription" className="block text-sm font-medium text-gray-700 mb-1">
-              Solution Description <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="solutionDescription" className="block text-sm font-semibold text-gray-800 mr-2">
+                Solution Description <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="A clear explanation of your solution approach and methodology">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <textarea
                 id="solutionDescription"
                 rows={3}
                 className={cn(
-                  "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                  errors.startupDetails?.solutionDescription && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.solutionDescription ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("startupDetails.solutionDescription", { 
                   required: "Solution description is required",
@@ -329,7 +384,8 @@ const StartupForm = ({ editMode = false }) => {
             </div>
             <div className="flex justify-between mt-1">
               {errors.startupDetails?.solutionDescription ? (
-                <p className="text-sm text-red-600">
+                <p className="text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                   {errors.startupDetails.solutionDescription.message}
                 </p>
               ) : (
@@ -355,17 +411,22 @@ const StartupForm = ({ editMode = false }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Team Size */}
           <div className="col-span-1">
-            <label htmlFor="teamSize" className="block text-sm font-medium text-gray-700 mb-1">
-              Team Size <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="teamSize" className="block text-sm font-semibold text-gray-800 mr-2">
+                Team Size <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="The total number of people on your team">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <input
                 type="number"
                 id="teamSize"
                 min="1"
                 className={cn(
-                  "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                  errors.startupDetails?.team?.teamSize && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.team?.teamSize ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("startupDetails.team.teamSize", { 
                   required: "Team size is required",
@@ -381,27 +442,34 @@ const StartupForm = ({ editMode = false }) => {
                 </div>
               )}
             </div>
-            {errors.startupDetails?.team?.teamSize && (
-              <p className="mt-1 text-sm text-red-600">
+            {errors.startupDetails?.team?.teamSize ? (
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                 {errors.startupDetails.team.teamSize.message}
               </p>
+            ) : (
+              <p className="mt-1 text-xs text-gray-500">
+                The total number of people on your team
+              </p>
             )}
-            <p className="mt-1 text-xs text-gray-500">
-              The total number of people on your team
-            </p>
           </div>
 
           {/* Product Stage */}
           <div className="col-span-1">
-            <label htmlFor="productStage" className="block text-sm font-medium text-gray-700 mb-1">
-              Product Stage <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="productStage" className="block text-sm font-semibold text-gray-800 mr-2">
+                Product Stage <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="The current development status of your product">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <select
                 id="productStage"
                 className={cn(
-                  "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                  errors.startupDetails?.team?.productStage && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.team?.productStage ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("startupDetails.team.productStage", { 
                   required: "Product stage is required" 
@@ -420,22 +488,29 @@ const StartupForm = ({ editMode = false }) => {
                 </div>
               )}
             </div>
-            {errors.startupDetails?.team?.productStage && (
-              <p className="mt-1 text-sm text-red-600">
+            {errors.startupDetails?.team?.productStage ? (
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                 {errors.startupDetails.team.productStage.message}
               </p>
+            ) : (
+              <p className="mt-1 text-xs text-gray-500">
+                The current development status of your product
+              </p>
             )}
-            <p className="mt-1 text-xs text-gray-500">
-              The current development status of your product
-            </p>
           </div>
 
           {/* Intellectual Property - Optional Multi-select */}
           <div className="col-span-full">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Intellectual Property <span className="text-gray-400">(Optional)</span>
-            </label>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="flex items-center">
+              <label className="block text-sm font-semibold text-gray-800 mr-2">
+                Intellectual Property <span className="text-gray-400">(Optional)</span>
+              </label>
+              <Tooltip content="Select any IP protections your startup currently has">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 mt-1">
               {["Patents", "Trademarks", "Copyrights", "Trade Secrets"].map((ip) => (
                 <div key={ip} className="flex items-center">
                   <input
@@ -458,13 +533,18 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Technology Stack - Optional */}
           <div className="col-span-full">
-            <label htmlFor="technologyStack" className="block text-sm font-medium text-gray-700 mb-1">
-              Technology Stack <span className="text-gray-400">(Optional)</span>
-            </label>
+            <div className="flex items-center">
+              <label htmlFor="technologyStack" className="block text-sm font-semibold text-gray-800 mr-2">
+                Technology Stack <span className="text-gray-400">(Optional)</span>
+              </label>
+              <Tooltip content="The primary technologies and frameworks your product is built on">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
             <textarea
               id="technologyStack"
               rows={2}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+              className="block w-full px-3 py-2 mt-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
               {...register("startupDetails.team.technologyStack")}
               placeholder="Key technologies, languages, and frameworks used"
             />
@@ -475,16 +555,21 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Unique Selling Points */}
           <div className="col-span-full">
-            <label htmlFor="uniqueSellingPoints" className="block text-sm font-medium text-gray-700 mb-1">
-              Unique Selling Points <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="uniqueSellingPoints" className="block text-sm font-semibold text-gray-800 mr-2">
+                Unique Selling Points <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Your key differentiators and competitive advantages">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <textarea
                 id="uniqueSellingPoints"
                 rows={3}
                 className={cn(
-                  "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                  errors.startupDetails?.team?.uniqueSellingPoints && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.team?.uniqueSellingPoints ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("startupDetails.team.uniqueSellingPoints", { 
                   required: "Unique selling points are required",
@@ -501,7 +586,8 @@ const StartupForm = ({ editMode = false }) => {
             </div>
             <div className="flex justify-between mt-1">
               {errors.startupDetails?.team?.uniqueSellingPoints ? (
-                <p className="text-sm text-red-600">
+                <p className="text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                   {errors.startupDetails.team.uniqueSellingPoints.message}
                 </p>
               ) : (
@@ -517,10 +603,15 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Founders - Repeatable Fields Section */}
           <div className="col-span-full">
-            <div className="flex justify-between items-center mb-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Founders <span className="text-red-500">*</span>
-              </label>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center">
+                <label className="block text-sm font-semibold text-gray-800 mr-2">
+                  Founders <span className="text-red-500">*</span>
+                </label>
+                <Tooltip content="Key people who founded the startup. At least one founder is required.">
+                  <HelpCircle className="h-4 w-4 text-gray-500" />
+                </Tooltip>
+              </div>
               {fields.length < maxFounders && (
                 <button
                   type="button"
@@ -534,7 +625,8 @@ const StartupForm = ({ editMode = false }) => {
             </div>
 
             {errors.startupDetails?.team?.founders && (
-              <p className="mt-1 mb-2 text-sm text-red-600">
+              <p className="mt-1 mb-2 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                 {errors.startupDetails.team.founders.message}
               </p>
             )}
@@ -569,15 +661,15 @@ const StartupForm = ({ editMode = false }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Founder Name */}
                   <div>
-                    <label htmlFor={`founder-name-${index}`} className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`founder-name-${index}`} className="block text-sm font-semibold text-gray-800 mb-1">
                       Name <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       id={`founder-name-${index}`}
                       className={cn(
-                        "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                        errors.startupDetails?.team?.founders?.[index]?.name && "border-red-300"
+                        "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                        errors.startupDetails?.team?.founders?.[index]?.name ? "border-red-300" : "border-gray-300"
                       )}
                       {...register(`startupDetails.team.founders.${index}.name`, { 
                         required: "Founder name is required" 
@@ -585,7 +677,8 @@ const StartupForm = ({ editMode = false }) => {
                       placeholder="Founder name"
                     />
                     {errors.startupDetails?.team?.founders?.[index]?.name && (
-                      <p className="mt-1 text-sm text-red-600">
+                      <p className="mt-1 text-sm text-red-600 flex items-center">
+                        <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                         {errors.startupDetails.team.founders[index].name.message}
                       </p>
                     )}
@@ -593,15 +686,15 @@ const StartupForm = ({ editMode = false }) => {
 
                   {/* Founder Role */}
                   <div>
-                    <label htmlFor={`founder-role-${index}`} className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`founder-role-${index}`} className="block text-sm font-semibold text-gray-800 mb-1">
                       Role <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       id={`founder-role-${index}`}
                       className={cn(
-                        "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                        errors.startupDetails?.team?.founders?.[index]?.role && "border-red-300"
+                        "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                        errors.startupDetails?.team?.founders?.[index]?.role ? "border-red-300" : "border-gray-300"
                       )}
                       {...register(`startupDetails.team.founders.${index}.role`, { 
                         required: "Founder role is required" 
@@ -609,7 +702,8 @@ const StartupForm = ({ editMode = false }) => {
                       placeholder="e.g., CEO, CTO"
                     />
                     {errors.startupDetails?.team?.founders?.[index]?.role && (
-                      <p className="mt-1 text-sm text-red-600">
+                      <p className="mt-1 text-sm text-red-600 flex items-center">
+                        <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                         {errors.startupDetails.team.founders[index].role.message}
                       </p>
                     )}
@@ -617,15 +711,15 @@ const StartupForm = ({ editMode = false }) => {
 
                   {/* Founder Experience */}
                   <div className="md:col-span-2">
-                    <label htmlFor={`founder-experience-${index}`} className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`founder-experience-${index}`} className="block text-sm font-semibold text-gray-800 mb-1">
                       Experience <span className="text-red-500">*</span>
                     </label>
                     <textarea
                       id={`founder-experience-${index}`}
                       rows={2}
                       className={cn(
-                        "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                        errors.startupDetails?.team?.founders?.[index]?.experience && "border-red-300"
+                        "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                        errors.startupDetails?.team?.founders?.[index]?.experience ? "border-red-300" : "border-gray-300"
                       )}
                       {...register(`startupDetails.team.founders.${index}.experience`, { 
                         required: "Founder experience is required",
@@ -636,7 +730,8 @@ const StartupForm = ({ editMode = false }) => {
                     />
                     <div className="flex justify-between mt-1">
                       {errors.startupDetails?.team?.founders?.[index]?.experience ? (
-                        <p className="text-sm text-red-600">
+                        <p className="text-sm text-red-600 flex items-center">
+                          <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                           {errors.startupDetails.team.founders[index].experience.message}
                         </p>
                       ) : (
@@ -650,7 +745,7 @@ const StartupForm = ({ editMode = false }) => {
 
                   {/* LinkedIn Profile - Optional */}
                   <div className="md:col-span-2">
-                    <label htmlFor={`founder-linkedin-${index}`} className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor={`founder-linkedin-${index}`} className="block text-sm font-semibold text-gray-800 mb-1">
                       LinkedIn Profile <span className="text-gray-400">(Optional)</span>
                     </label>
                     <div className="relative">
@@ -661,8 +756,8 @@ const StartupForm = ({ editMode = false }) => {
                         type="url"
                         id={`founder-linkedin-${index}`}
                         className={cn(
-                          "block w-full pl-10 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                          errors.startupDetails?.team?.founders?.[index]?.linkedinProfile && "border-red-300"
+                          "block w-full pl-10 px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                          errors.startupDetails?.team?.founders?.[index]?.linkedinProfile ? "border-red-300" : "border-gray-300"
                         )}
                         {...register(`startupDetails.team.founders.${index}.linkedinProfile`, { 
                           pattern: {
@@ -670,11 +765,12 @@ const StartupForm = ({ editMode = false }) => {
                             message: "Please enter a valid LinkedIn profile URL"
                           }
                         })}
-                        placeholder="https://linkedin.com/in/username"
+                        placeholder="linkedin.com/in/username"
                       />
                     </div>
                     {errors.startupDetails?.team?.founders?.[index]?.linkedinProfile && (
-                      <p className="mt-1 text-sm text-red-600">
+                      <p className="mt-1 text-sm text-red-600 flex items-center">
+                        <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                         {errors.startupDetails.team.founders[index].linkedinProfile.message}
                       </p>
                     )}
@@ -707,17 +803,22 @@ const StartupForm = ({ editMode = false }) => {
             <>
               {/* Total Users - Required for post-MVP */}
               <div className="col-span-1">
-                <label htmlFor="totalUsers" className="block text-sm font-medium text-gray-700 mb-1">
-                  Total Users {developmentStage !== DevelopmentStage.MVP ? <span className="text-red-500">*</span> : <span className="text-gray-400">(Optional)</span>}
-                </label>
-                <div className="relative">
+                <div className="flex items-center">
+                  <label htmlFor="totalUsers" className="block text-sm font-semibold text-gray-800 mr-2">
+                    Total Users {developmentStage !== DevelopmentStage.MVP ? <span className="text-red-500">*</span> : <span className="text-gray-400">(Optional)</span>}
+                  </label>
+                  <Tooltip content="The total number of users who have signed up">
+                    <HelpCircle className="h-4 w-4 text-gray-500" />
+                  </Tooltip>
+                </div>
+                <div className="relative mt-1">
                   <input
                     type="number"
                     id="totalUsers"
                     min="0"
                     className={cn(
-                      "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                      errors.startupDetails?.market?.totalUsers && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                      "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                      errors.startupDetails?.market?.totalUsers ? "border-red-300" : "border-gray-300"
                     )}
                     {...register("startupDetails.market.totalUsers", {
                       ...(developmentStage !== DevelopmentStage.MVP && { required: "Total users is required for your stage" }),
@@ -733,7 +834,8 @@ const StartupForm = ({ editMode = false }) => {
                   )}
                 </div>
                 {errors.startupDetails?.market?.totalUsers ? (
-                  <p className="mt-1 text-sm text-red-600">
+                  <p className="mt-1 text-sm text-red-600 flex items-center">
+                    <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                     {errors.startupDetails.market.totalUsers.message}
                   </p>
                 ) : (
@@ -745,17 +847,22 @@ const StartupForm = ({ editMode = false }) => {
 
               {/* Active Users - Required for post-MVP */}
               <div className="col-span-1">
-                <label htmlFor="activeUsers" className="block text-sm font-medium text-gray-700 mb-1">
-                  Active Users {developmentStage !== DevelopmentStage.MVP ? <span className="text-red-500">*</span> : <span className="text-gray-400">(Optional)</span>}
-                </label>
-                <div className="relative">
+                <div className="flex items-center">
+                  <label htmlFor="activeUsers" className="block text-sm font-semibold text-gray-800 mr-2">
+                    Active Users {developmentStage !== DevelopmentStage.MVP ? <span className="text-red-500">*</span> : <span className="text-gray-400">(Optional)</span>}
+                  </label>
+                  <Tooltip content="Users who actively engage with your product">
+                    <HelpCircle className="h-4 w-4 text-gray-500" />
+                  </Tooltip>
+                </div>
+                <div className="relative mt-1">
                   <input
                     type="number"
                     id="activeUsers"
                     min="0"
                     className={cn(
-                      "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                      errors.startupDetails?.market?.activeUsers && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                      "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                      errors.startupDetails?.market?.activeUsers ? "border-red-300" : "border-gray-300"
                     )}
                     {...register("startupDetails.market.activeUsers", {
                       ...(developmentStage !== DevelopmentStage.MVP && { required: "Active users is required for your stage" }),
@@ -777,7 +884,8 @@ const StartupForm = ({ editMode = false }) => {
                   )}
                 </div>
                 {errors.startupDetails?.market?.activeUsers ? (
-                  <p className="mt-1 text-sm text-red-600">
+                  <p className="mt-1 text-sm text-red-600 flex items-center">
+                    <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                     {errors.startupDetails.market.activeUsers.message}
                   </p>
                 ) : (
@@ -791,16 +899,21 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Revenue Model */}
           <div className="col-span-full">
-            <label htmlFor="revenueModel" className="block text-sm font-medium text-gray-700 mb-1">
-              Revenue Model <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="revenueModel" className="block text-sm font-semibold text-gray-800 mr-2">
+                Revenue Model <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Explain your monetization approach (e.g., subscription, freemium, marketplace)">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <textarea
                 id="revenueModel"
                 rows={2}
                 className={cn(
-                  "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                  errors.startupDetails?.market?.revenueModel && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.market?.revenueModel ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("startupDetails.market.revenueModel", { 
                   required: "Revenue model is required",
@@ -817,7 +930,8 @@ const StartupForm = ({ editMode = false }) => {
             </div>
             <div className="flex justify-between mt-1">
               {errors.startupDetails?.market?.revenueModel ? (
-                <p className="text-sm text-red-600">
+                <p className="text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                   {errors.startupDetails.market.revenueModel.message}
                 </p>
               ) : (
@@ -834,13 +948,15 @@ const StartupForm = ({ editMode = false }) => {
           {/* Monthly Revenue - Conditional for post-launch */}
           {developmentStage && ['seed', 'series_a', 'series_b_plus'].includes(developmentStage) && (
             <div className="col-span-1">
-              <label htmlFor="monthlyRevenue" className="flex items-center text-sm font-medium text-gray-700 mb-1">
-                Monthly Revenue <span className="text-red-500 ml-1">*</span>
-                <Tooltip content="This information helps investors understand your current traction and revenue potential.">
-                  <InfoIcon className="h-4 w-4 text-gray-400 ml-1" />
+              <div className="flex items-center">
+                <label htmlFor="monthlyRevenue" className="block text-sm font-semibold text-gray-800 mr-2">
+                  Monthly Revenue <span className="text-red-500">*</span>
+                </label>
+                <Tooltip content="This information helps investors understand your current traction and revenue potential">
+                  <HelpCircle className="h-4 w-4 text-gray-500" />
                 </Tooltip>
-              </label>
-              <div className="relative">
+              </div>
+              <div className="relative mt-1">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <span className="text-gray-500 sm:text-sm">₹</span>
                 </div>
@@ -855,10 +971,10 @@ const StartupForm = ({ editMode = false }) => {
                       type="number"
                       id="monthlyRevenue"
                       className={cn(
-                        "block w-full pl-7 pr-12 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                        errors.startupDetails?.market?.monthlyRevenue?.value && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                        "block w-full pl-10 pr-12 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                        errors.startupDetails?.market?.monthlyRevenue?.value ? "border-red-300" : "border-gray-300"
                       )}
-                      placeholder="0"
+                      placeholder="Enter amount"
                       {...field}
                       onChange={(e) => {
                         field.onChange(e.target.valueAsNumber || 0);
@@ -876,7 +992,8 @@ const StartupForm = ({ editMode = false }) => {
                 </div>
               </div>
               {errors.startupDetails?.market?.monthlyRevenue?.value ? (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="mt-1 text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                   {errors.startupDetails.market.monthlyRevenue.value.message}
                 </p>
               ) : (
@@ -889,16 +1006,21 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Growth Rate - Optional */}
           <div className="col-span-1">
-            <label htmlFor="growthRate" className="block text-sm font-medium text-gray-700 mb-1">
-              Growth Rate <span className="text-gray-400">(Optional)</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="growthRate" className="block text-sm font-semibold text-gray-800 mr-2">
+                Growth Rate <span className="text-gray-400">(Optional)</span>
+              </label>
+              <Tooltip content="Monthly or quarterly user/revenue growth rate">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <input
                 type="number"
                 id="growthRate"
                 min="0"
                 max="1000"
-                className="block w-full pr-12 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                className="block w-full pr-12 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
                 {...register("startupDetails.market.growthRate", { 
                   min: { value: 0, message: "Growth rate cannot be negative" },
                   max: { value: 1000, message: "Growth rate cannot exceed 1000%" },
@@ -912,7 +1034,8 @@ const StartupForm = ({ editMode = false }) => {
               </div>
             </div>
             {errors.startupDetails?.market?.growthRate ? (
-              <p className="mt-1 text-sm text-red-600">
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                 {errors.startupDetails.market.growthRate.message}
               </p>
             ) : (
@@ -924,16 +1047,21 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Target Market */}
           <div className="col-span-full">
-            <label htmlFor="targetMarket" className="block text-sm font-medium text-gray-700 mb-1">
-              Target Market <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="targetMarket" className="block text-sm font-semibold text-gray-800 mr-2">
+                Target Market <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Detailed description of your target customer segment">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <textarea
                 id="targetMarket"
                 rows={2}
                 className={cn(
-                  "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                  errors.startupDetails?.market?.targetMarket && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.market?.targetMarket ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("startupDetails.market.targetMarket", { 
                   required: "Target market is required",
@@ -950,7 +1078,8 @@ const StartupForm = ({ editMode = false }) => {
             </div>
             <div className="flex justify-between mt-1">
               {errors.startupDetails?.market?.targetMarket ? (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                   {errors.startupDetails.market.targetMarket.message}
                 </p>
               ) : (
@@ -966,13 +1095,15 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Market Size (TAM) */}
           <div className="col-span-1">
-            <label htmlFor="marketSize" className="flex items-center text-sm font-medium text-gray-700 mb-1">
-              Market Size (TAM) <span className="text-red-500 ml-1">*</span>
+            <div className="flex items-center">
+              <label htmlFor="marketSize" className="block text-sm font-semibold text-gray-800 mr-2">
+                Market Size (TAM) <span className="text-red-500">*</span>
+              </label>
               <Tooltip content="Total Addressable Market (TAM) is the total market demand for your product or service. This should be a realistic, research-based figure.">
-                <InfoIcon className="h-4 w-4 text-gray-400 ml-1" />
+                <HelpCircle className="h-4 w-4 text-gray-500" />
               </Tooltip>
-            </label>
-            <div className="relative">
+            </div>
+            <div className="relative mt-1">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <span className="text-gray-500 sm:text-sm">₹</span>
               </div>
@@ -987,8 +1118,8 @@ const StartupForm = ({ editMode = false }) => {
                     type="number"
                     id="marketSize"
                     className={cn(
-                      "block w-full pl-7 pr-12 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                      errors.startupDetails?.market?.marketSize?.value && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                      "block w-full pl-7 pr-12 px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                      errors.startupDetails?.market?.marketSize?.value ? "border-red-300" : "border-gray-300"
                     )}
                     placeholder="0"
                     {...field}
@@ -1008,7 +1139,8 @@ const StartupForm = ({ editMode = false }) => {
               </div>
             </div>
             {errors.startupDetails?.market?.marketSize?.value ? (
-              <p className="mt-1 text-sm text-red-600">
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                 {errors.startupDetails.market.marketSize.value.message}
               </p>
             ) : (
@@ -1020,16 +1152,21 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Competitive Analysis */}
           <div className="col-span-full">
-            <label htmlFor="competitiveAnalysis" className="block text-sm font-medium text-gray-700 mb-1">
-              Competitive Analysis <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="competitiveAnalysis" className="block text-sm font-semibold text-gray-800 mr-2">
+                Competitive Analysis <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Key competitors and your unique positioning against them">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <textarea
                 id="competitiveAnalysis"
                 rows={3}
                 className={cn(
-                  "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                  errors.startupDetails?.market?.competitiveAnalysis && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.market?.competitiveAnalysis ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("startupDetails.market.competitiveAnalysis", { 
                   required: "Competitive analysis is required",
@@ -1046,7 +1183,8 @@ const StartupForm = ({ editMode = false }) => {
             </div>
             <div className="flex justify-between mt-1">
               {errors.startupDetails?.market?.competitiveAnalysis ? (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                   {errors.startupDetails.market.competitiveAnalysis.message}
                 </p>
               ) : (
@@ -1072,15 +1210,20 @@ const StartupForm = ({ editMode = false }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Funding Stage */}
           <div className="col-span-1">
-            <label htmlFor="fundingStage" className="block text-sm font-medium text-gray-700 mb-1">
-              Funding Stage <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="fundingStage" className="block text-sm font-semibold text-gray-800 mr-2">
+                Funding Stage <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="The investment phase you're currently targeting">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <select
                 id="fundingStage"
                 className={cn(
-                  "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                  errors.startupDetails?.funding?.fundingStage && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.funding?.fundingStage ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("startupDetails.funding.fundingStage", { 
                   required: "Funding stage is required" 
@@ -1099,22 +1242,29 @@ const StartupForm = ({ editMode = false }) => {
                 </div>
               )}
             </div>
-            {errors.startupDetails?.funding?.fundingStage && (
-              <p className="mt-1 text-sm text-red-600">
+            {errors.startupDetails?.funding?.fundingStage ? (
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                 {errors.startupDetails.funding.fundingStage.message}
               </p>
+            ) : (
+              <p className="mt-1 text-xs text-gray-500">
+                The investment phase you're currently targeting
+              </p>
             )}
-            <p className="mt-1 text-xs text-gray-500">
-              The investment phase you're currently targeting
-            </p>
           </div>
 
           {/* Total Raised to Date - Optional */}
           <div className="col-span-1">
-            <label htmlFor="totalRaisedToDate" className="block text-sm font-medium text-gray-700 mb-1">
-              Total Raised to Date <span className="text-gray-400">(Optional)</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="totalRaisedToDate" className="block text-sm font-semibold text-gray-800 mr-2">
+                Total Raised to Date <span className="text-gray-400">(Optional)</span>
+              </label>
+              <Tooltip content="Total funding received from all sources so far">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <span className="text-gray-500 sm:text-sm">₹</span>
               </div>
@@ -1125,7 +1275,7 @@ const StartupForm = ({ editMode = false }) => {
                   <input
                     type="number"
                     id="totalRaisedToDate"
-                    className="block w-full pl-7 pr-12 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                    className="block w-full pl-7 pr-12 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
                     placeholder="0"
                     {...field}
                     onChange={(e) => {
@@ -1150,10 +1300,15 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Current Raising Amount */}
           <div className="col-span-1">
-            <label htmlFor="currentRaisingAmount" className="block text-sm font-medium text-gray-700 mb-1">
-              Current Raising Amount <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="currentRaisingAmount" className="block text-sm font-semibold text-gray-800 mr-2">
+                Current Raising Amount <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Amount you're currently seeking to raise">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <span className="text-gray-500 sm:text-sm">₹</span>
               </div>
@@ -1168,8 +1323,8 @@ const StartupForm = ({ editMode = false }) => {
                     type="number"
                     id="currentRaisingAmount"
                     className={cn(
-                      "block w-full pl-7 pr-12 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                      errors.startupDetails?.funding?.currentRaisingAmount?.value && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                      "block w-full pl-7 pr-12 px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                      errors.startupDetails?.funding?.currentRaisingAmount?.value ? "border-red-300" : "border-gray-300"
                     )}
                     placeholder="0"
                     {...field}
@@ -1189,7 +1344,8 @@ const StartupForm = ({ editMode = false }) => {
               </div>
             </div>
             {errors.startupDetails?.funding?.currentRaisingAmount?.value ? (
-              <p className="mt-1 text-sm text-red-600">
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                 {errors.startupDetails.funding.currentRaisingAmount.value.message}
               </p>
             ) : (
@@ -1201,10 +1357,15 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Equity Offered */}
           <div className="col-span-1">
-            <label htmlFor="equityOffered" className="block text-sm font-medium text-gray-700 mb-1">
-              Equity Offered <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="equityOffered" className="block text-sm font-semibold text-gray-800 mr-2">
+                Equity Offered <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Percentage of equity offered for the investment">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <input
                 type="number"
                 id="equityOffered"
@@ -1212,8 +1373,8 @@ const StartupForm = ({ editMode = false }) => {
                 max="100"
                 step="0.1"
                 className={cn(
-                  "block w-full pr-12 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                  errors.startupDetails?.funding?.equityOffered && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  "block w-full pr-12 px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.funding?.equityOffered ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("startupDetails.funding.equityOffered", { 
                   required: "Equity offered is required",
@@ -1228,7 +1389,8 @@ const StartupForm = ({ editMode = false }) => {
               </div>
             </div>
             {errors.startupDetails?.funding?.equityOffered ? (
-              <p className="mt-1 text-sm text-red-600">
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                 {errors.startupDetails.funding.equityOffered.message}
               </p>
             ) : (
@@ -1240,13 +1402,15 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Pre-money Valuation */}
           <div className="col-span-1">
-            <label htmlFor="preMoneyValuation" className="flex items-center text-sm font-medium text-gray-700 mb-1">
-              Pre-money Valuation <span className="text-red-500 ml-1">*</span>
+            <div className="flex items-center">
+              <label htmlFor="preMoneyValuation" className="block text-sm font-semibold text-gray-800 mr-2">
+                Pre-money Valuation <span className="text-red-500">*</span>
+              </label>
               <Tooltip content="Pre-money valuation is the value of your company before the investment. This should be consistent with your equity offered and raising amount.">
-                <InfoIcon className="h-4 w-4 text-gray-400 ml-1" />
+                <HelpCircle className="h-4 w-4 text-gray-500" />
               </Tooltip>
-            </label>
-            <div className="relative">
+            </div>
+            <div className="relative mt-1">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <span className="text-gray-500 sm:text-sm">₹</span>
               </div>
@@ -1279,8 +1443,8 @@ const StartupForm = ({ editMode = false }) => {
                     type="number"
                     id="preMoneyValuation"
                     className={cn(
-                      "block w-full pl-7 pr-12 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                      errors.startupDetails?.funding?.preMoneyValuation?.value && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                      "block w-full pl-7 pr-12 px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                      errors.startupDetails?.funding?.preMoneyValuation?.value ? "border-red-300" : "border-gray-300"
                     )}
                     placeholder="0"
                     {...field}
@@ -1300,7 +1464,8 @@ const StartupForm = ({ editMode = false }) => {
               </div>
             </div>
             {errors.startupDetails?.funding?.preMoneyValuation?.value ? (
-              <p className="mt-1 text-sm text-red-600">
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                 {errors.startupDetails.funding.preMoneyValuation.value.message}
               </p>
             ) : (
@@ -1312,16 +1477,21 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Use of Funds */}
           <div className="col-span-full">
-            <label htmlFor="useOfFunds" className="block text-sm font-medium text-gray-700 mb-1">
-              Use of Funds <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="useOfFunds" className="block text-sm font-semibold text-gray-800 mr-2">
+                Use of Funds <span className="text-red-500">*</span>
+              </label>
+              <Tooltip content="Detailed breakdown of how the funds will be allocated">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <textarea
                 id="useOfFunds"
                 rows={3}
                 className={cn(
-                  "block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm",
-                  errors.startupDetails?.funding?.useOfFunds && "border-red-300 focus:border-red-500 focus:ring-red-500"
+                  "block w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.funding?.useOfFunds ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("startupDetails.funding.useOfFunds", { 
                   required: "Use of funds is required",
@@ -1338,7 +1508,8 @@ const StartupForm = ({ editMode = false }) => {
             </div>
             <div className="flex justify-between mt-1">
               {errors.startupDetails?.funding?.useOfFunds ? (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                   {errors.startupDetails.funding.useOfFunds.message}
                 </p>
               ) : (
@@ -1354,13 +1525,18 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Previous Investors - Optional */}
           <div className="col-span-full">
-            <label htmlFor="previousInvestors" className="block text-sm font-medium text-gray-700 mb-1">
-              Previous Investors <span className="text-gray-400">(Optional)</span>
-            </label>
+            <div className="flex items-center">
+              <label htmlFor="previousInvestors" className="block text-sm font-semibold text-gray-800 mr-2">
+                Previous Investors <span className="text-gray-400">(Optional)</span>
+              </label>
+              <Tooltip content="List notable investors with their permission">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
             <textarea
               id="previousInvestors"
               rows={2}
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+              className="block w-full px-3 py-2 mt-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
               {...register("startupDetails.funding.previousInvestors", {
                 maxLength: { value: 300, message: "Previous investors cannot exceed 300 characters" }
               })}
@@ -1368,7 +1544,8 @@ const StartupForm = ({ editMode = false }) => {
             />
             <div className="flex justify-between mt-1">
               {errors.startupDetails?.funding?.previousInvestors ? (
-                <p className="mt-1 text-sm text-red-600">
+                <p className="mt-1 text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                   {errors.startupDetails.funding.previousInvestors.message}
                 </p>
               ) : (
@@ -1384,10 +1561,15 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Financial metrics - Optional fields */}
           <div className="col-span-1">
-            <label htmlFor="burnRate" className="block text-sm font-medium text-gray-700 mb-1">
-              Monthly Burn Rate <span className="text-gray-400">(Optional)</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="burnRate" className="block text-sm font-semibold text-gray-800 mr-2">
+                Monthly Burn Rate <span className="text-gray-400">(Optional)</span>
+              </label>
+              <Tooltip content="Your monthly expenses">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <span className="text-gray-500 sm:text-sm">₹</span>
               </div>
@@ -1398,7 +1580,7 @@ const StartupForm = ({ editMode = false }) => {
                   <input
                     type="number"
                     id="burnRate"
-                    className="block w-full pl-7 pr-12 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                    className="block w-full pl-7 pr-12 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
                     placeholder="0"
                     {...field}
                     onChange={(e) => {
@@ -1430,16 +1612,21 @@ const StartupForm = ({ editMode = false }) => {
 
           {/* Runway */}
           <div className="col-span-1">
-            <label htmlFor="runway" className="block text-sm font-medium text-gray-700 mb-1">
-              Runway <span className="text-gray-400">(Optional)</span>
-            </label>
-            <div className="relative">
+            <div className="flex items-center">
+              <label htmlFor="runway" className="block text-sm font-semibold text-gray-800 mr-2">
+                Runway <span className="text-gray-400">(Optional)</span>
+              </label>
+              <Tooltip content="Months remaining at current burn rate">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
               <input
                 type="number"
                 id="runway"
                 min="0"
                 max="60"
-                className="block w-full pr-16 rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                className="block w-full pr-16 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
                 {...register("startupDetails.funding.runway", { 
                   min: { value: 0, message: "Runway cannot be negative" },
                   max: { value: 60, message: "Runway cannot exceed 60 months" },
@@ -1452,7 +1639,8 @@ const StartupForm = ({ editMode = false }) => {
               </div>
             </div>
             {errors.startupDetails?.funding?.runway ? (
-              <p className="mt-1 text-sm text-red-600">
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
                 {errors.startupDetails.funding.runway.message}
               </p>
             ) : (
@@ -1460,6 +1648,154 @@ const StartupForm = ({ editMode = false }) => {
                 Months remaining at current burn rate
               </p>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* External Links (Optional) */}
+      <div className="card border border-gray-200 bg-white rounded-lg p-6">
+        <div className="mb-6">
+          <h3 className="text-lg font-semibold text-gray-900">External Links</h3>
+          <p className="text-sm text-gray-500">Provide additional information about your startup</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Website */}
+          <div className="col-span-1">
+            <div className="flex items-center">
+              <label htmlFor="startupWebsite" className="block text-sm font-semibold text-gray-800 mr-2">
+                Website <span className="text-gray-400">(Optional)</span>
+              </label>
+              <Tooltip content="Your startup's official website">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
+              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                <Globe className="h-4 w-4 text-gray-400" />
+              </div>
+              <input
+                type="url"
+                id="startupWebsite"
+                className={cn(
+                  "block w-full pl-10 px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.links?.website ? "border-red-300" : "border-gray-300"
+                )}
+                {...register("startupDetails.links.website", { 
+                  pattern: {
+                    value: /^(https?:\/\/)?(www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}([\/\w-]*)*\/?$/,
+                    message: "Please enter a valid URL"
+                  }
+                })}
+                placeholder="https://www.example.com"
+              />
+            </div>
+            {errors.startupDetails?.links?.website ? (
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.startupDetails.links.website.message}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-gray-500">
+                Your startup's official website
+              </p>
+            )}
+          </div>
+
+          {/* Pitch Deck */}
+          <div className="col-span-1">
+            <div className="flex items-center">
+              <label htmlFor="pitchDeck" className="block text-sm font-semibold text-gray-800 mr-2">
+                Pitch Deck URL <span className="text-gray-400">(Optional)</span>
+              </label>
+              <Tooltip content="Link to your investor presentation (e.g., Google Slides, SlideShare)">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
+              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                <ArrowUpRight className="h-4 w-4 text-gray-400" />
+              </div>
+              <input
+                type="url"
+                id="pitchDeck"
+                className={cn(
+                  "block w-full pl-10 px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  errors.startupDetails?.links?.pitchDeck ? "border-red-300" : "border-gray-300"
+                )}
+                {...register("startupDetails.links.pitchDeck", { 
+                  pattern: {
+                    value: /^(https?:\/\/)?(www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}([\/\w-]*)*\/?$/,
+                    message: "Please enter a valid URL"
+                  }
+                })}
+                placeholder="https://docs.google.com/presentation/..."
+              />
+            </div>
+            {errors.startupDetails?.links?.pitchDeck ? (
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                {errors.startupDetails.links.pitchDeck.message}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-gray-500">
+                Link to your investor presentation
+              </p>
+            )}
+          </div>
+
+          {/* Social Media Links */}
+          <div className="col-span-1">
+            <div className="flex items-center">
+              <label htmlFor="socialMedia" className="block text-sm font-semibold text-gray-800 mr-2">
+                Social Media <span className="text-gray-400">(Optional)</span>
+              </label>
+              <Tooltip content="Link to your primary social media account">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
+              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                <LinkIcon className="h-4 w-4 text-gray-400" />
+              </div>
+              <input
+                type="url"
+                id="socialMedia"
+                className="block w-full pl-10 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
+                {...register("startupDetails.links.socialMedia")}
+                placeholder="https://twitter.com/yourstartup"
+              />
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              Your primary social media account
+            </p>
+          </div>
+
+          {/* Product Demo */}
+          <div className="col-span-1">
+            <div className="flex items-center">
+              <label htmlFor="productDemo" className="block text-sm font-semibold text-gray-800 mr-2">
+                Product Demo <span className="text-gray-400">(Optional)</span>
+              </label>
+              <Tooltip content="Link to a video or interactive demo of your product">
+                <HelpCircle className="h-4 w-4 text-gray-500" />
+              </Tooltip>
+            </div>
+            <div className="relative mt-1">
+              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                <ArrowUpRight className="h-4 w-4 text-gray-400" />
+              </div>
+              <input
+                type="url"
+                id="productDemo"
+                className="block w-full pl-10 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
+                {...register("startupDetails.links.productDemo")}
+                placeholder="https://youtube.com/..."
+              />
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              Link to a video or interactive demo of your product
+            </p>
           </div>
         </div>
       </div>

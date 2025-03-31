@@ -14,7 +14,8 @@ import {
   Clock, 
   Download, 
   BadgeCheck, 
-  LucideFileCheck
+  HelpCircle,
+  AlertCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Button from '@/components/ui/Button';
@@ -49,6 +50,7 @@ const Documents = ({
   const [newDocDescription, setNewDocDescription] = useState('');
   const [newDocVisibility, setNewDocVisibility] = useState(false);
   const [newDocCategory, setNewDocCategory] = useState('essential');
+  const [newDocType, setNewDocType] = useState('');
 
   // Update parent component when documents change
   useEffect(() => {
@@ -65,6 +67,22 @@ const Documents = ({
       setUploadedDocuments(documents);
     }
   }, [documents]);
+
+  // Tooltip component
+  const Tooltip = ({ content, children }) => {
+    return (
+      <div className="group relative inline-block">
+        {children}
+        <div className="absolute z-50 w-64 opacity-0 invisible group-hover:opacity-100 group-hover:visible 
+          transform -translate-x-1/2 left-1/2 bottom-full mb-2 transition-all duration-200 ease-in-out pointer-events-none">
+          <div className="relative bg-gray-800 text-white text-xs rounded-md p-2 text-center shadow-lg">
+            {content}
+            <div className="absolute w-2.5 h-2.5 bg-gray-800 transform rotate-45 -bottom-[5px] left-1/2 -translate-x-1/2"></div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Get document categories based on listing type
   const getDocumentCategories = () => {
@@ -331,6 +349,16 @@ const Documents = ({
     return [];
   };
 
+  // Get all document types for the current category
+  const getCategoryDocumentTypes = (category) => {
+    const recommended = getRecommendedDocuments(category);
+    return [
+      { type: '', name: 'Select document type' }, // Added placeholder as first option
+      ...recommended,
+      { type: 'other', name: 'Other Document' }
+    ];
+  };
+
   // Get icon for document type
   const getDocumentIcon = (format) => {
     if (format.includes('pdf')) {
@@ -357,7 +385,14 @@ const Documents = ({
     // Reset errors
     setErrors([]);
     
+    if (acceptedFiles.length === 0) return;
+    
+    // Set active category to match the upload category for immediate feedback
+    setActiveCategory(newDocCategory);
+    
     setIsUploading(true);
+    toast.loading('Uploading documents...', { id: 'document-upload' });
+    
     const newErrors = [];
     const validFiles = [];
     const progressTracking = {};
@@ -384,6 +419,7 @@ const Documents = ({
           uploaded: false,
           description: newDocDescription,
           category: newDocCategory,
+          type: newDocType || 'other',
           isPublic: newDocVisibility,
           verificationStatus: 'pending',
           uploadedAt: new Date()
@@ -436,16 +472,24 @@ const Documents = ({
     if (newErrors.length > 0) {
       setErrors(newErrors);
       if (onError) onError(newErrors);
+      toast.error('Some files could not be uploaded', { id: 'document-upload' });
+    } else {
+      // Show success toast only if there were no errors
+      setTimeout(() => {
+        toast.success('Documents uploaded successfully', { id: 'document-upload' });
+      }, validFiles.length * 2000); // After all uploads complete
     }
     
     // Complete upload process
     setTimeout(() => {
       setIsUploading(false);
       
-      // Reset form fields
+      // Only reset description, keep the document type for better UX
       setNewDocDescription('');
+      // Don't reset document type to allow for consecutive uploads of the same type
+      // setNewDocType('');
     }, validFiles.length * 2000); // Give time for "uploads" to complete
-  }, [newDocDescription, newDocCategory, newDocVisibility, onError]);
+  }, [newDocDescription, newDocCategory, newDocVisibility, newDocType, onError]);
 
   // Configure dropzone
   const { 
@@ -456,17 +500,33 @@ const Documents = ({
     isDragReject
   } = useDropzone({
     onDrop,
-    disabled: isLoading || !newDocCategory || !activeCategory,
+    disabled: isLoading || !newDocCategory || !activeCategory || !newDocType,
     maxSize: 20 * 1024 * 1024, // 20MB
+    accept: {
+      'application/pdf': ['.pdf'],
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'application/vnd.ms-excel': ['.xls'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'text/csv': ['.csv'],
+      'image/*': ['.png', '.jpg', '.jpeg', '.gif']
+    }
   });
 
   // Handle deletion of a document
-  const handleDeleteDocument = (id) => {
+  const handleDeleteDocument = (id, name) => {
     setUploadedDocuments(prev => prev.filter(doc => doc.id !== id));
+    toast.success(`Document "${name}" deleted successfully`);
   };
 
-  // Filter documents by category
-  const filteredDocuments = uploadedDocuments.filter(doc => doc.category === activeCategory);
+  // Filter documents by category with robust error handling
+  const filteredDocuments = uploadedDocuments.filter(doc => {
+    // Ensure we only display fully uploaded documents (progress is 100 or undefined after successful upload)
+    const isFullyUploaded = doc.progress === undefined || doc.progress === 100;
+    // Check if document matches current category
+    const matchesCategory = doc.category === activeCategory;
+    return isFullyUploaded && matchesCategory;
+  });
 
   // Get progress color
   const getProgressColor = (progress) => {
@@ -515,6 +575,18 @@ const Documents = ({
         </p>
       </div>
 
+      {/* Info Message */}
+      <div className="p-4 border border-blue-200 bg-blue-50 rounded-lg flex items-start">
+        <Info className="h-5 w-5 text-blue-500 mr-3 mt-0.5 flex-shrink-0" />
+        <div className="text-sm text-blue-700">
+          <p className="font-semibold mb-1">Documents</p>
+          <p>
+            Upload supporting documents to increase credibility and verification of your listing. 
+            Your documents are securely stored and only shared with verified buyers as per your settings.
+          </p>
+        </div>
+      </div>
+
       {/* Display errors if any */}
       {errors.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
@@ -532,18 +604,6 @@ const Documents = ({
         </div>
       )}
 
-      {/* Upload status indicator */}
-      {isUploading && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-          <div className="flex items-center">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-700 mr-3"></div>
-            <p className="text-sm font-medium text-blue-800">
-              Uploading documents... Please wait.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Document categories tabs */}
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex space-x-1 overflow-x-auto hide-scrollbar">
@@ -554,7 +614,7 @@ const Documents = ({
               className={cn(
                 "whitespace-nowrap py-3 px-4 text-sm font-medium border-b-2 focus:outline-none",
                 activeCategory === category.id
-                  ? "border-blue-600 text-blue-600"
+                  ? "border-[#0031ac] text-[#0031ac]"
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               )}
             >
@@ -584,114 +644,35 @@ const Documents = ({
         </div>
       </div>
 
-      {/* Upload form */}
+      {/* Recommended documents - Placed at top for better visibility */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <div className="p-4 bg-gray-50 border-b border-gray-200">
-          <h3 className="text-sm font-medium text-gray-700">Upload New Document</h3>
+          <h3 className="text-sm font-medium text-gray-700 flex items-center">
+            <FileText className="h-4 w-4 text-[#0031ac] mr-2" />
+            Recommended Documents for {documentCategories.find(cat => cat.id === activeCategory)?.name}
+          </h3>
         </div>
         
         <div className="p-4">
-          <div className="space-y-4">
-            {/* Document description */}
-            <div>
-              <label htmlFor="doc-description" className="block text-sm font-medium text-gray-700 mb-1">
-                Document Description <span className="text-gray-500">(Optional)</span>
-              </label>
-              <input
-                type="text"
-                id="doc-description"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                placeholder="E.g., Financial statements for the past year"
-                value={newDocDescription}
-                onChange={(e) => setNewDocDescription(e.target.value)}
-              />
-            </div>
-            
-            {/* Document category selection */}
-            <div>
-              <label htmlFor="doc-category" className="block text-sm font-medium text-gray-700 mb-1">
-                Document Category
-              </label>
-              <select
-                id="doc-category"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                value={newDocCategory}
-                onChange={(e) => setNewDocCategory(e.target.value)}
-              >
-                {documentCategories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            
-            {/* Document visibility */}
-            <div>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="doc-visibility"
-                  className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                  checked={newDocVisibility}
-                  onChange={(e) => setNewDocVisibility(e.target.checked)}
-                />
-                <label htmlFor="doc-visibility" className="ml-2 block text-sm font-medium text-gray-700">
-                  Make document publicly visible to potential buyers
-                </label>
-              </div>
-              <p className="text-xs text-gray-500 mt-1 ml-6">
-                Public documents are visible to all users. Private documents are only visible to verified buyers after approval.
-              </p>
-            </div>
-            
-            {/* Upload area */}
-            <div 
-              {...getRootProps()} 
-              className={cn(
-                "border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors duration-200 mt-4",
-                isDragActive ? "border-blue-400 bg-blue-50" : "border-gray-300 hover:border-gray-400",
-                isDragAccept ? "border-green-500 bg-green-50" : "",
-                isDragReject ? "border-red-500 bg-red-50" : "",
-                isLoading ? "opacity-50 cursor-not-allowed" : ""
-              )}
-            >
-              <input {...getInputProps()} />
-              
-              <div className="flex flex-col items-center justify-center py-4">
-                <div className="bg-blue-100 rounded-full p-3 mb-4">
-                  <FilePlus className="h-6 w-6 text-blue-700" />
-                </div>
-                
-                {isDragActive ? (
-                  <p className="text-sm font-medium text-blue-700">Drop the files here...</p>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium text-gray-700 mb-1">
-                      Drag & drop documents here, or click to select files
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      PDF, Word, Excel, CSV, images (max 20MB each)
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Recommended documents */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="p-4 bg-gray-50 border-b border-gray-200">
-          <h3 className="text-sm font-medium text-gray-700">Recommended Documents</h3>
-        </div>
-        
-        <div className="p-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {getRecommendedDocuments(activeCategory).map((doc, index) => (
-              <div key={index} className="flex items-start border border-gray-200 rounded p-3 bg-gray-50">
-                <FileText className="h-5 w-5 text-blue-500 mt-0.5 mr-3 flex-shrink-0" />
+              <div 
+                key={index} 
+                className={cn(
+                  "flex items-start border rounded p-3 cursor-pointer transition-all duration-200",
+                  uploadedDocuments.some(d => d.type === doc.type) 
+                    ? "bg-green-50 border-green-200" 
+                    : "bg-gray-50 border-gray-200 hover:bg-blue-50 hover:border-blue-200"
+                )}
+                onClick={() => {
+                  // Pre-select this document type when clicked
+                  setNewDocType(doc.type);
+                }}
+              >
+                <FileText className={cn(
+                  "h-5 w-5 mt-0.5 mr-3 flex-shrink-0",
+                  uploadedDocuments.some(d => d.type === doc.type) ? "text-green-600" : "text-[#0031ac]"
+                )} />
                 <div>
                   <p className="text-sm font-medium text-gray-800">{doc.name}</p>
                   <p className="text-xs text-gray-500 mt-1">
@@ -700,7 +681,10 @@ const Documents = ({
                         <Check className="h-3 w-3 mr-1" />
                         Uploaded
                       </span> : 
-                      <span className="text-gray-500">Recommended</span>
+                      <span className="text-blue-600 flex items-center">
+                        <FilePlus className="h-3 w-3 mr-1" />
+                        Click to upload
+                      </span>
                     }
                   </p>
                 </div>
@@ -710,15 +694,63 @@ const Documents = ({
         </div>
       </div>
 
-      {/* Document list */}
-      {filteredDocuments.length > 0 ? (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="p-4 bg-gray-50 border-b border-gray-200">
-            <h3 className="text-sm font-medium text-gray-700">
-              Uploaded Documents ({filteredDocuments.length})
+      {/* Recently Uploading Documents - Show when active */}
+      {isUploading && uploadedDocuments.filter(doc => doc.progress < 100).length > 0 && (
+        <div className="bg-white border border-blue-200 rounded-lg overflow-hidden">
+          <div className="p-4 bg-blue-50 border-b border-blue-200">
+            <h3 className="text-sm font-medium text-blue-700 flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-700 mr-3"></div>
+              Uploading Documents
             </h3>
           </div>
           
+          <div className="divide-y divide-blue-100">
+            {uploadedDocuments
+              .filter(doc => doc.progress < 100)
+              .map((document) => (
+                <div key={document.id} className="p-4 bg-blue-50 bg-opacity-30">
+                  <div className="flex items-start">
+                    {/* Document icon */}
+                    <div className="mr-4 mt-1">
+                      {getDocumentIcon(document.format)}
+                    </div>
+                    
+                    {/* Document info */}
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-medium text-gray-900 truncate">
+                        {document.name}
+                      </h4>
+                      
+                      {/* Upload progress bar */}
+                      <div className="mt-2">
+                        <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full ${getProgressColor(document.progress)}`}
+                            style={{ width: `${document.progress}%` }}
+                          ></div>
+                        </div>
+                        <span className="text-xs font-medium text-gray-500 mt-1">
+                          {Math.round(document.progress)}% uploaded
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Document list - Show existing documents */}
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="p-4 bg-gray-50 border-b border-gray-200">
+          <h3 className="text-sm font-medium text-gray-700 flex items-center">
+            <File className="h-4 w-4 text-[#0031ac] mr-2" />
+            {activeCategory && documentCategories.find(cat => cat.id === activeCategory)?.name} Documents ({filteredDocuments.length})
+          </h3>
+        </div>
+        
+        {filteredDocuments.length > 0 ? (
           <div className="divide-y divide-gray-200">
             {filteredDocuments.map((document) => (
               <div key={document.id} className="p-4 hover:bg-gray-50">
@@ -735,6 +767,9 @@ const Documents = ({
                         <h4 className="text-sm font-medium text-gray-900 truncate">
                           {document.name}
                         </h4>
+                        <p className="text-xs text-gray-600 mt-0.5">
+                          {document.type && getCategoryDocumentTypes(document.category).find(t => t.type === document.type)?.name}
+                        </p>
                         {document.description && (
                           <p className="text-sm text-gray-500 mt-1">
                             {document.description}
@@ -794,7 +829,7 @@ const Documents = ({
                     
                     <button
                       type="button"
-                      onClick={() => handleDeleteDocument(document.id)}
+                      onClick={() => handleDeleteDocument(document.id, document.name)}
                       className="p-1.5 rounded-full text-gray-400 hover:text-red-600 hover:bg-red-50"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -804,31 +839,164 @@ const Documents = ({
               </div>
             ))}
           </div>
-        </div>
-      ) : (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
-          <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-gray-100">
-            <File className="h-6 w-6 text-gray-400" />
+        ) : (
+          <div className="p-8 text-center">
+            <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-gray-100">
+              <File className="h-6 w-6 text-gray-400" />
+            </div>
+            <h3 className="mt-4 text-sm font-medium text-gray-900">No documents in this category</h3>
+            <p className="mt-2 text-sm text-gray-500">
+              Upload documents to improve your listing credibility.
+            </p>
           </div>
-          <h3 className="mt-4 text-sm font-medium text-gray-900">No documents in this category</h3>
-          <p className="mt-2 text-sm text-gray-500">
-            Upload documents to improve your listing credibility.
-          </p>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Document requirements */}
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+      {/* Upload form - Placed at the end after viewing what's needed */}
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="p-4 bg-gray-50 border-b border-gray-200">
+          <h3 className="text-base font-semibold text-gray-800 flex items-center">
+            <Upload className="h-4 w-4 text-[#0031ac] mr-2" />
+            Upload New Document
+          </h3>
+        </div>
+        
+        <div className="p-4">
+          <div className="space-y-4">
+            {/* Document Type Selection */}
+            <div className="space-y-2">
+              <div className="flex items-center">
+                <label htmlFor="doc-type" className="block text-sm font-semibold text-gray-800 mr-2">
+                  Document Type <span className="text-red-500">*</span>
+                </label>
+                <Tooltip content="Select the type of document you're uploading to help categorize and organize your listing documents.">
+                  <HelpCircle className="h-4 w-4 text-gray-500" />
+                </Tooltip>
+              </div>
+              
+              <select
+                id="doc-type"
+                className={cn(
+                  "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  !newDocType ? "border-red-300" : "border-gray-300"
+                )}
+                value={newDocType}
+                onChange={(e) => setNewDocType(e.target.value)}
+              >
+                {getCategoryDocumentTypes(activeCategory).map((docType) => (
+                  <option key={docType.type} value={docType.type}>
+                    {docType.name}
+                  </option>
+                ))}
+              </select>
+              
+              <p className="text-xs text-gray-500 mt-1">
+                {!newDocType ? 
+                  <span className="text-red-500 flex items-center">
+                    <AlertCircle className="h-3 w-3 mr-1" />
+                    Please select a document type before uploading
+                  </span> :
+                  "Selecting the correct document type helps buyers find the information they need."
+                }
+              </p>
+            </div>
+            
+            {/* Document description */}
+            <div className="space-y-2">
+              <div className="flex items-center">
+                <label htmlFor="doc-description" className="block text-sm font-semibold text-gray-800 mr-2">
+                  Document Description <span className="text-gray-500">(Optional)</span>
+                </label>
+                <Tooltip content="Add a brief description of the document to provide context for potential buyers.">
+                  <HelpCircle className="h-4 w-4 text-gray-500" />
+                </Tooltip>
+              </div>
+              
+              <input
+                type="text"
+                id="doc-description"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
+                placeholder="E.g., Financial statements for the past year"
+                value={newDocDescription}
+                onChange={(e) => setNewDocDescription(e.target.value)}
+              />
+              
+              <p className="text-xs text-gray-500 mt-1">
+                A clear description helps buyers understand the document's content without opening it.
+              </p>
+            </div>
+            
+            {/* Document visibility */}
+            <div className="space-y-2">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="doc-visibility"
+                  className="h-4 w-4 text-[#0031ac] rounded border-gray-300 focus:ring-[#0031ac]"
+                  checked={newDocVisibility}
+                  onChange={(e) => setNewDocVisibility(e.target.checked)}
+                />
+                <label htmlFor="doc-visibility" className="ml-2 block text-sm font-medium text-gray-700">
+                  Make document publicly visible to potential buyers
+                </label>
+                <Tooltip content="Public documents are visible to all users browsing your listing. Private documents are only shared with verified buyers after your approval.">
+                  <HelpCircle className="h-4 w-4 text-gray-500 ml-2" />
+                </Tooltip>
+              </div>
+              <p className="text-xs text-gray-500 mt-1 ml-6">
+                Public documents are visible to all users. Private documents are only visible to verified buyers after approval.
+              </p>
+            </div>
+            
+            {/* Upload area */}
+            <div 
+              {...getRootProps()} 
+              className={cn(
+                "border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors duration-200 mt-4",
+                isDragActive ? "border-[#0031ac] bg-blue-50" : "border-gray-300 hover:border-gray-400",
+                isDragAccept ? "border-green-500 bg-green-50" : "",
+                isDragReject ? "border-red-500 bg-red-50" : "",
+                isLoading || !newDocType ? "opacity-50 cursor-not-allowed" : ""
+              )}
+            >
+              <input {...getInputProps()} />
+              
+              <div className="flex flex-col items-center justify-center py-4">
+                <div className="bg-blue-100 rounded-full p-3 mb-4">
+                  <FilePlus className="h-6 w-6 text-[#0031ac]" />
+                </div>
+                
+                {isDragActive ? (
+                  <p className="text-sm font-medium text-[#0031ac]">Drop the files here...</p>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-gray-700 mb-1">
+                      {!newDocType ? "Please select a document type first" : "Drag & drop documents here, or click to select files"}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      PDF, Word, Excel, CSV, images (max 20MB each)
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Document requirements - Kept at the bottom as reference information */}
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mt-6">
         <div className="flex items-start">
           <Info className="h-5 w-5 text-blue-500 mt-0.5 mr-3 flex-shrink-0" />
           <div>
-            <p className="text-sm font-medium text-gray-900 mb-1">Document Requirements</p>
+            <p className="text-sm font-medium text-gray-900 mb-1">Document Requirements & Guidelines</p>
             <ul className="text-sm text-gray-600 list-disc pl-5 space-y-1">
               <li>Supported file types: PDF, Word, Excel, CSV, Image files</li>
               <li>Maximum file size: 20MB per document</li>
               <li>All documents must be legible and complete</li>
               <li>Documents must be in English or include an English translation</li>
               <li>Sensitive information should be redacted as appropriate</li>
+              <li>Verified documents receive higher credibility scores and improved listing visibility</li>
             </ul>
           </div>
         </div>

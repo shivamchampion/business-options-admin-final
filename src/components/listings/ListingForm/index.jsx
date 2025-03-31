@@ -41,6 +41,470 @@ const classificationSchema = z.object({
   subCategories: z.array(z.string()).min(1, "Select at least one subcategory").max(3, "Maximum 3 subcategories allowed"),
   subCategoryNames: z.array(z.string())
 });
+const startupDetailsSchema = z.object({
+  developmentStage: z.string().min(1, "Development stage is required"),
+  registeredName: z.string()
+    .min(3, "Registered name must be at least 3 characters")
+    .max(100, "Registered name cannot exceed 100 characters"),
+  foundedDate: z.date({
+    required_error: "Foundation date is required",
+  }),
+  launchDate: z.date().optional().nullable(),
+  missionStatement: z.string()
+    .min(50, "Mission statement must be at least 50 characters")
+    .max(300, "Mission statement cannot exceed 300 characters"),
+  problemStatement: z.string()
+    .min(50, "Problem statement must be at least 50 characters")
+    .max(300, "Problem statement cannot exceed 300 characters"),
+  solutionDescription: z.string()
+    .min(100, "Solution description must be at least 100 characters")
+    .max(500, "Solution description cannot exceed 500 characters"),
+  team: z.object({
+    teamSize: z.number({
+      required_error: "Team size is required",
+      invalid_type_error: "Team size must be a number"
+    })
+      .min(1, "Team size must be at least 1")
+      .max(100, "Team size must be less than 100"),
+    productStage: z.string().min(1, "Product stage is required"),
+    intellectualProperty: z.array(z.string()).optional(),
+    technologyStack: z.string().optional(),
+    uniqueSellingPoints: z.string()
+      .min(100, "Unique selling points must be at least 100 characters")
+      .max(500, "Unique selling points cannot exceed 500 characters"),
+    founders: z.array(z.object({
+      name: z.string().min(1, "Founder name is required"),
+      role: z.string().min(1, "Founder role is required"),
+      experience: z.string()
+        .min(50, "Experience must be at least 50 characters")
+        .max(300, "Experience cannot exceed 300 characters"),
+      linkedinProfile: z.string()
+        .regex(/^(https?:\/\/)?(www\.)?linkedin\.com\/in\/[\w-]+\/?$/, "Please enter a valid LinkedIn profile URL")
+        .optional()
+        .or(z.literal(''))
+    }))
+    .min(1, "At least one founder is required")
+  }),
+  market: z.object({
+    totalUsers: z.number().min(0, "Total users cannot be negative").optional(),
+    activeUsers: z.number().min(0, "Active users cannot be negative").optional()
+      .superRefine((val, ctx) => {
+        if (!val) return z.NEVER;
+        if (!ctx.parent) return z.NEVER;
+        
+        const totalUsers = ctx.parent.totalUsers;
+        if (totalUsers && val > totalUsers) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Active users cannot be more than total users",
+          });
+        }
+        return z.NEVER;
+      }),
+    revenueModel: z.string()
+      .min(50, "Revenue model must be at least 50 characters")
+      .max(300, "Revenue model cannot exceed 300 characters"),
+    monthlyRevenue: z.object({
+      value: z.number().min(0, "Monthly revenue cannot be negative").optional(),
+      formatted: z.string().optional(),
+      currency: z.string().default("INR")
+    }).optional(),
+    growthRate: z.number().min(0, "Growth rate cannot be negative")
+      .max(1000, "Growth rate cannot exceed 1000%").optional(),
+    targetMarket: z.string()
+      .min(50, "Target market must be at least 50 characters")
+      .max(300, "Target market cannot exceed 300 characters"),
+    marketSize: z.object({
+      value: z.number({
+        required_error: "Market size is required",
+        invalid_type_error: "Market size must be a number"
+      }).min(0, "Market size cannot be negative"),
+      formatted: z.string().optional(),
+      currency: z.string().default("INR")
+    }),
+    competitiveAnalysis: z.string()
+      .min(100, "Competitive analysis must be at least 100 characters")
+      .max(500, "Competitive analysis cannot exceed 500 characters")
+  }),
+  funding: z.object({
+    fundingStage: z.string().min(1, "Funding stage is required"),
+    totalRaisedToDate: z.object({
+      value: z.number().min(0, "Total raised cannot be negative").optional(),
+      formatted: z.string().optional(),
+      currency: z.string().default("INR")
+    }).optional(),
+    currentRaisingAmount: z.object({
+      value: z.number({
+        required_error: "Raising amount is required",
+        invalid_type_error: "Raising amount must be a number"
+      }).min(0, "Raising amount cannot be negative"),
+      formatted: z.string().optional(),
+      currency: z.string().default("INR")
+    }),
+    equityOffered: z.number({
+      required_error: "Equity offered is required",
+      invalid_type_error: "Equity offered must be a number"
+    })
+      .min(0.1, "Equity offered must be at least 0.1%")
+      .max(100, "Equity offered cannot exceed 100%"),
+    preMoneyValuation: z.object({
+      value: z.number({
+        required_error: "Pre-money valuation is required",
+        invalid_type_error: "Pre-money valuation must be a number"
+      }).min(0, "Pre-money valuation cannot be negative"),
+      formatted: z.string().optional(),
+      currency: z.string().default("INR")
+    }),
+    useOfFunds: z.string()
+      .min(100, "Use of funds must be at least 100 characters")
+      .max(500, "Use of funds cannot exceed 500 characters"),
+    previousInvestors: z.string()
+      .max(300, "Previous investors cannot exceed 300 characters")
+      .optional(),
+    burnRate: z.object({
+      value: z.number().min(0, "Burn rate cannot be negative").optional(),
+      formatted: z.string().optional(),
+      currency: z.string().default("INR")
+    }).optional(),
+    runway: z.number()
+      .min(0, "Runway cannot be negative")
+      .max(60, "Runway cannot exceed 60 months")
+      .optional()
+  }),
+  links: z.object({
+    website: z.string()
+      .regex(/^(https?:\/\/)?(www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}([\/\w-]*)*\/?$/, "Please enter a valid URL")
+      .optional()
+      .or(z.literal('')),
+    pitchDeck: z.string()
+      .regex(/^(https?:\/\/)?(www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}([\/\w-]*)*\/?$/, "Please enter a valid URL")
+      .optional()
+      .or(z.literal('')),
+    socialMedia: z.string().optional(),
+    productDemo: z.string().optional()
+  }).optional()
+});
+// Business Details schema
+const businessDetailsSchema = z.object({
+  businessType: z.string().min(1, "Business type is required"),
+  entityType: z.string().min(1, "Entity type is required"),
+  establishedYear: z.string()
+    .refine((val) => !isNaN(parseInt(val)), "Year must be a number")
+    .refine((val) => {
+      const year = parseInt(val);
+      return year >= 1900 && year <= new Date().getFullYear();
+    }, `Year must be between 1900 and ${new Date().getFullYear()}`),
+  registrationNumber: z.string().min(1, "Registration number is required"),
+  gstNumber: z.string().optional(),
+  panNumber: z.string().optional(),
+  operations: z.object({
+    employees: z.object({
+      count: z.string()
+        .refine((val) => !isNaN(parseInt(val)), "Employee count must be a number")
+        .refine((val) => parseInt(val) >= 0, "Employee count must be a positive number"),
+      fullTime: z.string()
+        .refine((val) => !isNaN(parseInt(val)), "Full-time employee count must be a number")
+        .refine((val) => parseInt(val) >= 0, "Full-time count must be a positive number"),
+      partTime: z.string()
+        .refine((val) => !isNaN(parseInt(val)), "Part-time employee count must be a number")
+        .refine((val) => parseInt(val) >= 0, "Part-time count must be a positive number")
+        .optional(),
+    }).refine((data) => {
+      const total = parseInt(data.count);
+      const fullTime = parseInt(data.fullTime);
+      const partTime = parseInt(data.partTime || '0');
+      return fullTime + partTime === total;
+    }, {
+      message: "Full-time and part-time employees must add up to total employees",
+      path: ["count"],
+    }),
+    locationType: z.string().min(1, "Location type is required"),
+    leaseInformation: z.object({
+      expiryDate: z.coerce.date({
+        required_error: "Lease expiry date is required",
+        invalid_type_error: "Please enter a valid date"
+      }).refine((date) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // Reset time to start of day for accurate comparison
+        return date > today;
+      }, { message: "Lease expiry date must be in the future" }),
+      monthlyCost: z.object({
+        value: z.string()
+          .refine((val) => !isNaN(parseFloat(val)), "Lease cost must be a number")
+          .refine((val) => parseFloat(val) >= 0, "Lease cost must be a positive number"),
+        currency: z.string().default("INR"),
+      }).optional(),
+      isTransferable: z.boolean().optional(),
+    }).optional(),
+    operationDescription: z.string()
+      .min(100, "Description must be at least 100 characters")
+      .max(1000, "Description cannot exceed 1000 characters"),
+  }),
+  financials: z.object({
+    annualRevenue: z.object({
+      value: z.string()
+        .refine((val) => !isNaN(parseFloat(val)), "Annual revenue must be a number")
+        .refine((val) => parseFloat(val) >= 0, "Annual revenue must be a positive number"),
+      currency: z.string().default("INR"),
+    }),
+    monthlyRevenue: z.object({
+      value: z.string()
+        .refine((val) => !isNaN(parseFloat(val)), "Monthly revenue must be a number")
+        .refine((val) => parseFloat(val) >= 0, "Monthly revenue must be a positive number"),
+      currency: z.string().default("INR"),
+    }),
+    profitMargin: z.object({
+      percentage: z.string()
+        .refine((val) => !isNaN(parseFloat(val)), "Profit margin must be a number")
+        .refine((val) => parseFloat(val) >= 0 && parseFloat(val) <= 100, "Profit margin must be between 0 and 100%"),
+      trend: z.string().default("stable"),
+    }),
+    revenueTrend: z.string().min(1, "Revenue trend is required"),
+    inventory: z.object({
+      isIncluded: z.boolean().optional(),
+      value: z.object({
+        value: z.union([
+          z.string()
+            .refine((val) => !isNaN(parseFloat(val)), "Inventory value must be a number")
+            .refine((val) => parseFloat(val) >= 0, "Inventory value must be a positive number")
+            .optional(),
+          z.undefined()
+        ]).optional(),
+        currency: z.string().default("INR").optional(),
+      }).optional(),
+      description: z.string().optional(),
+    }).optional(),
+    equipment: z.object({
+      isIncluded: z.boolean().optional(),
+      value: z.object({
+        value: z.string()
+          .refine((val) => !isNaN(parseFloat(val)), "Equipment value must be a number")
+          .refine((val) => parseFloat(val) >= 0, "Equipment value must be a positive number"),
+        currency: z.string().default("INR"),
+      }).optional(),
+      description: z.string().min(1, "Equipment description is required").optional(),
+    }).optional(),
+    customerConcentration: z.string()
+      .refine((val) => !isNaN(parseFloat(val)), "Customer concentration must be a number")
+      .refine((val) => parseFloat(val) >= 0 && parseFloat(val) <= 100, "Customer concentration must be between 0 and 100%"),
+  }),
+  sale: z.object({
+    askingPrice: z.object({
+      value: z.string()
+        .refine((val) => !isNaN(parseFloat(val)), "Asking price must be a number")
+        .refine((val) => parseFloat(val) >= 0, "Asking price must be a positive number"),
+      currency: z.string().default("INR"),
+      priceMultiple: z.string()
+        .refine((val) => val === '' || !isNaN(parseFloat(val)), "Price multiple must be a number if provided")
+        .refine((val) => val === '' || (parseFloat(val) >= 0), "Price multiple must be a positive number")
+        .optional(),
+      isNegotiable: z.boolean().optional(),
+    }),
+    reasonForSelling: z.string()
+      .min(50, "Reason must be at least 50 characters")
+      .max(500, "Reason cannot exceed 500 characters"),
+    sellerFinancing: z.object({
+      isAvailable: z.boolean().optional(),
+      details: z.string().optional(),
+      downPaymentPercentage: z.string()
+        .refine((val) => val === '' || !isNaN(parseFloat(val)), "Down payment must be a number if provided")
+        .refine((val) => val === '' || (parseFloat(val) >= 10 && parseFloat(val) <= 100), "Down payment must be between 10% and 100%")
+        .optional(),
+    }).optional(),
+    transitionPeriod: z.string()
+      .refine((val) => !isNaN(parseInt(val)), "Transition period must be a number")
+      .refine((val) => parseInt(val) >= 0 && parseInt(val) <= 12, "Transition period must be between 0 and 12 months"),
+    trainingIncluded: z.string()
+      .min(50, "Training details must be at least 50 characters")
+      .max(500, "Training details cannot exceed 500 characters"),
+    assetsIncluded: z.string()
+      .min(100, "Assets description must be at least 100 characters")
+      .max(1000, "Assets description cannot exceed 1000 characters"),
+  }),
+});
+
+// Add this to your schema definitions (alongside businessDetailsSchema)
+const franchiseDetailsSchema = z.object({
+  franchiseBrand: z.string().min(1, "Franchise brand name is required"),
+  franchiseType: z.string().min(1, "Franchise type is required"),
+  franchiseSince: z.string()
+    .refine((val) => !isNaN(parseInt(val)), "Year must be a number")
+    .refine((val) => {
+      const year = parseInt(val);
+      return year >= 1900 && year <= new Date().getFullYear();
+    }, `Year must be between 1900 and ${new Date().getFullYear()}`),
+  brandEstablished: z.string()
+    .refine((val) => !isNaN(parseInt(val)), "Year must be a number")
+    .refine((val) => {
+      const year = parseInt(val);
+      return year >= 1900 && year <= new Date().getFullYear();
+    }, `Year must be between 1900 and ${new Date().getFullYear()}`),
+  totalUnits: z.string()
+    .refine((val) => !isNaN(parseInt(val)), "Total units must be a number")
+    .refine((val) => parseInt(val) >= 0, "Total units must be a positive number"),
+  franchiseeCount: z.string()
+    .refine((val) => !isNaN(parseInt(val)), "Franchisee count must be a number")
+    .refine((val) => parseInt(val) >= 0, "Franchisee count must be a positive number"),
+  companyOwnedUnits: z.string()
+    .refine((val) => !isNaN(parseInt(val)), "Company-owned units must be a number")
+    .refine((val) => parseInt(val) >= 0, "Company-owned units must be a positive number"),
+  availableTerritories: z.array(z.string()).min(1, "At least one territory must be selected"),
+  investment: z.object({
+    franchiseFee: z.object({
+      value: z.string()
+        .refine((val) => !isNaN(parseFloat(val)), "Franchise fee must be a number")
+        .refine((val) => parseFloat(val) >= 0, "Franchise fee must be a positive number"),
+      currency: z.string().default("INR"),
+    }),
+    totalInitialInvestment: z.object({
+      value: z.string()
+        .refine((val) => !isNaN(parseFloat(val)), "Total initial investment must be a number")
+        .refine((val) => parseFloat(val) >= 0, "Total initial investment must be a positive number"),
+      currency: z.string().default("INR"),
+    }),
+    royaltyFee: z.string()
+      .refine((val) => !isNaN(parseFloat(val)), "Royalty fee must be a number")
+      .refine((val) => parseFloat(val) >= 0 && parseFloat(val) <= 50, "Royalty fee must be between 0 and 50%"),
+    marketingFee: z.string()
+      .refine((val) => !isNaN(parseFloat(val)), "Marketing fee must be a number")
+      .refine((val) => parseFloat(val) >= 0 && parseFloat(val) <= 20, "Marketing fee must be between 0 and 20%"),
+    royaltyStructure: z.string().min(10, "Royalty structure details are required"),
+    recurringFees: z.string().min(10, "Recurring fees information is required"),
+  }),
+  support: z.object({
+    initialTraining: z.string().min(10, "Initial training details are required"),
+    trainingDuration: z.string().min(1, "Training duration is required"),
+    trainingLocation: z.string().min(1, "Training location is required"),
+    ongoingSupport: z.string().min(10, "Ongoing support details are required"),
+    fieldSupport: z.string().min(1, "Field support information is required"),
+    marketingSupport: z.string().min(10, "Marketing support details are required"),
+    technologySystems: z.string().min(10, "Technology systems details are required"),
+    siteSelection: z.boolean().optional(),
+  }),
+  performance: z.object({
+    averageUnitSales: z.object({
+      value: z.string()
+        .refine((val) => !isNaN(parseFloat(val)), "Average unit sales must be a number")
+        .refine((val) => parseFloat(val) >= 0, "Average unit sales must be a positive number"),
+      currency: z.string().default("INR"),
+    }),
+    successRate: z.string().optional()
+      .refine((val) => val === '' || !isNaN(parseFloat(val)), "Success rate must be a number if provided")
+      .refine((val) => val === '' || (parseFloat(val) >= 0 && parseFloat(val) <= 100), "Success rate must be between 0 and 100%"),
+    salesGrowth: z.string().min(1, "Sales growth information is required"),
+    averageBreakeven: z.string().min(1, "Average breakeven information is required"),
+    franchiseeRequirements: z.string().min(10, "Franchisee requirements are required"),
+    netWorthRequirement: z.object({
+      value: z.string()
+        .refine((val) => !isNaN(parseFloat(val)), "Net worth requirement must be a number")
+        .refine((val) => parseFloat(val) >= 0, "Net worth requirement must be a positive number"),
+      currency: z.string().default("INR"),
+    }),
+    liquidCapitalRequired: z.object({
+      value: z.string()
+        .refine((val) => !isNaN(parseFloat(val)), "Liquid capital requirement must be a number")
+        .refine((val) => parseFloat(val) >= 0, "Liquid capital requirement must be a positive number"),
+      currency: z.string().default("INR"),
+    }),
+  }),
+});
+
+// Replace the investorDetailsSchema definition with this:
+const investorDetailsSchema = z.object({
+  investorType: z.string().min(1, "Investor type is required"),
+  yearsOfExperience: z.number({
+    required_error: "Years of experience is required", 
+    invalid_type_error: "Years of experience must be a number"
+  }).min(0, "Years cannot be negative").max(100, "Years cannot exceed 100"),
+  
+  // Fixed validation for team size - doesn't use getValues anymore
+  investmentTeamSize: z.number().optional().nullable()
+    .superRefine((value, ctx) => {
+      // Get the investor type from the parent object
+      const investorType = ctx.parent?.investorType;
+      const isInstitutional = investorType && 
+        ['venture_capital', 'private_equity', 'family_office', 'corporate'].includes(investorType);
+      
+      if (isInstitutional && (value === null || value === undefined || value < 1)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Team size is required for institutional investors",
+        });
+      }
+      return z.NEVER;
+    }),
+  
+  investmentPhilosophy: z.string()
+    .min(100, "Investment philosophy must be at least 100 characters")
+    .max(500, "Investment philosophy cannot exceed 500 characters"),
+  backgroundSummary: z.string()
+    .min(100, "Background summary must be at least 100 characters")
+    .max(500, "Background summary cannot exceed 500 characters"),
+  keyAchievements: z.string().max(500, "Key achievements cannot exceed 500 characters").optional(),
+  investment: z.object({
+    annualInvestmentTarget: z.object({
+      value: z.string().optional(),
+      formatted: z.string().optional(),
+      currency: z.string().default("INR"),
+    }).optional(),
+    decisionTimeline: z.string()
+      .min(1, "Decision timeline is required")
+      .max(100, "Decision timeline cannot exceed 100 characters"),
+    preferredRounds: z.array(z.string())
+      .min(1, "Please select at least one investment round"),
+    isLeadInvestor: z.boolean().optional(),
+    preferredEquityStake: z.object({
+      min: z.number().min(0).max(100).optional(),
+      max: z.number().min(0).max(100).optional(),
+    }).optional(),
+  }),
+  focus: z.object({
+    primaryIndustries: z.array(z.string())
+      .min(1, "Please select at least one primary industry")
+      .max(5, "You can select up to 5 primary industries"),
+    secondaryIndustries: z.array(z.string()).optional(),
+    businessStagePreference: z.array(z.string())
+      .min(1, "Please select at least one business stage"),
+    geographicFocus: z.array(z.string())
+      .min(1, "Please select at least one geographic region"),
+    investmentCriteria: z.string()
+      .min(100, "Investment criteria must be at least 100 characters")
+      .max(500, "Investment criteria cannot exceed 500 characters"),
+    minimumRevenue: z.object({
+      value: z.string().optional(),
+      formatted: z.string().optional(),
+      currency: z.string().default("INR"),
+    }).optional(),
+    minimumTraction: z.string().max(300, "Minimum traction cannot exceed 300 characters").optional(),
+  }),
+  portfolio: z.object({
+    portfolioSize: z.number().min(0, "Portfolio size cannot be negative").optional(),
+    
+    // Fixed validation for active investments
+    activeInvestments: z.number().min(0, "Active investments cannot be negative").optional()
+      .superRefine((value, ctx) => {
+        const portfolioSize = ctx.parent?.portfolioSize;
+        if (portfolioSize !== undefined && value !== undefined && value > portfolioSize) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Active investments cannot exceed total portfolio size",
+          });
+        }
+        return z.NEVER;
+      }),
+      
+    successStories: z.string().max(500, "Success stories cannot exceed 500 characters").optional(),
+    investmentProcess: z.string()
+      .min(100, "Investment process must be at least 100 characters")
+      .max(500, "Investment process cannot exceed 500 characters"),
+    postInvestmentSupport: z.string()
+      .min(100, "Post-investment support must be at least 100 characters")
+      .max(500, "Post-investment support cannot exceed 500 characters"),
+    reportingRequirements: z.string().max(300, "Reporting requirements cannot exceed 300 characters").optional(),
+    boardInvolvement: z.string().optional(),
+  }),
+});
+
 
 // Main listing schema
 const listingSchema = z.object({
@@ -90,11 +554,20 @@ const listingSchema = z.object({
     preferredContactMethod: z.string().optional(),
   }),
 
+  // Type-specific details
+  businessDetails: businessDetailsSchema.optional(),
+  franchiseDetails: franchiseDetailsSchema.optional(),
+  startupDetails: startupDetailsSchema.optional(),
+  investorDetails: investorDetailsSchema.optional(),
+  // digitalAssetDetails: digitalAssetDetailsSchema.optional(),
+
   // Media validation
   mediaValidation: z.any().optional(),
   
   // Media and type-specific fields are handled separately
 }).catchall(z.any());
+
+
 
 // Migration helper to convert old schema to new schema
 const migrateListingData = (data) => {
@@ -326,6 +799,7 @@ function ListingForm({ isEdit = false }) {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [transitioningStep, setTransitioningStep] = useState(false);
+  const [errorMessages, setErrorMessages] = useState([]);
 
   // Refs for debouncing and tracking
   const saveTimeout = useRef(null);
@@ -359,7 +833,115 @@ function ListingForm({ isEdit = false }) {
         email: '',
         phone: '',
       },
-      mediaValidation: initialImages.length >= 3
+      mediaValidation: initialImages.length >= 3,
+      businessDetails: {
+        businessType: '',
+        entityType: '',
+        establishedYear: new Date().getFullYear().toString(),
+        registrationNumber: '',
+        operations: {
+          employees: {
+            count: '0',
+            fullTime: '0',
+            partTime: '0',
+          },
+          locationType: '',
+          operationDescription: '',
+        },
+        financials: {
+          annualRevenue: {
+            value: '0',
+            currency: 'INR',
+          },
+          monthlyRevenue: {
+            value: '0',
+            currency: 'INR',
+          },
+          profitMargin: {
+            percentage: '0',
+            trend: 'stable',
+          },
+          revenueTrend: '',
+          customerConcentration: '0',
+        },
+        sale: {
+          askingPrice: {
+            value: '0',
+            currency: 'INR',
+            priceMultiple: '',
+            isNegotiable: true,
+          },
+          reasonForSelling: '',
+          transitionPeriod: '1',
+          trainingIncluded: '',
+          assetsIncluded: '',
+        },
+        startupDetails: {
+          developmentStage: '',
+          registeredName: '',
+          foundedDate: new Date(),
+          missionStatement: '',
+          problemStatement: '',
+          solutionDescription: '',
+          team: {
+            teamSize: 1,
+            productStage: '',
+            intellectualProperty: [],
+            technologyStack: '',
+            uniqueSellingPoints: '',
+            founders: [{
+              name: '',
+              role: '',
+              experience: ''
+            }]
+          },
+          market: {
+            totalUsers: 0,
+            activeUsers: 0,
+            revenueModel: '',
+            monthlyRevenue: {
+              value: 0,
+              currency: 'INR'
+            },
+            growthRate: 0,
+            targetMarket: '',
+            marketSize: {
+              value: 0,
+              currency: 'INR'
+            },
+            competitiveAnalysis: ''
+          },
+          funding: {
+            fundingStage: '',
+            totalRaisedToDate: {
+              value: 0,
+              currency: 'INR'
+            },
+            currentRaisingAmount: {
+              value: 0,
+              currency: 'INR'
+            },
+            equityOffered: 0,
+            preMoneyValuation: {
+              value: 0,
+              currency: 'INR'
+            },
+            useOfFunds: '',
+            previousInvestors: '',
+            burnRate: {
+              value: 0,
+              currency: 'INR'
+            },
+            runway: 0
+          },
+          links: {
+            website: '',
+            pitchDeck: '',
+            socialMedia: '',
+            productDemo: ''
+          }
+        }
+      }
     },
     shouldUnregister: false
   });
@@ -561,8 +1143,8 @@ function ListingForm({ isEdit = false }) {
     }
     
     // Details errors (step 2)
-    const detailsPrefix = listingType ? `${listingType}Details` : '';
-    const hasDetailsErrors = Object.keys(errors).some(key => key.startsWith(detailsPrefix));
+    const detailsField = listingType ? `${listingType.toLowerCase()}Details` : '';
+    const hasDetailsErrors = Object.keys(errors).some(key => key.startsWith(detailsField));
     
     if (hasDetailsErrors) {
       newErrors[2] = true;
@@ -742,64 +1324,312 @@ function ListingForm({ isEdit = false }) {
     return messages;
   };
 
-  // Handle next step
-  const handleNext = async () => {
-    // Set submitAttempted to true to show all validation errors
-    setSubmitAttempted(true);
-    
+  // Replace the handleNext function in ListingForm.jsx with this implementation
+const handleNext = async () => {
+  // Set submitAttempted to true to show all validation errors
+  setSubmitAttempted(true);
+  
+  try {
     // Validate current step
-    const fieldsToValidate = [];
-
+    let isStepValid = false;
+    let currentStepErrors = [];
+    
     switch (currentStep) {
       case 0: // Basic Info
-        fieldsToValidate.push('name', 'type', 'classifications', 'description', 'status', 'plan', 'location', 'contactInfo');
-        break;
-      case 1: // Media
-        fieldsToValidate.push('mediaValidation');
+        const basicInfoFields = ['name', 'type', 'classifications', 'description', 'status', 'plan', 'location', 'contactInfo'];
+        isStepValid = await trigger(basicInfoFields);
         
-        // Check if we have enough images
+        if (!isStepValid) {
+          currentStepErrors = getErrorMessages(errors).filter(error => {
+            return basicInfoFields.some(field => error.path === field || error.path.startsWith(`${field}.`));
+          });
+          setErrorMessages(currentStepErrors);
+          setShowErrorSummary(true);
+          toast.dismiss(); 
+          toast.error('Please fix the errors before proceeding');
+          window.scrollTo(0, 0);
+          return; // Exit function if validation fails
+        }
+        break;
+        
+      case 1: // Media
         if (uploadedImages.length < 3) {
           toast.error('Please upload at least 3 images to continue');
-          return;
+          return; // Exit function if not enough images
         }
+        isStepValid = true;
         break;
+        
       case 2: // Details
-        // Type-specific validation
+        // Type-specific validation based on listing type
         if (listingType === ListingType.BUSINESS) {
-          fieldsToValidate.push('businessDetails');
+          // Create an array of all the business fields to validate
+          const businessFieldPaths = [
+            'businessDetails.businessType',
+            'businessDetails.entityType',
+            'businessDetails.establishedYear',
+            'businessDetails.registrationNumber',
+            'businessDetails.operations.employees.count',
+            'businessDetails.operations.employees.fullTime',
+            'businessDetails.operations.locationType',
+            'businessDetails.operations.operationDescription',
+            'businessDetails.financials.annualRevenue.value',
+            'businessDetails.financials.monthlyRevenue.value',
+            'businessDetails.financials.profitMargin.percentage',
+            'businessDetails.financials.revenueTrend',
+            'businessDetails.financials.customerConcentration',
+            'businessDetails.sale.askingPrice.value',
+            'businessDetails.sale.reasonForSelling',
+            'businessDetails.sale.transitionPeriod',
+            'businessDetails.sale.trainingIncluded',
+            'businessDetails.sale.assetsIncluded'
+          ];
+          
+          // Trigger validation for all business fields
+          await Promise.all(businessFieldPaths.map(field => trigger(field)));
+          
+          // Then check if there are any errors
+          isStepValid = !Object.keys(errors).some(key => 
+            key === 'businessDetails' || key.startsWith('businessDetails.')
+          );
+          
+          if (!isStepValid) {
+            currentStepErrors = getErrorMessages(errors).filter(error => 
+              error.path === 'businessDetails' || error.path.startsWith('businessDetails.')
+            );
+            
+            setErrorMessages(currentStepErrors);
+            setShowErrorSummary(true);
+            toast.dismiss(); // Dismiss previous toasts
+  toast.error('Please fix the errors before proceeding');
+            window.scrollTo(0, 0);
+            return; // Exit function if validation fails
+          }
         } else if (listingType === ListingType.FRANCHISE) {
-          fieldsToValidate.push('franchiseDetails');
+          // Create an array of all the franchise fields to validate
+          const franchiseFieldPaths = [
+            'franchiseDetails.franchiseBrand',
+            'franchiseDetails.franchiseType',
+            'franchiseDetails.franchiseSince',
+            'franchiseDetails.brandEstablished',
+            'franchiseDetails.totalUnits',
+            'franchiseDetails.franchiseeCount',
+            'franchiseDetails.companyOwnedUnits',
+            'franchiseDetails.availableTerritories',
+            'franchiseDetails.investment.franchiseFee.value',
+            'franchiseDetails.investment.totalInitialInvestment.value',
+            'franchiseDetails.investment.royaltyFee',
+            'franchiseDetails.investment.marketingFee',
+            'franchiseDetails.investment.royaltyStructure',
+            'franchiseDetails.investment.recurringFees',
+            'franchiseDetails.support.initialTraining',
+            'franchiseDetails.support.trainingDuration',
+            'franchiseDetails.support.trainingLocation',
+            'franchiseDetails.support.ongoingSupport',
+            'franchiseDetails.support.fieldSupport',
+            'franchiseDetails.support.marketingSupport',
+            'franchiseDetails.support.technologySystems',
+            'franchiseDetails.performance.averageUnitSales.value',
+            'franchiseDetails.performance.salesGrowth',
+            'franchiseDetails.performance.averageBreakeven',
+            'franchiseDetails.performance.franchiseeRequirements',
+            'franchiseDetails.performance.netWorthRequirement.value',
+            'franchiseDetails.performance.liquidCapitalRequired.value'
+          ];
+          
+          // First trigger all fields individually to gather all validation errors
+          await Promise.all(franchiseFieldPaths.map(field => trigger(field)));
+          
+          // Check if any fields have validation errors
+          const hasErrors = Object.keys(errors).some(key => 
+            key === 'franchiseDetails' || key.startsWith('franchiseDetails.')
+          );
+          
+          if (hasErrors) {
+            currentStepErrors = getErrorMessages(errors).filter(error => 
+              error.path === 'franchiseDetails' || error.path.startsWith('franchiseDetails.')
+            );
+            
+            setErrorMessages(currentStepErrors);
+            setShowErrorSummary(true);
+            window.scrollTo(0, 0);
+            toast.dismiss(); // Dismiss previous toasts
+            toast.error('Please fix all errors before proceeding');
+            return; // Exit function if validation fails
+          }
+          
+          // Extra validation for available territories
+          const territories = getValues('franchiseDetails.availableTerritories') || [];
+          if (territories.length === 0) {
+            toast.error('Please select at least one territory');
+            return; // Exit function if validation fails
+          }
         } else if (listingType === ListingType.STARTUP) {
-          fieldsToValidate.push('startupDetails');
+          // Trigger validation for all startup fields
+          isStepValid = await trigger('startupDetails');
+          
+          if (!isStepValid) {
+            currentStepErrors = getErrorMessages(errors).filter(error => 
+              error.path.startsWith('startupDetails')
+            );
+            
+            setErrorMessages(currentStepErrors);
+            setShowErrorSummary(true);
+            toast.dismiss(); // Dismiss previous toasts
+  toast.error('Please fix the errors before proceeding');
+            return; // Exit function if validation fails
+          }
         } else if (listingType === ListingType.INVESTOR) {
-          fieldsToValidate.push('investorDetails');
-        } else if (listingType === ListingType.DIGITAL_ASSET) {
-          fieldsToValidate.push('digitalAssetDetails');
+          // Create an array of all the investor fields to validate
+          const investorFieldPaths = [
+            'investorDetails.investorType',
+            'investorDetails.yearsOfExperience',
+            'investorDetails.investmentPhilosophy',
+            'investorDetails.backgroundSummary',
+            'investorDetails.investment.decisionTimeline',
+            'investorDetails.investment.preferredRounds',
+            'investorDetails.focus.primaryIndustries',
+            'investorDetails.focus.businessStagePreference',
+            'investorDetails.focus.geographicFocus',
+            'investorDetails.focus.investmentCriteria',
+            'investorDetails.portfolio.investmentProcess',
+            'investorDetails.portfolio.postInvestmentSupport'
+          ];
+          
+          // Check if institutional investor fields are required
+          const investorType = getValues('investorDetails.investorType');
+          const isInstitutional = investorType && ['venture_capital', 'private_equity', 'family_office', 'corporate'].includes(investorType);
+          
+          if (isInstitutional) {
+            investorFieldPaths.push('investorDetails.investmentTeamSize');
+          }
+          
+          // Trigger validation for all investor fields
+          await Promise.all(investorFieldPaths.map(field => trigger(field)));
+          
+          // Then check if there are any errors
+          isStepValid = !Object.keys(errors).some(key => 
+            key === 'investorDetails' || key.startsWith('investorDetails.')
+          );
+          
+          if (!isStepValid) {
+            currentStepErrors = getErrorMessages(errors).filter(error => 
+              error.path === 'investorDetails' || error.path.startsWith('investorDetails.')
+            );
+            
+            setErrorMessages(currentStepErrors);
+            setShowErrorSummary(true);
+            toast.dismiss(); // Dismiss previous toasts
+  toast.error('Please fix the errors before proceeding');
+            window.scrollTo(0, 0);
+            return; // Exit function if validation fails
+          }
+        }
+        else if (listingType === ListingType.STARTUP) {
+          // Create an array of all the startup fields to validate
+          const startupFieldPaths = [
+            'startupDetails.developmentStage',
+            'startupDetails.registeredName',
+            'startupDetails.foundedDate',
+            'startupDetails.missionStatement',
+            'startupDetails.problemStatement',
+            'startupDetails.solutionDescription',
+            'startupDetails.team.teamSize',
+            'startupDetails.team.productStage',
+            'startupDetails.team.uniqueSellingPoints',
+            'startupDetails.team.founders',
+            'startupDetails.market.revenueModel',
+            'startupDetails.market.targetMarket',
+            'startupDetails.market.marketSize.value',
+            'startupDetails.market.competitiveAnalysis',
+            'startupDetails.funding.fundingStage',
+            'startupDetails.funding.currentRaisingAmount.value',
+            'startupDetails.funding.equityOffered',
+            'startupDetails.funding.preMoneyValuation.value',
+            'startupDetails.funding.useOfFunds'
+          ];
+          
+          // Add conditional validation for user metrics based on development stage
+          const devStage = getValues('startupDetails.developmentStage');
+          if (devStage && devStage !== 'idea' && devStage !== 'mvp') {
+            startupFieldPaths.push('startupDetails.market.totalUsers');
+            startupFieldPaths.push('startupDetails.market.activeUsers');
+          }
+          
+          // Add conditional validation for monthly revenue based on funding stage
+          if (devStage && ['seed', 'series_a', 'series_b_plus'].includes(devStage)) {
+            startupFieldPaths.push('startupDetails.market.monthlyRevenue.value');
+          }
+          
+          // Trigger validation for all startup fields
+          await Promise.all(startupFieldPaths.map(field => trigger(field)));
+          
+          // Then check if there are any errors
+          isStepValid = !Object.keys(errors).some(key => 
+            key === 'startupDetails' || key.startsWith('startupDetails.')
+          );
+          
+          if (!isStepValid) {
+            currentStepErrors = getErrorMessages(errors).filter(error => 
+              error.path === 'startupDetails' || error.path.startsWith('startupDetails.')
+            );
+            
+            setErrorMessages(currentStepErrors);
+            setShowErrorSummary(true);
+            toast.dismiss(); // Dismiss previous toasts
+            toast.error('Please fix the errors before proceeding');
+            window.scrollTo(0, 0);
+            return; // Exit function if validation fails
+          }
+          
+          // Validate that we have at least one founder
+          const founders = getValues('startupDetails.team.founders') || [];
+          if (founders.length === 0) {
+            toast.error('Please add at least one founder');
+            return; // Exit function if validation fails
+          }
+        } 
+        else if (listingType === ListingType.DIGITAL_ASSET) {
+          isStepValid = await trigger('digitalAssetDetails');
+          
+          if (!isStepValid) {
+            currentStepErrors = getErrorMessages(errors).filter(error => 
+              error.path.startsWith('digitalAssetDetails')
+            );
+            
+            setErrorMessages(currentStepErrors);
+            setShowErrorSummary(true);
+            toast.dismiss(); // Dismiss previous toasts
+  toast.error('Please fix the errors before proceeding');
+            return; // Exit function if validation fails
+          }
         }
         break;
+        
       case 3: // Documents
-        // Document validation is handled in the component
+        // Document validation is optional
+        isStepValid = true;
         break;
+        
       case 4: // Review & Submit
-        // No additional validation needed, review only
+        // Validate all fields before submitting
+        isStepValid = await trigger();
+        
+        if (!isStepValid) {
+          currentStepErrors = getErrorMessages(errors);
+          setErrorMessages(currentStepErrors);
+          setShowErrorSummary(true);
+          toast.error('Please fix the errors before submitting');
+          return; // Exit function if validation fails
+        }
         break;
+        
       default:
+        isStepValid = true;
         break;
     }
 
-    // Validate the fields for the current step
-    if (fieldsToValidate.length > 0) {
-      const isStepValid = await trigger(fieldsToValidate);
-
-      if (!isStepValid) {
-        // Highlight errors
-        setShowErrorSummary(true);
-        toast.error('Please fix the errors before proceeding');
-        return;
-      }
-    }
-
-    // Start transition
+    // Only start transition if validation passes
     setTransitioningStep(true);
     
     // If validation passes, move to next step or submit
@@ -811,6 +1641,7 @@ function ListingForm({ isEdit = false }) {
       pendingStep.current = nextStep;
       
       setTimeout(() => {
+        setSubmitAttempted(false); // Reset submission state when changing steps
         setCurrentStep(nextStep);
         window.scrollTo(0, 0);
         setShowErrorSummary(false);
@@ -821,9 +1652,13 @@ function ListingForm({ isEdit = false }) {
       setTransitioningStep(false);
       handleSubmit(onSubmit)();
     }
-  };
+  } catch (error) {
+    console.error("Error during form validation:", error);
+    toast.error('An error occurred. Please try again.');
+  }
+};
 
-  // Handle previous step
+  // FIXED: handlePrevious with proper state reset
   const handlePrevious = () => {
     if (currentStep > 0) {
       setTransitioningStep(true);
@@ -834,7 +1669,9 @@ function ListingForm({ isEdit = false }) {
       localStorage.setItem(STORAGE_KEYS.STEP, prevStep.toString());
       pendingStep.current = prevStep;
       
+      // Reset validation state when changing steps
       setTimeout(() => {
+        setSubmitAttempted(false); // Reset submission state when changing steps
         setCurrentStep(prevStep);
         window.scrollTo(0, 0);
         setShowErrorSummary(false);
@@ -909,21 +1746,6 @@ function ListingForm({ isEdit = false }) {
 
   // Get current step component
   const StepComponent = steps[currentStep].component;
-  
-  // Get error summary for current step
-  const currentStepErrorMessages = getErrorMessages(errors).filter(error => {
-    switch (currentStep) {
-      case 0: // Basic Info
-        return ['name', 'type', 'classifications', 'description', 'status', 'plan', 'location', 'contactInfo'].some(field => 
-          error.path === field || error.path.startsWith(`${field}.`)
-        );
-      case 2: // Details
-        const detailsPrefix = listingType ? `${listingType}Details` : '';
-        return error.path.startsWith(detailsPrefix);
-      default:
-        return false;
-    }
-  });
 
   return (
     <div className="w-full px-2 md:px-4 mx-auto">
@@ -992,7 +1814,7 @@ function ListingForm({ isEdit = false }) {
             </div>
 
             {/* Error summary if submission attempted */}
-            {submitAttempted && showErrorSummary && currentStepErrorMessages.length > 0 && (
+            {submitAttempted && showErrorSummary && errorMessages.length > 0 && (
               <div className="mb-4 p-3 border border-red-200 bg-red-50 rounded-md">
                 <div className="flex items-start">
                   <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
@@ -1008,7 +1830,7 @@ function ListingForm({ isEdit = false }) {
                       </button>
                     </div>
                     <ul className="mt-1 text-xs text-red-700 space-y-0.5">
-                      {currentStepErrorMessages.map((error, index) => (
+                      {errorMessages.map((error, index) => (
                         <li key={index} className="flex items-start">
                           <span className="mr-1.5">•</span>
                           <span>{error.message}</span>
@@ -1056,9 +1878,9 @@ function ListingForm({ isEdit = false }) {
                     variant="outline"
                     size="sm"
                     onClick={handlePrevious}
-                    leftIcon={<ChevronLeft className="h-3.5 w-3.5" />}
+                    leftIcon={<ChevronLeft className="h-4 w-4" />}
                     disabled={transitioningStep}
-                    className={`text-xs ${transitioningStep ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`text-sm ${transitioningStep ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     Previous
                   </Button>
@@ -1068,9 +1890,9 @@ function ListingForm({ isEdit = false }) {
                     variant="outline"
                     size="sm"
                     onClick={() => navigate('/listings')}
-                    leftIcon={<ArrowLeft className="h-3.5 w-3.5" />}
+                    leftIcon={<ArrowLeft className="h-4 w-4" />}
                     disabled={transitioningStep}
-                    className={`text-xs ${transitioningStep ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`text-sm ${transitioningStep ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     Back to Listings
                   </Button>
@@ -1083,9 +1905,9 @@ function ListingForm({ isEdit = false }) {
                   variant="outline"
                   size="sm"
                   onClick={handleSaveAsDraft}
-                  leftIcon={<Save className="h-3.5 w-3.5" />}
+                  leftIcon={<Save className="h-4 w-4" />}
                   disabled={transitioningStep}
-                  className={`text-xs ${transitioningStep ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`text-sm ${transitioningStep ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   Save as Draft
                 </Button>
@@ -1095,9 +1917,9 @@ function ListingForm({ isEdit = false }) {
                   variant="primary"
                   size="sm"
                   onClick={handleNext}
-                  rightIcon={currentStep < steps.length - 1 ? <ChevronRight className="h-3.5 w-3.5" /> : undefined}
+                  rightIcon={currentStep < steps.length - 1 ? <ChevronRight className="h-4 w-4" /> : undefined}
                   disabled={transitioningStep}
-                  className={`text-xs ${transitioningStep ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`text-sm ${transitioningStep ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {currentStep < steps.length - 1 ? 'Next' : 'Submit Listing'}
                 </Button>

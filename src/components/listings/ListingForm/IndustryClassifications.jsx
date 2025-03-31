@@ -300,16 +300,17 @@ const IndustryClassifications = () => {
     <div className="space-y-3">
       {/* Header area with title and Add button */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center">
-          <label className="block text-xs font-medium text-gray-700">
+        <div className="flex items-center space-x-2">
+          <Tags className="h-4 w-4 text-[#0031ac]" />
+          <label className="block text-sm font-semibold text-gray-800">
             Industry Classification <span className="text-red-500">*</span>
           </label>
           <Tooltip content="Select up to 3 industries that best describe your listing">
-            <HelpCircle className="h-3.5 w-3.5 text-gray-400 ml-1" />
+            <HelpCircle className="h-4 w-4 text-gray-500" />
           </Tooltip>
         </div>
         
-        {/* Add button moved to the header area */}
+        {/* Add button */}
         <Button
           type="button"
           variant="outline"
@@ -317,15 +318,16 @@ const IndustryClassifications = () => {
           onClick={addClassification}
           disabled={fields.length >= 3}
           className={cn(
-            "h-8 text-xs border-[#0031ac] text-[#0031ac] hover:bg-blue-50",
+            "h-8 text-sm border-[#0031ac] text-[#0031ac] hover:bg-blue-50",
             fields.length >= 3 ? "opacity-50 cursor-not-allowed" : ""
           )}
         >
-          <Plus className="h-3.5 w-3.5 mr-1.5" />
-          Add Industry
+          <div className="flex items-center">
+            <Plus className="h-4 w-4 mr-2" />
+            Add Industry
+          </div>
         </Button>
       </div>
-
       {/* Error for classifications array */}
       {hasArrayValidationError && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-2">

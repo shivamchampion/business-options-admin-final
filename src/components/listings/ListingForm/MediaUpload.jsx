@@ -20,10 +20,11 @@ const Tooltip = ({ content, children }) => {
   return (
     <div className="group relative inline-block">
       {children}
-      <div className="absolute z-10 w-60 opacity-0 invisible group-hover:opacity-100 group-hover:visible transform -translate-x-1/2 left-1/2 bottom-full mb-2 transition-all duration-150">
-        <div className="relative bg-gray-800 text-white text-xs rounded p-2 text-center shadow-lg">
+      <div className="absolute z-50 w-64 opacity-0 invisible group-hover:opacity-100 group-hover:visible 
+        transform -translate-x-1/2 left-1/2 bottom-full mb-2 transition-all duration-200 ease-in-out pointer-events-none">
+        <div className="relative bg-gray-800 text-white text-sm rounded-md p-2.5 text-center shadow-lg">
           {content}
-          <div className="absolute w-2 h-2 bg-gray-800 transform rotate-45 translate-y-1 translate-x-0 left-1/2 -ml-1 bottom-0"></div>
+          <div className="absolute w-2.5 h-2.5 bg-gray-800 transform rotate-45 -bottom-[5px] left-1/2 -translate-x-1/2"></div>
         </div>
       </div>
     </div>
@@ -160,6 +161,7 @@ const MediaUpload = ({
             
             if (needReuploadCount > 0) {
               setNeedsReupload(true);
+              toast.dismiss(); // Dismiss previous toasts
               toast.error(`Please re-upload ${needReuploadCount} image(s) that were lost during page refresh`);
             }
             
@@ -305,6 +307,9 @@ const MediaUpload = ({
 
   // Handle file selection from input
   const handleFileSelect = async (event) => {
+    // Dismiss any existing toasts
+    toast.dismiss();
+
     const selectedFiles = Array.from(event.target.files || []);
     console.log("Files selected:", selectedFiles.length);
     
@@ -372,6 +377,9 @@ const MediaUpload = ({
       // Set errors if any
       if (newErrors.length > 0) {
         setValidationErrors(newErrors);
+        toast.error(newErrors.join(', '), {
+          duration: 4000
+        });
       }
       
       // Process valid files
@@ -385,7 +393,6 @@ const MediaUpload = ({
             const replaced = replacePlaceholder(file);
             if (replaced) replacementMade = true;
           }
-          
           // If we replaced at least one placeholder but still have some,
           // keep the reupload notice active
           if (replacementMade) {
@@ -438,10 +445,20 @@ const MediaUpload = ({
           validateImages();
           trigger('mediaValidation');
         }, 100);
+
+        // Success toast for uploads
+        if (validFiles.length > 0) {
+          toast.success(`${validFiles.length} image${validFiles.length > 1 ? 's' : ''} uploaded successfully`, {
+            duration: 3000
+          });
+        }
       }
     } catch (err) {
       console.error("Error processing files:", err);
       setValidationErrors([...newErrors, "An unexpected error occurred while processing your images."]);
+      toast.error("An unexpected error occurred while processing your images.", {
+        duration: 4000
+      });
     } finally {
       // Complete upload process
       setIsUploading(false);
@@ -455,6 +472,9 @@ const MediaUpload = ({
 
   // Handle image deletion
   const handleDeleteImage = (index) => {
+    // Dismiss any existing toasts
+    toast.dismiss();
+
     // Get the image to delete
     const imageToDelete = images[index];
     
@@ -513,12 +533,17 @@ const MediaUpload = ({
       trigger('mediaValidation');
     }, 100);
     
-    // Show toast
-    toast.success("Image deleted");
+    // Success toast
+    toast.success("Image deleted", {
+      duration: 2000
+    });
   };
 
   // Handle setting featured image
   const handleSetFeatured = (index) => {
+    // Dismiss any existing toasts
+    toast.dismiss();
+
     if (onSetFeatured) {
       onSetFeatured(index);
       
@@ -528,7 +553,9 @@ const MediaUpload = ({
         console.error("Error storing featured index:", e);
       }
       
-      toast.success(`Image ${index + 1} set as main image`);
+      toast.success(`Image ${index + 1} set as main image`, {
+        duration: 2000
+      });
     }
   };
 
@@ -562,7 +589,7 @@ const MediaUpload = ({
       {/* Step Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Upload Listing Images</h2>
+          <h2 className="text-base font-semibold text-gray-900 mb-1">Upload Listing Images</h2>
           {renderCompletionIndicator()}
         </div>
         <p className="text-sm text-gray-600">
@@ -574,7 +601,7 @@ const MediaUpload = ({
       <div className="p-4 border border-blue-200 bg-blue-50 rounded-lg flex items-start">
         <Info className="h-5 w-5 text-blue-500 mr-3 mt-0.5 flex-shrink-0" />
         <div className="text-sm text-blue-700">
-          <p className="font-medium mb-1">Image Requirements</p>
+          <p className="font-semibold mb-1">Image Requirements</p>
           <ul className="space-y-1">
             <li>• Upload 3-10 high-quality images that showcase your listing</li>
             <li>• Only JPG/JPEG and PNG formats are accepted</li>
@@ -656,7 +683,7 @@ const MediaUpload = ({
         </div>
         
         <Tooltip content="Upload at least 3 high-quality images to showcase your listing. The first image will be shown as the main image in search results.">
-          <HelpCircle className="h-4 w-4 text-gray-400" />
+          <HelpCircle className="h-4 w-4 text-gray-500" />
         </Tooltip>
       </div>
 
@@ -727,7 +754,7 @@ const MediaUpload = ({
             </div>
           </label>
           
-          {/* Explicit upload button for better UX */}
+          {/* Explicit upload button */}
           <button
             type="button"
             onClick={handleOpenFileDialog}
