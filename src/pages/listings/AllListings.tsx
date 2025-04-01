@@ -158,17 +158,16 @@ export default function AllListings() {
         }, 300);
     };
 
-    // Load listings based on current tab
     const loadListingsByTab = async (reset = true) => {
         try {
             startLoading('Loading listings...');
             setIsLoading(true);
-
+    
             let result;
-
+    
             // Apply tab-specific filters
             const tabFilters = { ...filters };
-
+    
             if (selectedTab === 1) {
                 // Pending tab
                 result = await getListingsByStatus(
@@ -196,6 +195,13 @@ export default function AllListings() {
                 );
             } else {
                 // All listings tab (default)
+                // Add all status types to ensure we get everything
+                tabFilters.status = [
+                    ListingStatus.PUBLISHED,
+                    ListingStatus.PENDING,
+                    ListingStatus.DRAFT
+                ];
+                
                 result = await getListings(
                     10,
                     reset ? null : lastDoc,
@@ -203,14 +209,14 @@ export default function AllListings() {
                     user?.id
                 );
             }
-
+    
             setListings(prev => reset ? result.listings : [...prev, ...result.listings]);
             setLastDoc(result.lastDoc);
             setHasMoreListings(result.listings.length === 10);
         } catch (error) {
             console.error('Error loading listings:', error);
             toast.error('Failed to load listings');
-
+    
             // Initialize with empty array on error to prevent undefined errors
             if (reset) {
                 setListings([]);

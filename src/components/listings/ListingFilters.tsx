@@ -40,11 +40,18 @@ const ListingFiltersComponent: React.FC<ListingFiltersProps> = ({
   const [localFilters, setLocalFilters] = useState<ListingFilters>(filters);
   const [searchTerm, setSearchTerm] = useState(filters.search || '');
   const [showFilters, setShowFilters] = useState(false);
+  const [isOpen, setIsOpen] = useState(false); // Track if the filter panel is open
   
   // State for location dropdowns
   const [countries, setCountries] = useState([]);
   const [states, setStates] = useState([]);
   const [cities, setCities] = useState([]);
+  
+  // Update localFilters when external filters change
+  useEffect(() => {
+    setLocalFilters(filters);
+    setSearchTerm(filters.search || '');
+  }, [filters]);
   
   // Load countries on component mount
   useEffect(() => {
@@ -157,6 +164,7 @@ const ListingFiltersComponent: React.FC<ListingFiltersProps> = ({
   
   const handleApplyFilters = () => {
     onFilterChange(localFilters);
+    setIsOpen(false); // Close the filter panel
   };
   
   const handleResetFilters = () => {
@@ -219,6 +227,10 @@ const ListingFiltersComponent: React.FC<ListingFiltersProps> = ({
     placeholder: (base) => ({
       ...base,
       fontSize: '0.875rem'
+    }),
+    menu: (base) => ({
+      ...base,
+      zIndex: 60
     })
   };
   
@@ -246,9 +258,10 @@ const ListingFiltersComponent: React.FC<ListingFiltersProps> = ({
         </form>
       </div>
       
-      {/* Filter dropdown */}
-      <Menu as="div" className="relative inline-block text-left">
-        <Menu.Button
+      {/* Filter button */}
+      <div className="relative">
+        <button
+          onClick={() => setIsOpen(true)}
           className={cn(
             "btn-outline flex items-center whitespace-nowrap",
             getActiveFilterCount() > 0
@@ -263,36 +276,41 @@ const ListingFiltersComponent: React.FC<ListingFiltersProps> = ({
               {getActiveFilterCount()}
             </span>
           )}
-        </Menu.Button>
+        </button>
         
-        <Transition
-          as={Fragment}
-          enter="transition ease-out duration-100"
-          enterFrom="transform opacity-0 scale-95"
-          enterTo="transform opacity-100 scale-100"
-          leave="transition ease-in duration-75"
-          leaveFrom="transform opacity-100 scale-100"
-          leaveTo="transform opacity-0 scale-95"
+        {/* Fixed overlay when filter is open */}
+        {isOpen && (
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 z-40"
+            onClick={() => setIsOpen(false)}
+          ></div>
+        )}
+        
+        {/* Filter panel that slides in from the right */}
+        <div 
+          className={`fixed top-0 right-0 bottom-0 w-full sm:w-96 md:w-[450px] bg-white shadow-xl z-50 transform transition-transform duration-300 ease-in-out overflow-y-auto ${
+            isOpen ? 'translate-x-0' : 'translate-x-full'
+          }`}
         >
-          <Menu.Items className="absolute right-0 mt-2 w-72 sm:w-96 p-4 bg-white rounded-lg shadow-lg border border-gray-200 z-50 origin-top-right">
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h3 className="font-medium text-gray-900">Filters</h3>
-                <button
-                  onClick={handleResetFilters}
-                  className="text-sm text-gray-500 hover:text-gray-700"
-                >
-                  Reset all
-                </button>
-              </div>
-              
+          <div className="p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-medium text-gray-900">Filters</h3>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-6">
               {/* Location Filters */}
               <div className="mb-3">
                 <div className="text-sm font-medium text-gray-700 mb-2 flex items-center">
                   <MapPin className="w-4 h-4 mr-1" />
                   Location
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 gap-2">
                   <Select
                     placeholder="Select Country"
                     options={countries}
@@ -542,27 +560,27 @@ const ListingFiltersComponent: React.FC<ListingFiltersProps> = ({
                   </div>
                 </div>
               )}
-              
-              <div className="flex justify-end space-x-2 pt-2 border-t border-gray-100">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleResetFilters}
-                >
-                  Reset
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleApplyFilters}
-                >
-                  Apply Filters
-                </Button>
-              </div>
             </div>
-          </Menu.Items>
-        </Transition>
-      </Menu>
+            
+            <div className="flex justify-between mt-8 pt-4 border-t border-gray-100">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResetFilters}
+              >
+                Reset All
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                onClick={handleApplyFilters}
+              >
+                Apply Filters
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLoading } from '@/context/LoadingContext';
 import { Tab } from '@headlessui/react';
 import { Plus, RefreshCw, AlertTriangle, Info, Key } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom'; // Added useLocation and useNavigate
 import usePageTitle from '@/hooks/usePageTitle';
 import Button from '@/components/ui/Button';
 import UserFilters from '@/components/users/UserFilters';
@@ -19,7 +20,8 @@ import {
   updateUserStatus, 
   bulkUpdateUserStatus, 
   deleteUser,
-  resetUserPassword
+  resetUserPassword,
+  getUsersCount // Added getUsersCount to show total counts
 } from '@/services/userService';
 import { cn } from '@/lib/utils';
 import { toast } from 'react-hot-toast';
@@ -29,6 +31,8 @@ const pageSize = 10;
 export default function AllUsers() {
   usePageTitle('User Management');
   const { startLoading, stopLoading } = useLoading();
+  const location = useLocation(); // For detecting URL parameters
+  const navigate = useNavigate(); // For updating URL
   
   // Tab state
   const [selectedTab, setSelectedTab] = useState(0);
@@ -41,6 +45,8 @@ export default function AllUsers() {
   const [websiteLastDoc, setWebsiteLastDoc] = useState<any>(null);
   const [hasMoreAdminUsers, setHasMoreAdminUsers] = useState(true);
   const [hasMoreWebsiteUsers, setHasMoreWebsiteUsers] = useState(true);
+  const [adminCount, setAdminCount] = useState(0);
+  const [websiteCount, setWebsiteCount] = useState(0);
   
   // UI state
   const [isLoading, setIsLoading] = useState(false);
@@ -61,6 +67,37 @@ export default function AllUsers() {
   
   // Track which tabs have been initialized
   const [initializedTabs, setInitializedTabs] = useState<{[key: number]: boolean}>({});
+  
+  // Check URL parameters on component mount
+  useEffect(() => {
+    // Parse query parameters
+    const queryParams = new URLSearchParams(location.search);
+    const action = queryParams.get('action');
+    
+    // If action is 'create', open the user form
+    if (action === 'create') {
+      setEditUser(undefined); // Set to undefined to indicate creating a new user
+      setIsFormOpen(true);
+      
+      // Remove the action parameter from URL after processing
+      navigate('/users', { replace: true });
+    }
+  }, [location, navigate]);
+  
+  // Fetch user counts
+  useEffect(() => {
+    const fetchUserCounts = async () => {
+      try {
+        const counts = await getUsersCount();
+        setAdminCount(counts.adminCount);
+        setWebsiteCount(counts.websiteCount);
+      } catch (error) {
+        console.error('Error fetching user counts:', error);
+      }
+    };
+    
+    fetchUserCounts();
+  }, []);
   
   // Tab change handler with smooth transition
   const handleTabChange = (index: number) => {
@@ -140,8 +177,13 @@ export default function AllUsers() {
       setAdminUsers(prev => reset ? result.users : [...prev, ...result.users]);
       setAdminLastDoc(result.lastDoc);
       setHasMoreAdminUsers(result.users.length === pageSize);
+      
+      // Update user counts
+      const counts = await getUsersCount();
+      setAdminCount(counts.adminCount);
     } catch (error) {
       console.error('Error loading admin users:', error);
+      toast.error('Failed to load admin users');
     } finally {
       setIsLoading(false);
       if (selectedTab === 0) {
@@ -167,8 +209,13 @@ export default function AllUsers() {
       setWebsiteUsers(prev => reset ? result.users : [...prev, ...result.users]);
       setWebsiteLastDoc(result.lastDoc);
       setHasMoreWebsiteUsers(result.users.length === pageSize);
+      
+      // Update user counts
+      const counts = await getUsersCount();
+      setWebsiteCount(counts.websiteCount);
     } catch (error) {
       console.error('Error loading website users:', error);
+      toast.error('Failed to load website users');
     } finally {
       setIsLoading(false);
       if (selectedTab === 1) {
@@ -301,8 +348,11 @@ export default function AllUsers() {
         );
         setSelectedWebsiteUsers([]);
       }
+      
+      toast.success(`Successfully activated ${userIds.length} users`);
     } catch (error) {
       console.error('Error activating users:', error);
+      toast.error('Failed to activate users');
     } finally {
       stopLoading();
     }
@@ -331,8 +381,11 @@ export default function AllUsers() {
         );
         setSelectedWebsiteUsers([]);
       }
+      
+      toast.success(`Successfully deactivated ${userIds.length} users`);
     } catch (error) {
       console.error('Error deactivating users:', error);
+      toast.error('Failed to deactivate users');
     } finally {
       stopLoading();
     }
@@ -362,8 +415,11 @@ export default function AllUsers() {
         setWebsiteUsers(prev => prev.filter(user => !selectedWebsiteUsers.includes(user.id)));
         setSelectedWebsiteUsers([]);
       }
+      
+      toast.success(`Successfully deleted ${userIds.length} users`);
     } catch (error) {
       console.error('Error deleting users:', error);
+      toast.error('Failed to delete users');
     } finally {
       stopLoading();
     }
@@ -386,8 +442,11 @@ export default function AllUsers() {
       } else {
         setWebsiteUsers(prev => prev.filter(user => user.id !== userId));
       }
+      
+      toast.success('User deleted successfully');
     } catch (error) {
       console.error('Error deleting user:', error);
+      toast.error('Failed to delete user');
     } finally {
       stopLoading();
     }
@@ -476,7 +535,7 @@ export default function AllUsers() {
                   : 'text-gray-500 hover:text-gray-700'
               )}
             >
-              Admin Panel Users
+              Admin Panel Users ({adminCount})
             </Tab>
             <Tab
               className={({ selected }) => cn(
@@ -486,7 +545,7 @@ export default function AllUsers() {
                   : 'text-gray-500 hover:text-gray-700'
               )}
             >
-              Website Users
+              Website Users ({websiteCount})
             </Tab>
           </Tab.List>
           
@@ -572,22 +631,52 @@ export default function AllUsers() {
                   </Button>
                 </div>
                 
-                {/* Message about website users with transition */}
+                {/* Website users table with transition */}
                 <div 
                   className={`transition-all duration-300 ease-in-out ${
                     isTransitioning ? 'opacity-50' : 'opacity-100'
                   }`}
                 >
-                  <div className="flex items-start p-4 border border-yellow-200 bg-yellow-50 rounded-lg">
-                    <AlertTriangle className="h-5 w-5 text-yellow-500 mr-3 mt-0.5 flex-shrink-0" />
-                    <div className="text-sm text-yellow-700">
-                      <p className="font-medium mb-1">Website Users Section - Coming Soon</p>
-                      <p>
-                        This section will display users who have registered on the website. Website users cannot be created from the admin panel.
-                      </p>
+                  {websiteUsers.length > 0 ? (
+                    <UserTable
+                      users={websiteUsers}
+                      isLoading={isLoading && selectedTab === 1}
+                      selectedUsers={selectedWebsiteUsers}
+                      onSelectUser={handleSelectWebsiteUser}
+                      onSelectAllUsers={handleSelectAllWebsiteUsers}
+                      onDelete={handleDeleteUser}
+                      onStatusChange={handleStatusChange}
+                      isAdminPanel={false}
+                    />
+                  ) : (
+                    <div className="flex items-start p-4 border border-yellow-200 bg-yellow-50 rounded-lg">
+                      <AlertTriangle className="h-5 w-5 text-yellow-500 mr-3 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm text-yellow-700">
+                        <p className="font-medium mb-1">Website Users</p>
+                        <p>
+                          This section displays users who have registered on the website. 
+                          {isLoading && selectedTab === 1 
+                            ? " Loading users..." 
+                            : " No website users found."
+                          }
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
+                
+                {/* Load more */}
+                {hasMoreWebsiteUsers && websiteUsers.length > 0 && (
+                  <div className="flex justify-center mt-6">
+                    <Button
+                      variant="outline"
+                      onClick={loadMore}
+                      isLoading={isLoading && selectedTab === 1}
+                    >
+                      Load More
+                    </Button>
+                  </div>
+                )}
               </div>
             </Tab.Panel>
           </Tab.Panels>

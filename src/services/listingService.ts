@@ -119,8 +119,8 @@ const generateDisplayLocation = (
   return parts.join(', ');
 };
 /**
-* Get listings with pagination and filtering
-*/
+ * Get listings with pagination and filtering
+ */
 export const getListings = async (
   pageSize: number = 10,
   lastDoc: DocumentSnapshot | null = null,
@@ -174,7 +174,6 @@ export const getListings = async (
         conditions.push(where('plan', 'in', filters.plan));
       }
 
-
       // Filter by industries (multiple selections support)
       if (filters.industries && filters.industries.length > 0) {
         // Use array-contains-any - supports up to 10 values
@@ -182,17 +181,6 @@ export const getListings = async (
         conditions.push(where('industries', 'array-contains-any', industryFilters));
       }
 
-      // For new schema (as we transition):
-      // This would be a client-side filter as classifications is an array of objects
-      let filteredListings = listings;
-      if (filters?.industries && filters.industries.length > 0) {
-        filteredListings = filteredListings.filter(listing =>
-          listing.classifications &&
-          listing.classifications.some(c =>
-            filters.industries.includes(c.industry)
-          )
-        );
-      }
       // Update filters for location (country, state, city)
       if (filters.location) {
         if (filters.location.country) {
@@ -221,16 +209,27 @@ export const getListings = async (
     const snapshot = await getDocs(finalQuery);
 
     // Convert documents to listings
-    const listings = snapshot.docs.map(doc => convertDocToListing(doc));
+    const fetchedListings = snapshot.docs.map(doc => convertDocToListing(doc));
 
     // Apply client-side filtering for search (if needed)
-    let filteredListings = listings;
+    let filteredListings = fetchedListings;
+    
     if (filters?.search) {
       const searchTerm = filters.search.toLowerCase();
-      filteredListings = listings.filter(listing =>
+      filteredListings = fetchedListings.filter(listing =>
         listing.name.toLowerCase().includes(searchTerm) ||
         listing.description.toLowerCase().includes(searchTerm) ||
         (listing.shortDescription && listing.shortDescription.toLowerCase().includes(searchTerm))
+      );
+    }
+
+    // For new schema (classifications is an array of objects)
+    if (filters?.industries && filters.industries.length > 0) {
+      filteredListings = filteredListings.filter(listing =>
+        listing.classifications &&
+        listing.classifications.some(c =>
+          filters.industries?.includes(c.industry)
+        )
       );
     }
 
