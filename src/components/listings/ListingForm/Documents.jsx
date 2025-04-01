@@ -79,13 +79,11 @@ const Documents = ({
   const [replacingDocId, setReplacingDocId] = useState(null);
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [needsReupload, setNeedsReupload] = useState(false);
-  const [activeUploads, setActiveUploads] = useState(new Set());
 
   // References for scroll actions and cleanup
   const uploadFormRef = useRef(null);
   const dropzoneRef = useRef(null);
   const isMounted = useRef(true);
-  const intervalsRef = useRef({});
 
   // Clean up on unmount
   useEffect(() => {
@@ -98,10 +96,6 @@ const Documents = ({
     // Clean up function
     return () => {
       isMounted.current = false;
-      // Clean up all intervals
-      Object.values(intervalsRef.current).forEach(interval => {
-        clearInterval(interval);
-      });
     };
   }, [formId]);
 
@@ -109,7 +103,7 @@ const Documents = ({
   useEffect(() => {
     if (onChange) {
       // Only send non-placeholder documents to parent
-      const nonPlaceholderDocs = uploadedDocuments.filter(doc => !doc.isPlaceholder && !doc.uploading);
+      const nonPlaceholderDocs = uploadedDocuments.filter(doc => !doc.isPlaceholder);
       onChange({
         documents: nonPlaceholderDocs
       });
@@ -187,35 +181,10 @@ const Documents = ({
     initializeDocuments();
   }, [documents, formId]);
 
-  // Track active uploads
-  useEffect(() => {
-    const newActiveUploads = new Set();
-    
-    // Add all documents with uploading: true to activeUploads
-    uploadedDocuments.forEach(doc => {
-      if (doc.uploading) {
-        newActiveUploads.add(doc.id);
-      }
-    });
-    
-    setActiveUploads(newActiveUploads);
-    
-    // If we have active uploads, isUploading should be true
-    if (newActiveUploads.size > 0 && !isUploading) {
-      setIsUploading(true);
-    } else if (newActiveUploads.size === 0 && isUploading) {
-      // Delay setting isUploading to false to prevent flicker
-      const timer = setTimeout(() => {
-        setIsUploading(false);
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [uploadedDocuments, isUploading]);
-
   // Count of already uploaded documents by type
   const getDocumentTypeCount = (type) => {
     return uploadedDocuments.filter(doc =>
-      doc.type === type && doc.category === activeCategory && !doc.isPlaceholder && !doc.uploading
+      doc.type === type && doc.category === activeCategory && !doc.isPlaceholder
     ).length;
   };
 
@@ -553,58 +522,47 @@ const Documents = ({
     return true;
   };
 
-  // Update the simulateProgress function
-  const simulateProgress = (fileId, fileName, callback) => {
+  // Simulate upload progress for UI feedback
+  const simulateProgress = (fileName, callback) => {
     let progress = 0;
-    
-    // Clear existing interval for this file if it exists
-    if (intervalsRef.current[fileId]) {
-      clearInterval(intervalsRef.current[fileId]);
-    }
-    
-    intervalsRef.current[fileId] = setInterval(() => {
+    const interval = setInterval(() => {
       progress += 10;
+
       if (!isMounted.current) {
-        clearInterval(intervalsRef.current[fileId]);
-        delete intervalsRef.current[fileId];
+        clearInterval(interval);
         return;
       }
-      
-      // Update both the document's progress and the overall progress
+
       setUploadProgress(prev => ({
         ...prev,
-        [fileName]: Math.min(progress, 100)
+        [fileName]: progress
       }));
-      
-      // Update the uploading state on the document
-      setUploadedDocuments(prev => 
-        prev.map(doc => 
-          doc.id === fileId 
-            ? { ...doc, progress: Math.min(progress, 100) }
-            : doc
-        )
-      );
-      
+
       if (progress >= 100) {
-        clearInterval(intervalsRef.current[fileId]);
-        delete intervalsRef.current[fileId];
-        
+        clearInterval(interval);
+
+        // Remove from progress tracking after a delay
         setTimeout(() => {
           if (!isMounted.current) return;
-          
-          // Remove from progress tracking
+
           setUploadProgress(prev => {
             const newProgress = { ...prev };
             delete newProgress[fileName];
+
+            // If no more uploads in progress, set isUploading to false
+            if (Object.keys(newProgress).length === 0) {
+              setIsUploading(false);
+            }
+
             return newProgress;
           });
-          
-          if (callback) callback(100);
         }, 1000);
+
+        // Call the callback when done
+        if (callback) callback(progress);
       }
     }, 200);
   };
-
   // Handle file drop
   const onDrop = useCallback(async (acceptedFiles) => {
     // Reset errors
@@ -687,7 +645,7 @@ const Documents = ({
           );
 
           // Upload with progress simulation
-          simulateProgress(tempId, file.name, async (progress) => {
+          simulateProgress(file.name, async (progress) => {
             if (progress >= 100) {
               try {
                 // Upload to Firebase
@@ -703,8 +661,7 @@ const Documents = ({
                   verificationStatus: 'pending',
                   uploadedAt: new Date(),
                   tempUrl: false,
-                  uploading: false,
-                  progress: 100
+                  uploading: false
                 };
 
                 // Replace the temporary document with the uploaded one
@@ -729,14 +686,6 @@ const Documents = ({
               } catch (error) {
                 console.error("Error uploading to Firebase:", error);
                 toast.error(`Error uploading ${file.name}`, { id: 'document-upload' });
-                
-                // Update the document to show error state
-                setUploadedDocuments(prevDocs => {
-                  const newDocs = prevDocs.map(doc =>
-                    doc.id === replacingDocId ? { ...doc, uploading: false, error: true } : doc
-                  );
-                  return newDocs;
-                });
               }
             }
           });
@@ -747,7 +696,7 @@ const Documents = ({
           setUploadedDocuments(prev => [...prev, tempDocument]);
 
           // Upload with progress simulation
-          simulateProgress(tempId, file.name, async (progress) => {
+          simulateProgress(file.name, async (progress) => {
             if (progress >= 100) {
               try {
                 // Upload to Firebase
@@ -763,8 +712,7 @@ const Documents = ({
                   verificationStatus: 'pending',
                   uploadedAt: new Date(),
                   tempUrl: false,
-                  uploading: false,
-                  progress: 100
+                  uploading: false
                 };
 
                 // Replace the temporary document with the uploaded one
@@ -787,14 +735,6 @@ const Documents = ({
               } catch (error) {
                 console.error("Error uploading to Firebase:", error);
                 toast.error(`Error uploading ${file.name}`, { id: 'document-upload' });
-                
-                // Update the document to show error state
-                setUploadedDocuments(prevDocs => {
-                  const newDocs = prevDocs.map(doc =>
-                    doc.id === tempId ? { ...doc, uploading: false, error: true } : doc
-                  );
-                  return newDocs;
-                });
               }
             }
           });
@@ -981,8 +921,7 @@ const Documents = ({
     return uploadedDocuments.some(doc =>
       doc.type === type &&
       doc.category === activeCategory &&
-      !doc.isPlaceholder &&
-      !doc.uploading
+      !doc.isPlaceholder
     );
   };
 
@@ -994,13 +933,6 @@ const Documents = ({
       doc.category === activeCategory
     );
   };
-
-  // Get uploading documents
-  const getUploadingDocuments = () => {
-    return uploadedDocuments.filter(doc => doc.uploading);
-  };
-
-  const uploadingDocuments = getUploadingDocuments();
 
   return (
     <div className="space-y-6">
@@ -1025,36 +957,6 @@ const Documents = ({
         </div>
       )}
 
-      {/* Upload status indicator */}
-      {(isUploading || uploadingDocuments.length > 0) && (
-        <div className="p-4 border border-blue-200 bg-blue-50 rounded-lg mb-4">
-          <div className="flex items-center">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-700 mr-3"></div>
-            <p className="text-sm font-medium text-blue-800">
-              Uploading documents... Please wait.
-            </p>
-          </div>
-          
-          {/* Progress bars */}
-          <div className="mt-2 space-y-2">
-            {Object.entries(uploadProgress).map(([fileName, progress]) => (
-              <div key={fileName} className="text-xs">
-                <div className="flex justify-between text-gray-700 mb-1">
-                  <span className="truncate max-w-xs">{fileName}</span>
-                  <span>{Math.round(progress)}%</span>
-                </div>
-                <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                  <div 
-                    className={progress < 70 ? "bg-blue-500 h-full" : "bg-green-500 h-full"}
-                    style={{ width: `${progress}%` }}
-                  ></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Document categories tabs */}
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex space-x-1 overflow-x-auto hide-scrollbar">
@@ -1074,9 +976,9 @@ const Documents = ({
               )}
             >
               {category.name}
-              {uploadedDocuments.filter(doc => doc.category === category.id && !doc.isPlaceholder && !doc.uploading).length > 0 && (
+              {uploadedDocuments.filter(doc => doc.category === category.id && !doc.isPlaceholder).length > 0 && (
                 <span className="ml-2 bg-gray-100 text-gray-700 rounded-full px-2 py-0.5 text-xs">
-                  {uploadedDocuments.filter(doc => doc.category === category.id && !doc.isPlaceholder && !doc.uploading).length}
+                  {uploadedDocuments.filter(doc => doc.category === category.id && !doc.isPlaceholder).length}
                 </span>
               )}
             </button>
@@ -1093,7 +995,7 @@ const Documents = ({
               {documentCategories.find(cat => cat.id === activeCategory)?.name}
             </p>
             <p className="text-sm text-blue-700 mt-1">
-              {documentCategories.find(cat => cat.id === activeCategory)?.description}. 
+              {documentCategories.find(cat => cat.id === activeCategory)?.description}.
               Click on a document below to upload it.
             </p>
           </div>
@@ -1117,6 +1019,36 @@ const Documents = ({
         </div>
       )}
 
+      {(isUploading || Object.keys(uploadProgress).length > 0) && (
+        <div className="p-4 border border-blue-200 bg-blue-50 rounded-lg">
+          <div className="flex items-center">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-700 mr-3"></div>
+            <p className="text-sm font-medium text-blue-800">
+              Uploading documents... Please wait.
+            </p>
+          </div>
+
+          {Object.keys(uploadProgress).length > 0 && (
+            <div className="mt-2 space-y-2">
+              {Object.entries(uploadProgress).map(([fileName, progress]) => (
+                <div key={fileName} className="text-xs">
+                  <div className="flex justify-between text-gray-700 mb-1">
+                    <span className="truncate max-w-xs">{fileName}</span>
+                    <span>{Math.round(progress)}%</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className={progress < 70 ? "bg-blue-500 h-full" : "bg-green-500 h-full"}
+                      style={{ width: `${progress}%` }}
+                    ></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Current Documents Section - Show at the top with recommended documents */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* Left column: Recommended documents & form */}
@@ -1129,37 +1061,27 @@ const Documents = ({
                 Recommended Documents
               </h3>
             </div>
-            
+
             <div className="p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {getRecommendedDocuments(activeCategory).map((doc, index) => {
                   const isUploaded = isDocumentTypeUploaded(doc.type);
                   const count = getDocumentTypeCount(doc.type);
                   const hasPlaceholder = hasPlaceholderDocument(doc.type);
-                  
-                  // Check if this document type is currently uploading
-                  const isUploading = uploadedDocuments.some(
-                    d => d.type === doc.type && d.category === activeCategory && d.uploading
-                  );
-                  
+
                   return (
-                    <div 
-                      key={index} 
+                    <div
+                      key={index}
                       className={cn(
                         "flex items-start border rounded p-3 cursor-pointer transition-all duration-200",
-                        isUploading 
-                          ? "bg-blue-50 border-blue-200" // Currently uploading
-                          : hasPlaceholder 
-                            ? "bg-amber-50 border-amber-200" // Has placeholder
-                            : isUploaded && doc.type !== 'other'
-                              ? "bg-green-50 border-green-200" // Fully uploaded
-                              : "bg-gray-50 border-gray-200 hover:bg-blue-50 hover:border-blue-200"
+                        hasPlaceholder
+                          ? "bg-amber-50 border-amber-200" // Has placeholder
+                          : isUploaded && doc.type !== 'other'
+                            ? "bg-green-50 border-green-200" // Fully uploaded
+                            : "bg-gray-50 border-gray-200 hover:bg-blue-50 hover:border-blue-200"
                       )}
                       onClick={() => {
-                        if (isUploading) {
-                          // If uploading, don't do anything
-                          toast.info("Document is currently uploading...");
-                        } else if (hasPlaceholder) {
+                        if (hasPlaceholder) {
                           // If has placeholder, start replacement process
                           const placeholder = uploadedDocuments.find(
                             d => d.isPlaceholder && d.type === doc.type && d.category === activeCategory
@@ -1170,7 +1092,7 @@ const Documents = ({
                         } else if (isUploaded && doc.type !== 'other') {
                           // Find the document to highlight
                           const docToHighlight = uploadedDocuments.find(
-                            d => d.type === doc.type && d.category === activeCategory && !d.isPlaceholder && !d.uploading
+                            d => d.type === doc.type && d.category === activeCategory && !d.isPlaceholder
                           );
                           if (docToHighlight) {
                             const docElement = document.getElementById(`document-${docToHighlight.id}`);
@@ -1188,9 +1110,8 @@ const Documents = ({
                     >
                       <FileText className={cn(
                         "h-5 w-5 mt-0.5 mr-3 flex-shrink-0",
-                        isUploading ? "text-blue-600" :
-                        hasPlaceholder ? "text-amber-600" : 
-                        (isUploaded && doc.type !== 'other') ? "text-green-600" : "text-[#0031ac]"
+                        hasPlaceholder ? "text-amber-600" :
+                          (isUploaded && doc.type !== 'other') ? "text-green-600" : "text-[#0031ac]"
                       )} />
                       <div>
                         <div className="flex items-center">
@@ -1200,13 +1121,7 @@ const Documents = ({
                               {count}
                             </span>
                           )}
-                          {isUploading && (
-                            <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center">
-                              <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                              Uploading
-                            </span>
-                          )}
-                          {hasPlaceholder && !isUploading && (
+                          {hasPlaceholder && (
                             <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full flex items-center">
                               <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
                               Re-upload
@@ -1214,12 +1129,7 @@ const Documents = ({
                           )}
                         </div>
                         <p className="text-xs text-gray-500 mt-1">
-                          {isUploading ? (
-                            <span className="text-blue-600 flex items-center">
-                              <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                              Uploading...
-                            </span>
-                          ) : hasPlaceholder ? (
+                          {hasPlaceholder ? (
                             <span className="text-amber-600 flex items-center">
                               <RefreshCw className="h-3 w-3 mr-1" />
                               Needs re-upload
@@ -1243,11 +1153,11 @@ const Documents = ({
               </div>
             </div>
           </div>
-          
+
           {/* Upload form - Only show when a type is selected */}
           {showUploadForm && (
-            <div 
-              ref={uploadFormRef} 
+            <div
+              ref={uploadFormRef}
               id="upload-form"
               className="bg-white border border-[#0031ac] rounded-lg overflow-hidden shadow-md transition-all"
             >
@@ -1256,7 +1166,7 @@ const Documents = ({
                   <Upload className="h-4 w-4 mr-2" />
                   {isReplacing ? 'Replace' : 'Upload'}: {getDocumentTypeName(selectedDocType)}
                 </h3>
-                
+
                 <button
                   type="button"
                   onClick={() => {
@@ -1272,7 +1182,7 @@ const Documents = ({
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              
+
               <div className="p-4">
                 <div className="space-y-4">
                   {/* Description field - For ALL document types, but only required for "Other" */}
@@ -1285,7 +1195,7 @@ const Documents = ({
                         <HelpCircle className="h-4 w-4 text-gray-500" />
                       </Tooltip>
                     </div>
-                    
+
                     <input
                       type="text"
                       id="doc-description"
@@ -1295,14 +1205,14 @@ const Documents = ({
                       onChange={(e) => setNewDocDescription(e.target.value)}
                       required={selectedDocType === 'other'}
                     />
-                    
+
                     <p className="text-xs text-gray-500 mt-1">
-                      {selectedDocType === 'other' 
-                        ? "Please provide a clear description for this document." 
+                      {selectedDocType === 'other'
+                        ? "Please provide a clear description for this document."
                         : "A description helps buyers understand what's in the document."}
                     </p>
                   </div>
-                  
+
                   {/* Document visibility */}
                   <div className="space-y-2">
                     <div className="flex items-center">
@@ -1321,10 +1231,10 @@ const Documents = ({
                       </Tooltip>
                     </div>
                   </div>
-                  
+
                   {/* Upload area */}
-                  <div 
-                    {...getRootProps()} 
+                  <div
+                    {...getRootProps()}
                     className={cn(
                       "border-2 border-dashed rounded-lg p-4 text-center transition-colors duration-200 mt-4",
                       isDragActive ? "border-[#0031ac] bg-blue-50" : "border-[#0031ac] hover:bg-blue-50",
@@ -1340,12 +1250,12 @@ const Documents = ({
                     }}
                   >
                     <input {...getInputProps()} />
-                    
+
                     <div className="flex flex-col items-center justify-center py-4">
                       <div className="bg-blue-100 rounded-full p-3 mb-4">
                         <FilePlus className="h-6 w-6 text-[#0031ac]" />
                       </div>
-                      
+
                       {isDragActive ? (
                         <p className="text-sm font-medium text-[#0031ac]">Drop the file here...</p>
                       ) : (
@@ -1356,7 +1266,7 @@ const Documents = ({
                             ) : (
                               <span>
                                 {isReplacing ? 'Drop file to replace' : 'Drop file to upload'}, or
-                                <button 
+                                <button
                                   className="ml-1 text-[#0031ac] hover:text-blue-700 focus:outline-none underline"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1384,7 +1294,7 @@ const Documents = ({
             </div>
           )}
         </div>
-        
+
         {/* Right column: Uploaded documents list */}
         <div className="lg:col-span-2">
           {/* Uploaded documents list */}
@@ -1393,15 +1303,9 @@ const Documents = ({
               <h3 className="text-sm font-medium text-gray-700 flex items-center justify-between">
                 <span className="flex items-center">
                   <File className="h-4 w-4 text-[#0031ac] mr-2" />
-                  Uploaded Documents ({filteredDocuments.filter(doc => !doc.isPlaceholder && !doc.uploading).length})
-                  {filteredDocuments.some(doc => doc.uploading) && (
-                    <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center">
-                      <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                      {filteredDocuments.filter(doc => doc.uploading).length} uploading
-                    </span>
-                  )}
+                  Uploaded Documents ({filteredDocuments.filter(doc => !doc.isPlaceholder).length})
                 </span>
-                
+
                 {!showUploadForm && (
                   <button
                     onClick={() => {
@@ -1421,18 +1325,17 @@ const Documents = ({
                 )}
               </h3>
             </div>
-            
+
             {filteredDocuments.length > 0 ? (
               <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
                 {filteredDocuments.map((document) => (
-                  <div 
-                    key={document.id} 
+                  <div
+                    key={document.id}
                     id={`document-${document.id}`}
                     className={cn(
                       "p-4 hover:bg-gray-50 transition-colors duration-300",
                       document.isPlaceholder ? "bg-amber-50 opacity-75" : "",
-                      document.uploading ? "bg-blue-50" : "",
-                      document.error ? "bg-red-50" : ""
+                      document.uploading ? "bg-blue-50" : ""
                     )}
                   >
                     <div className="flex items-start">
@@ -1440,7 +1343,7 @@ const Documents = ({
                       <div className="mr-3 mt-1 flex-shrink-0">
                         {getDocumentIcon(document.format)}
                       </div>
-                      
+
                       {/* Document info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex flex-col">
@@ -1460,12 +1363,6 @@ const Documents = ({
                                     Uploading
                                   </span>
                                 )}
-                                {document.error && (
-                                  <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full flex items-center">
-                                    <AlertTriangle className="h-3 w-3 mr-1" />
-                                    Error
-                                  </span>
-                                )}
                               </h4>
                               <p className="text-xs text-gray-600 mt-0.5">
                                 {getDocumentTypeName(document.type)}
@@ -1477,7 +1374,7 @@ const Documents = ({
                               )}
                             </div>
                           </div>
-                          
+
                           <div className="mt-2 flex items-center justify-between">
                             <div className="flex items-center text-xs text-gray-500 space-x-3">
                               <span>{formatFileSize(document.size)}</span>
@@ -1495,7 +1392,7 @@ const Documents = ({
                                 )}
                               </span>
                             </div>
-                            
+
                             {/* Verification Status */}
                             <div>
                               {document.isPlaceholder ? (
@@ -1508,32 +1405,12 @@ const Documents = ({
                                   <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
                                   Uploading
                                 </span>
-                              ) : document.error ? (
-                                <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-red-100 text-red-800">
-                                  <AlertTriangle className="h-3 w-3 mr-1" />
-                                  Failed
-                                </span>
                               ) : (
                                 getVerificationBadge(document.verificationStatus)
                               )}
                             </div>
                           </div>
-                          
-                          {/* Upload progress bar if uploading */}
-                          {document.uploading && document.progress < 100 && (
-                            <div className="mt-2">
-                              <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                <div 
-                                  className={getProgressColor(document.progress)}
-                                  style={{ width: `${document.progress}%` }}
-                                ></div>
-                              </div>
-                              <span className="text-xs font-medium text-gray-500 mt-1">
-                                {Math.round(document.progress)}% uploaded
-                              </span>
-                            </div>
-                          )}
-                          
+
                           {/* Actions */}
                           <div className="mt-3 flex space-x-2 justify-end">
                             {document.isPlaceholder ? (
@@ -1558,12 +1435,11 @@ const Documents = ({
                                   onClick={() => handleReplaceDocument(document.id, document.type, document.name)}
                                   className="px-2 py-1 text-xs rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors flex items-center"
                                   title="Replace document"
-                                  disabled={document.uploading}
                                 >
                                   <RefreshCw className="h-3 w-3 mr-1" />
                                   Replace
                                 </button>
-                                
+
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -1580,22 +1456,22 @@ const Documents = ({
                                   }}
                                   className="px-2 py-1 text-xs rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors flex items-center"
                                   title="Download document"
-                                  disabled={!document.url || document.uploading}
+                                  disabled={!document.url}
                                 >
                                   <Download className="h-3 w-3 mr-1" />
                                   Download
                                 </button>
                               </>
                             )}
-                            
+
                             <button
                               type="button"
                               onClick={() => handleDeleteDocument(document.id, document.name)}
                               disabled={document.uploading}
                               className={cn(
                                 "px-2 py-1 text-xs rounded border",
-                                document.uploading 
-                                  ? "border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed" 
+                                document.uploading
+                                  ? "border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed"
                                   : "border-red-200 bg-white text-red-600 hover:bg-red-50 transition-colors"
                               )}
                               title="Delete document"

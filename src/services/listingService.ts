@@ -287,55 +287,48 @@ export const getListingById = async (id: string): Promise<Listing> => {
   }
 };
 
-/**
- * Upload an image to Firebase Storage for a listing
- */
 export const uploadListingImage = async (
   file: File,
   listingId: string,
   index: number = 0
 ): Promise<ImageObject> => {
   try {
-    // Create storage reference
-    const storageRef = ref(storage, `listings/${listingId}/images/${index}_${file.name}`);
+    console.log(`Starting upload for image: ${file.name} (${file.size} bytes)`);
+    
+    // Create storage reference with unique name to avoid collisions
+    const fileName = `${index}_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+    const storageRef = ref(storage, `listings/${listingId}/images/${fileName}`);
 
-    // Upload the file
-    const snapshot = await uploadBytes(storageRef, file);
+    // Upload the file with explicit content type
+    const metadata = {
+      contentType: file.type || 'image/jpeg'
+    };
+    console.log(`Uploading to Firebase Storage: ${storageRef.fullPath}`);
+    const snapshot = await uploadBytes(storageRef, file, metadata);
+    console.log(`Upload complete for: ${file.name}`);
 
     // Get download URL
+    console.log(`Getting download URL for: ${storageRef.fullPath}`);
     const downloadURL = await getDownloadURL(snapshot.ref);
+    console.log(`Download URL obtained: ${downloadURL.substring(0, 50)}...`);
 
-    // Get image dimensions (browser only)
-    let width = 0;
-    let height = 0;
-
-    if (typeof window !== 'undefined') {
-      const img = new Image();
-      img.src = downloadURL;
-      await new Promise<void>((resolve) => {
-        img.onload = () => {
-          width = img.width;
-          height = img.height;
-          resolve();
-        };
-      });
-    }
-
-    // Create image object
+    // Create image object WITHOUT waiting for dimension calculation
+    // This is critical - dimension calculation was causing hangs
     const imageObject: ImageObject = {
       url: downloadURL,
       path: storageRef.fullPath,
-      alt: file.name,
-      width,
-      height
+      alt: file.name || `Listing image ${index + 1}`,
+      width: 0,  // Default dimensions - will be updated by client
+      height: 0
     };
 
+    console.log(`Successfully processed image: ${file.name}`);
     return imageObject;
   } catch (error) {
-    console.error('Error uploading listing image:', error);
-    throw error;
+    console.error(`Error uploading image ${file.name}:`, error);
+    throw new Error(`Failed to upload image ${file.name}: ${error.message}`);
   }
-};
+}
 
 /**
  * Upload a document to Firebase Storage for a listing
@@ -380,64 +373,140 @@ export const uploadListingDocument = async (
 };
 
 /**
- * Create a new listing
+ * Enhanced createListing function with better error handling and document processing
  */
 export const createListing = async (
   listingData: Partial<Listing>,
   images?: File[],
   documents?: Array<{ file: File, type: string, description?: string, isPublic?: boolean }>
 ): Promise<string> => {
+  console.log(`createListing service called with type: ${listingData.type}`);
+  let listingId = ''; // Store ID for error handling
+  let uploadedImages: ImageObject[] = [];
+  let uploadedDocs: DocumentObject[] = [];
+  
   try {
     // Validate required fields
     if (!listingData.name || !listingData.type || !listingData.description) {
       throw new Error('Listing name, type, and description are required');
     }
 
-    // Get current user for ownership information
+    // Validate current user
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       throw new Error('User must be logged in to create a listing');
     }
+    console.log('Current user verified:', currentUser.id);
 
     // Create a slug from the name
     const slug = generateSlug(listingData.name);
 
-    // Create a new document reference
+    // Create a new document reference for the listing
     const listingRef = doc(collection(db, LISTINGS_COLLECTION));
-    const listingId = listingRef.id;
+    listingId = listingRef.id;
+    console.log(`Created listing document reference with ID: ${listingId}`);
 
-    // Upload images if provided
-    let galleryImages: ImageObject[] = [];
-    let featuredImage: ImageObject | undefined;
+    // Upload images with robust error handling
+let galleryImages: ImageObject[] = [];
+let featuredImage: ImageObject | undefined;
 
-    if (images && images.length > 0) {
-      // Upload each image
-      const imagePromises = images.map((file, index) =>
-        uploadListingImage(file, listingId, index)
+if (images && images.length > 0) {
+  console.log(`Uploading ${images.length} images...`);
+  
+  // Process images one at a time to avoid any potential issues
+  // This is more reliable than batch processing for production
+  for (let i = 0; i < images.length; i++) {
+    try {
+      console.log(`Processing image ${i+1}/${images.length}`);
+      const file = images[i];
+      
+      // Add timeout protection for each image
+      const uploadPromise = uploadListingImage(file, listingId, i);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error(`Image upload timeout for ${file.name}`)), 30000) // 30 second timeout
       );
-
-      galleryImages = await Promise.all(imagePromises);
-
-      // Set the first image as featured image
-      featuredImage = galleryImages[0];
+      
+      // Race against timeout
+      const imageObject = await Promise.race([uploadPromise, timeoutPromise]);
+      
+      // Add to gallery
+      galleryImages.push(imageObject);
+      uploadedImages.push(imageObject); // For cleanup in case of errors
+      console.log(`Successfully uploaded image ${i+1}/${images.length}: ${file.name}`);
+    } catch (imageError) {
+      console.error(`Error uploading image ${i+1}/${images.length}:`, imageError);
+      // Continue with other images instead of failing completely
     }
+  }
+  
+  // Check if we managed to upload at least 3 images
+  if (galleryImages.length < 3) {
+    throw new Error(`Not enough images uploaded successfully. Need at least 3, got ${galleryImages.length}.`);
+  }
+  
+  console.log(`Successfully uploaded ${galleryImages.length} out of ${images.length} images`);
 
-    // Upload documents if provided
+  // Set featured image based on featuredImageIndex or default to first
+  if (typeof listingData.featuredImageIndex === 'number' && 
+      listingData.featuredImageIndex >= 0 && 
+      listingData.featuredImageIndex < galleryImages.length) {
+    featuredImage = galleryImages[listingData.featuredImageIndex];
+  } else if (galleryImages.length > 0) {
+    featuredImage = galleryImages[0];
+  }
+} else {
+  throw new Error('At least 3 images are required for a listing');
+}
+
+    // Upload documents
     let documentObjects: DocumentObject[] = [];
 
     if (documents && documents.length > 0) {
-      // Upload each document
-      const documentPromises = documents.map(({ file, type, description, isPublic }) =>
-        uploadListingDocument(file, listingId, type, description, isPublic)
-      );
-
-      documentObjects = await Promise.all(documentPromises);
+      console.log(`Uploading ${documents.length} documents...`);
+      
+      try {
+        // Process documents in sequence to avoid errors
+        for (const doc of documents) {
+          try {
+            // Verify the document has required properties
+            if (!doc.file) {
+              console.warn('Document missing file property:', doc);
+              continue; // Skip invalid documents
+            }
+            
+            // Ensure document type is valid
+            const docType = doc.type || 'document';
+            const docDescription = doc.description || doc.file.name || 'Document';
+            const isPublic = !!doc.isPublic;
+            
+            console.log(`Uploading document: ${docDescription} (${docType})`);
+            const uploadedDoc = await uploadListingDocument(
+              doc.file, 
+              listingId, 
+              docType, 
+              docDescription, 
+              isPublic
+            );
+            
+            documentObjects.push(uploadedDoc);
+            uploadedDocs.push(uploadedDoc); // For cleanup in case of errors
+          } catch (docError) {
+            console.error(`Error uploading document ${doc?.file?.name}:`, docError);
+            // Continue with other documents instead of failing completely
+          }
+        }
+        
+        console.log(`Successfully uploaded ${documentObjects.length} documents out of ${documents.length} attempts`);
+      } catch (docsError) {
+        console.error('Error in document batch processing:', docsError);
+        throw new Error(`Failed to process documents: ${docsError.message}`);
+      }
     }
 
     // Calculate initial system rating
     const systemRating = calculateSystemRating(listingData, galleryImages.length, documentObjects.length);
 
-    // In createListing function
+    // Prepare location data
     const locationData: LocationInfo = {
       country: listingData.location?.country || 'IN',
       countryName: listingData.location?.countryName || 'India',
@@ -453,8 +522,10 @@ export const createListing = async (
         listingData.location?.countryName
       )
     };
+    
     // Handle classifications and backward compatibility
     const classifications = listingData.classifications || [];
+    console.log(`Processing ${classifications.length} industry classifications`);
 
     // For backward compatibility, add legacy fields
     const industries = classifications.map(c => c.industry);
@@ -495,13 +566,9 @@ export const createListing = async (
         totalImages: galleryImages.length
       },
 
-
       contactInfo: listingData.contactInfo || {
         email: currentUser.email // Default to user's email
       },
-
-
-
 
       // Status & verification
       isVerified: false,
@@ -560,34 +627,133 @@ export const createListing = async (
       isDeleted: false
     };
 
+    // Add type-specific details based on the listing type
+    console.log(`Adding type-specific details for listing type: ${listingData.type}`);
+    let typeSpecificDetails = {};
+    
+    switch(listingData.type) {
+      case ListingType.BUSINESS:
+        if (listingData.businessDetails) {
+          typeSpecificDetails = { businessDetails: listingData.businessDetails };
+          console.log("Added business details to listing data");
+        } else {
+          console.warn("Business type selected but no businessDetails provided");
+        }
+        break;
+        
+      case ListingType.FRANCHISE:
+        if (listingData.franchiseDetails) {
+          typeSpecificDetails = { franchiseDetails: listingData.franchiseDetails };
+          console.log("Added franchise details to listing data");
+        } else {
+          console.warn("Franchise type selected but no franchiseDetails provided");
+        }
+        break;
+        
+      case ListingType.STARTUP:
+        if (listingData.startupDetails) {
+          // Ensure dates are properly formatted for Firebase
+          const startupDetails = {
+            ...listingData.startupDetails,
+            foundedDate: listingData.startupDetails.foundedDate || new Date(),
+            launchDate: listingData.startupDetails.launchDate || null
+          };
+          typeSpecificDetails = { startupDetails };
+          console.log("Added startup details to listing data");
+        } else {
+          console.warn("Startup type selected but no startupDetails provided");
+        }
+        break;
+        
+      case ListingType.INVESTOR:
+        if (listingData.investorDetails) {
+          typeSpecificDetails = { investorDetails: listingData.investorDetails };
+          console.log("Added investor details to listing data");
+        } else {
+          console.warn("Investor type selected but no investorDetails provided");
+        }
+        break;
+        
+      case ListingType.DIGITAL_ASSET:
+        if (listingData.digitalAssetDetails) {
+          typeSpecificDetails = { digitalAssetDetails: listingData.digitalAssetDetails };
+          console.log("Added digital asset details to listing data");
+        } else {
+          console.warn("Digital asset type selected but no digitalAssetDetails provided");
+        }
+        break;
+        
+      default:
+        console.warn(`Unknown listing type: ${listingData.type}`);
+    }
+
     // Merge base data with type-specific details
     const listingDataToSave = {
       ...baseListingData,
-      // Add type-specific details based on the listing type
-      ...(listingData.type === ListingType.BUSINESS && { businessDetails: listingData.businessDetails }),
-      ...(listingData.type === ListingType.FRANCHISE && { franchiseDetails: listingData.franchiseDetails }),
-      ...(listingData.type === ListingType.STARTUP && { startupDetails: listingData.startupDetails }),
-      ...(listingData.type === ListingType.INVESTOR && { investorDetails: listingData.investorDetails }),
-      ...(listingData.type === ListingType.DIGITAL_ASSET && { digitalAssetDetails: listingData.digitalAssetDetails })
+      ...typeSpecificDetails
     };
 
+    console.log(`Saving listing data to Firestore with ID: ${listingId}`);
+    
     // Save the listing to Firestore
     await setDoc(listingRef, listingDataToSave);
+    console.log(`Successfully saved listing to Firestore`);
 
     // Update user's listings array
-    const userRef = doc(db, 'users', currentUser.id);
-    await updateDoc(userRef, {
-      listings: arrayUnion(listingId),
-      listingRefs: arrayUnion(listingRef)
-    });
+    try {
+      const userRef = doc(db, 'users', currentUser.id);
+      await updateDoc(userRef, {
+        listings: arrayUnion(listingId),
+        listingRefs: arrayUnion(listingRef)
+      });
+      console.log(`Updated user's listings array`);
+    } catch (userUpdateError) {
+      console.error('Error updating user listings array:', userUpdateError);
+      // Continue even if this fails as the listing is already created
+    }
 
     return listingId;
   } catch (error) {
     console.error('Error creating listing:', error);
+    
+    // Cleanup: Remove any uploaded images and documents in case of error
+    try {
+      if (listingId) {
+        console.log(`Cleaning up uploads due to error for listing ${listingId}`);
+        
+        // Delete uploaded images 
+        for (const image of uploadedImages) {
+          if (image.path) {
+            try {
+              const imageRef = ref(storage, image.path);
+              await deleteObject(imageRef);
+            } catch (deleteError) {
+              console.warn(`Failed to delete image: ${image.path}`, deleteError);
+            }
+          }
+        }
+        
+        // Delete uploaded documents
+        for (const doc of uploadedDocs) {
+          if (doc.path) {
+            try {
+              const docRef = ref(storage, doc.path);
+              await deleteObject(docRef);
+            } catch (deleteError) {
+              console.warn(`Failed to delete document: ${doc.path}`, deleteError);
+            }
+          }
+        }
+        
+        console.log('Cleanup completed');
+      }
+    } catch (cleanupError) {
+      console.error('Error during cleanup:', cleanupError);
+    }
+    
     throw new Error(`Failed to create listing: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };
-
 /**
  * Update an existing listing
  */

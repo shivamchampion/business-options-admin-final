@@ -718,7 +718,7 @@ const sanitizeImagesForStorage = (images) => {
   }).filter(Boolean); // Remove any nulls
 };
 
-function ListingForm({ isEdit = false }) {
+function ListingForm({ isEdit = false, externalOnSubmit }) {
   const navigate = useNavigate();
   const { id } = useParams();
   const { startLoading, stopLoading } = useLoading();
@@ -1274,10 +1274,95 @@ function ListingForm({ isEdit = false }) {
     localStorage.setItem(STORAGE_KEYS.FEATURED_IMAGE, index.toString());
   };
 
-  // Handle document upload
-  const handleDocumentUpload = (files) => {
-    setUploadedDocuments(prev => [...prev, ...files]);
-  };
+  // Fixed document upload handler with proper typing and error handling
+const handleDocumentUpload = async (files) => {
+  if (!files || !Array.isArray(files) || files.length === 0) {
+    console.warn("No valid files to upload");
+    return;
+  }
+
+  try {
+    // Use document-specific loading state
+    setDocumentUploadLoading(true);
+    
+    // Process the files to ensure they have the expected format
+    const processedFiles = files.map(file => {
+      // If it's already a File object with required properties, use it
+      if (file instanceof File) {
+        // Add type information based on file extension/mimetype for better categorization
+        const getDocType = (file) => {
+          const filename = file.name.toLowerCase();
+          const mimetype = file.type.toLowerCase();
+          
+          if (mimetype.includes('pdf') || filename.endsWith('.pdf')) {
+            return 'pdf';
+          } else if (mimetype.includes('word') || filename.endsWith('.doc') || filename.endsWith('.docx')) {
+            return 'doc';
+          } else if (mimetype.includes('excel') || mimetype.includes('spreadsheet') || 
+                   filename.endsWith('.xls') || filename.endsWith('.xlsx')) {
+            return 'spreadsheet';
+          } else if (mimetype.includes('image')) {
+            return 'image';
+          } else if (mimetype.includes('text')) {
+            return 'text';
+          } else {
+            return 'document';
+          }
+        };
+        
+        return {
+          id: `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          file: file,
+          name: file.name,
+          type: getDocType(file),
+          mime: file.type,
+          size: file.size,
+          uploadDate: new Date(),
+          description: file.name,
+          isPublic: false // Default to private
+        };
+      }
+      
+      // If it's an object that appears like a document but not a File instance
+      if (file && file.name) {
+        return {
+          ...file,
+          id: file.id || `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          // Ensure we have these standard fields
+          description: file.description || file.name,
+          isPublic: !!file.isPublic,
+          type: file.type || 'document'
+        };
+      }
+      
+      // Fallback for unknown format
+      return {
+        id: `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        file: file,
+        name: 'Document',
+        type: 'document',
+        size: 0,
+        description: 'Document',
+        isPublic: false
+      };
+    });
+    
+    // Add the processed documents to state
+    setUploadedDocuments(prev => [...prev, ...processedFiles]);
+    
+    // Success message
+    toast.success(`${files.length} document${files.length > 1 ? 's' : ''} uploaded successfully`);
+  } catch (error) {
+    console.error("Error processing documents:", error);
+    toast.error("Failed to process documents. Please try again.");
+  } finally {
+    // Clear document-specific loading state after a slight delay to avoid flicker
+    setTimeout(() => {
+      setDocumentUploadLoading(false);
+    }, 500);
+  }
+};
+
 
   // Handle document deletion
   const handleDocumentDelete = (docToDelete) => {
@@ -1440,7 +1525,7 @@ const handleNext = async () => {
           // First trigger all fields individually to gather all validation errors
           await Promise.all(franchiseFieldPaths.map(field => trigger(field)));
           
-          // Check if any fields have validation errors
+          // Then check if there are any errors
           const hasErrors = Object.keys(errors).some(key => 
             key === 'franchiseDetails' || key.startsWith('franchiseDetails.')
           );
@@ -1679,29 +1764,81 @@ const handleNext = async () => {
       }, 300);
     }
   };
-
-  // Form submission
-  const onSubmit = async (data) => {
-    try {
+// Enhanced form submission handler
+const onSubmit = async (data) => {
+  try {
+    // Use external loading if available, otherwise manage our own
+    if (!externalOnSubmit) {
       startLoading(isEdit ? 'Updating listing...' : 'Creating listing...');
+    }
+    
+    setIsLoading(true);
+    console.log("Starting form submission...");
 
-      // Check that we have at least the required number of images
-      if (uploadedImages.length < 3) {
-        toast.error('You must upload at least 3 images');
-        stopLoading();
-        return;
+    // Check that we have at least the required number of images
+    if (uploadedImages.length < 3) {
+      toast.error('You must upload at least 3 images');
+      stopLoading();
+      setIsLoading(false);
+      return;
+    }
+
+    // Prepare listing data
+    const listingData = {
+      ...data,
+      // Set short description if not provided
+      shortDescription: data.shortDescription || data.description.substring(0, 150) + '...',
+      // Set featured image
+      featuredImageIndex
+    };
+    
+    console.log(`Prepared submission with ${uploadedImages.length} images and ${uploadedDocuments.length} documents`);
+
+    // If external onSubmit is provided, use it
+    if (externalOnSubmit) {
+      try {
+        console.log("Using external onSubmit handler");
+        
+        // Ensure documents are in the expected format for the service
+        const formattedDocuments = uploadedDocuments.map(doc => {
+          // If this is a document from server with URL, skip it in upload
+          if (doc.url) {
+            return null;
+          }
+          
+          return {
+            file: doc.file || doc, // Handle both object with file property and direct File objects
+            type: doc.type || 'document',
+            description: doc.description || doc.name || 'Document',
+            isPublic: !!doc.isPublic
+          };
+        }).filter(Boolean); // Remove null items (server documents)
+        
+        console.log(`Submitting to external handler with ${formattedDocuments.length} new documents`);
+        
+        // Submit with timeout protection
+        const submitPromise = externalOnSubmit(listingData, uploadedImages, formattedDocuments);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Submission timed out")), 120000)
+        );
+        
+        // Race against timeout
+        const result = await Promise.race([submitPromise, timeoutPromise]);
+        
+        if (result === false) {
+          // External handler returned false to indicate failure
+          console.error("External submission handler returned failure");
+          throw new Error("Failed to save listing");
+        }
+        
+        console.log("External submission completed successfully");
+      } catch (error) {
+        console.error("Error in external submission:", error);
+        toast.error(`Failed to save listing: ${error.message || 'Unknown error'}`);
+        throw error; // Rethrow to reach the finally block
       }
-
-      // Prepare listing data
-      const listingData = {
-        ...data,
-        // Set short description if not provided
-        shortDescription: data.shortDescription || data.description.substring(0, 150) + '...',
-        // Set featured image
-        featuredImageIndex
-      };
-
-      // Create or update listing
+    } else {
+      // Create or update listing using internal logic
       if (isEdit) {
         await updateListing(
           id,
@@ -1726,14 +1863,18 @@ const handleNext = async () => {
         toast.success('Listing created successfully!');
         navigate(`/listings/${newListingId}`);
       }
-    } catch (error) {
-      console.error('Error submitting listing:', error);
-      toast.error('Failed to save listing. Please try again.');
-    } finally {
-      stopLoading();
-      setSaveAsDraft(false);
     }
-  };
+  } catch (error) {
+    console.error('Error submitting listing:', error);
+    toast.error(`Failed to save listing: ${error.message || 'Unknown error'}`);
+  } finally {
+    if (!externalOnSubmit) {
+      stopLoading();
+    }
+    setIsLoading(false);
+    setSaveAsDraft(false);
+  }
+};
 
   // Loading state
   if (isLoading || initialLoading) {
