@@ -21,8 +21,11 @@ const ListingCreate = React.lazy(() => import("@/pages/listings/ListingCreate"))
 const ListingDetail = React.lazy(() => import("@/pages/listings/ListingDetail"));
 const ListingEdit = React.lazy(() => import("@/pages/listings/ListingEdit"));
 
-// Using placeholder components as requested
-const AdvisorsPage = () => <div className="card"><h1 className="text-2xl font-bold">Advisors Page</h1></div>;
+// Lazy load advisor-related pages
+const AllAdvisors = React.lazy(() => import("@/pages/advisors/AllAdvisors"));
+const CommissionStructure = React.lazy(() => import("@/pages/advisors/CommissionStructure"));
+const AdvisorLeads = React.lazy(() => import("@/pages/advisors/Leads"));
+const AdvisorPayments = React.lazy(() => import("@/pages/advisors/Payments"));
 
 // Simple fallback for non-existent pages
 const PageNotFound = () => (
@@ -107,9 +110,27 @@ export default function App() {
                     <ListingEdit />
                   </SuspenseBoundary>
                 } />
-                
-                {/* Regular components without code splitting */}
-                <Route path="/advisors" element={<AdvisorsPage />} />
+                  {/* Advisor Routes */}
+                  <Route path="/advisors" element={
+                  <SuspenseBoundary>
+                    <AllAdvisors />
+                  </SuspenseBoundary>
+                } />
+                <Route path="/advisors/commission" element={
+                  <SuspenseBoundary>
+                    <CommissionStructure />
+                  </SuspenseBoundary>
+                } />
+                <Route path="/advisors/leads" element={
+                  <SuspenseBoundary>
+                    <AdvisorLeads />
+                  </SuspenseBoundary>
+                } />
+                <Route path="/advisors/payments" element={
+                  <SuspenseBoundary>
+                    <AdvisorPayments />
+                  </SuspenseBoundary>
+                } />
               </Route>
               
               {/* 404 route */}
