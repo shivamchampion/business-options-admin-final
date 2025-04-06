@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { cn } from '@/lib/utils';
 import { 
@@ -23,6 +23,7 @@ import DigitalAssetReview from './reviews/DigitalAssetReview';
 import EnhancedDocumentCard from './EnhancedDocumentCard';
 import { normalizeCategory, getCategoryDisplayName } from './DocumentCategoryMapper';
 import DocumentCard from './DocumentCard';
+import enhancedStorage from '@/lib/EnhancedStorageService';
 
 // Custom components for review display
 const ReviewSection = ({ title, children, className }) => {
@@ -91,7 +92,8 @@ const ReviewSubmit = ({
   onSubmit, 
   uploadedImages = [], 
   featuredImageIndex = 0,
-  uploadedDocuments = []
+  uploadedDocuments = [],
+  formId
 }) => {
   const { 
     watch, 
@@ -102,21 +104,67 @@ const ReviewSubmit = ({
   const [showFullErrors, setShowFullErrors] = useState(false);
   const [images, setImages] = useState(uploadedImages);
   const [documents, setDocuments] = useState(uploadedDocuments);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  
+  /**
+   * Load documents from localStorage or EnhancedStorageService if none are provided
+   */
+  const loadDocumentsFromStorage = async () => {
+    if ((!uploadedDocuments || uploadedDocuments.length === 0) && formId) {
+      setIsLoadingDocuments(true);
+      console.log("[DEBUG] ReviewSubmit: Attempting to load documents from storage for formId:", formId);
+      
+      try {
+        // First try with EnhancedStorage service
+        const docs = await enhancedStorage.getDocumentMetadata(formId || 'default');
+        
+        if (docs && Array.isArray(docs) && docs.length > 0) {
+          console.log("[DEBUG] ReviewSubmit: Successfully loaded", docs.length, "documents from EnhancedStorage");
+          setDocuments(docs);
+          return;
+        }
+        
+        // If that fails, try direct localStorage
+        try {
+          const storageKey = `listing_form_documents_${formId || 'default'}`;
+          const storedDocs = localStorage.getItem(storageKey);
+          
+          if (storedDocs) {
+            const parsedDocs = JSON.parse(storedDocs);
+            if (Array.isArray(parsedDocs) && parsedDocs.length > 0) {
+              console.log("[DEBUG] ReviewSubmit: Successfully loaded", parsedDocs.length, "documents from localStorage");
+              setDocuments(parsedDocs);
+              return;
+            }
+          }
+          
+          console.log("[DEBUG] ReviewSubmit: No documents found in localStorage");
+        } catch (localStorageError) {
+          console.error("[DEBUG] ReviewSubmit: Error loading documents from localStorage:", localStorageError);
+        }
+      } catch (error) {
+        console.error("[DEBUG] ReviewSubmit: Error loading documents from storage:", error);
+      } finally {
+        setIsLoadingDocuments(false);
+      }
+    }
+  };
   
   // Load images and documents from props
-  React.useEffect(() => {
-        if (uploadedImages && uploadedImages.length > 0) {
-          setImages(uploadedImages);
-          console.log("ReviewSubmit: Received images:", uploadedImages.length);
+  useEffect(() => {
+    if (uploadedImages && uploadedImages.length > 0) {
+      setImages(uploadedImages);
+      console.log("ReviewSubmit: Received images:", uploadedImages.length);
     }
     
-        if (uploadedDocuments && uploadedDocuments.length > 0) {
-          console.log("ReviewSubmit: Received documents:", uploadedDocuments.length, uploadedDocuments);
-          setDocuments(uploadedDocuments);
+    if (uploadedDocuments && uploadedDocuments.length > 0) {
+      console.log("ReviewSubmit: Received documents:", uploadedDocuments.length, uploadedDocuments);
+      setDocuments(uploadedDocuments);
     } else {
-          console.log("ReviewSubmit: No documents received or empty array:", uploadedDocuments);
+      console.log("ReviewSubmit: No documents received or empty array:", uploadedDocuments);
+      loadDocumentsFromStorage();
     }
-  }, [uploadedImages, uploadedDocuments]);
+  }, [uploadedImages, uploadedDocuments, formId]);
 
   // Validate entire form
   const validateForm = async () => {
@@ -420,7 +468,12 @@ const ReviewSubmit = ({
             </div>
           </div>
 
-          {documents && documents.length > 0 ? (
+          {isLoadingDocuments ? (
+            <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-md p-4 flex items-center justify-center">
+              <Clock className="h-4 w-4 text-gray-400 mr-2 animate-spin" />
+              Loading documents...
+            </div>
+          ) : documents && documents.length > 0 ? (
             <>
               {(() => {
                 // Log all documents with their categories for debugging

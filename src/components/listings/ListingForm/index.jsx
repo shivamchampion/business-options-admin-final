@@ -2045,6 +2045,7 @@ const onSubmit = async (data) => {
                         shouldShowErrors={submitAttempted || (visitedSteps && visitedSteps.includes(safeCurrentStep))}
                         isLoading={!dataLoaded}
                         listingType={listingType}
+                        formId={id} // Pass the formId to the component
                       />
                       {steps[safeCurrentStep]?.id === 'review' && (
                         <div className="hidden">
