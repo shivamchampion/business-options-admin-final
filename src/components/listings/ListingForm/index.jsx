@@ -659,31 +659,82 @@ function ListingForm({ isEdit = false, externalOnSubmit }) {
   useEffect(() => {
     const newErrors = {};
     
-    // Basic Info errors (step 0)
-    const basicInfoFields = ['name', 'type', 'classifications', 'description', 'status', 'plan', 'location', 'contactInfo'];
-    const hasBasicInfoErrors = Object.keys(errors).some(key => 
-      basicInfoFields.some(field => key === field || key.startsWith(`${field}.`))
-    );
+    // Only check steps that the user has visited or attempted to submit
+    const stepsToCheck = [];
+    if (submitAttempted) {
+      // Check all steps if submission was attempted
+      for (let i = 0; i < steps.length; i++) {
+        stepsToCheck.push(i);
+      }
+    } else {
+      // Only check current and previous steps
+      for (let i = 0; i <= safeCurrentStep; i++) {
+        stepsToCheck.push(i);
+      }
+    }
     
-    if (hasBasicInfoErrors) {
-      newErrors[0] = true;
+    // Basic Info errors (step 0)
+    if (stepsToCheck.includes(0)) {
+      const basicInfoFields = ['name', 'type', 'classifications', 'description', 'status', 'plan', 'location', 'contactInfo'];
+      const hasBasicInfoErrors = Object.keys(errors).some(key => 
+        basicInfoFields.some(field => key === field || key.startsWith(`${field}.`))
+      );
+      
+      if (hasBasicInfoErrors) {
+        newErrors[0] = true;
+      }
     }
     
     // Media errors (step 1)
-    if (uploadedImages.length < 3) {
-      newErrors[1] = true;
+    if (stepsToCheck.includes(1)) {
+      if (uploadedImages.length < 3) {
+        newErrors[1] = true;
+      }
     }
     
     // Details errors (step 2)
-    const detailsField = listingType ? `${listingType.toLowerCase()}Details` : '';
-    const hasDetailsErrors = Object.keys(errors).some(key => key.startsWith(detailsField));
-    
-    if (hasDetailsErrors) {
-      newErrors[2] = true;
+    if (stepsToCheck.includes(2)) {
+      const detailsField = listingType ? `${listingType.toLowerCase()}Details` : '';
+      const hasDetailsErrors = Object.keys(errors).some(key => key.startsWith(detailsField));
+      
+      if (hasDetailsErrors) {
+        newErrors[2] = true;
+      }
     }
     
-    setErrorMessages(Object.keys(newErrors).map(key => ({ path: key, message: 'Error' })));
-  }, [errors, listingType, uploadedImages.length]);
+    // Create meaningful error messages instead of just "Error"
+    const errorMessagesArray = Object.keys(newErrors).map(key => {
+      // Format error messages based on the step
+      switch (parseInt(key)) {
+        case 0:
+          return { path: key, message: 'Basic Information requires attention' };
+        case 1:
+          return { path: key, message: 'Please upload at least 3 images' };
+        case 2:
+          // Adapt the message based on the listing type
+          switch(listingType) {
+            case ListingType.BUSINESS:
+              return { path: key, message: 'Business details section is incomplete' };
+            case ListingType.FRANCHISE:
+              return { path: key, message: 'Franchise details section is incomplete' };
+            case ListingType.STARTUP:
+              return { path: key, message: 'Startup details section is incomplete' };
+            case ListingType.INVESTOR:
+              return { path: key, message: 'Investor details section is incomplete' };
+            case ListingType.DIGITAL_ASSET:
+              return { path: key, message: 'Digital asset details section is incomplete' };
+            default:
+              return { path: key, message: 'Details section is incomplete' };
+          }
+        case 3:
+          return { path: key, message: 'Document section requires attention' };
+        default:
+          return { path: key, message: 'This section requires attention' };
+      }
+    });
+    
+    setErrorMessages(errorMessagesArray);
+  }, [errors, listingType, uploadedImages.length, safeCurrentStep, submitAttempted, steps.length]);
 
   // Handle image upload
   const handleImageUpload = (files, skipNotifications = false) => {
@@ -2002,7 +2053,8 @@ const onSubmit = async (data) => {
                     </div>
 
                     {/* Error summary if submission attempted */}
-                    {submitAttempted && showErrorSummary && errorMessages.length > 0 && (
+                    {submitAttempted && showErrorSummary && 
+                     errorMessages.filter(error => error.path === safeCurrentStep.toString()).length > 0 && (
                       <div className="mb-4 p-3 border border-red-200 bg-red-50 rounded-md">
                         <div className="flex items-start">
                           <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
@@ -2018,11 +2070,13 @@ const onSubmit = async (data) => {
                               </button>
                             </div>
                             <ul className="mt-1 text-xs text-red-700 space-y-0.5">
-                              {errorMessages.map((error, index) => (
-                                <li key={index} className="flex items-start">
-                                  <span className="mr-1.5">•</span>
-                                  <span>{error.message}</span>
-                                </li>
+                              {errorMessages
+                                .filter(error => error.path === safeCurrentStep.toString())
+                                .map((error, index) => (
+                                  <li key={index} className="flex items-start">
+                                    <span className="mr-1.5">•</span>
+                                    <span>{error.message}</span>
+                                  </li>
                               ))}
                             </ul>
                           </div>

@@ -18,6 +18,7 @@ import {
 import { cn } from '@/lib/utils';
 import { enhancedStorage } from '@/lib';
 import ToastManager, { TOAST_IDS } from "@/utils/ToastManager";
+import { auth } from '@/lib/firebase'; // Import auth from Firebase
 
 /**
  * Simple circular progress indicator
@@ -1086,7 +1087,7 @@ const MediaUpload = ({
     images, formId, checkForDuplicateFilename, validateDimensions, 
     enhancedStorage, onImageUpload, setValue, validateImages,
     getEnhancedErrorMessage, simulateProgress, featuredImageIndex,
-    handleSetFeatured
+    handleSetFeatured, auth
   ]);
 
   // Main render function

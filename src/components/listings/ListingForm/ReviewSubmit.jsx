@@ -411,7 +411,7 @@ const ReviewSubmit = ({
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
               {images.map((image, index) => (
                 <div 
-                  key={image.id || index}
+                  key={image.id || `img_${index}_${image.name?.replace(/\s+/g, '_') || Date.now()}_${Math.random().toString(36).substring(2, 8)}`}
                   className={cn(
                     "rounded-sm border overflow-hidden relative bg-gray-50 max-w-full",
                     index === featuredImageIndex && "ring-1 ring-blue-500"
@@ -424,11 +424,11 @@ const ReviewSubmit = ({
                       src={image.preview || image.url || image.base64 || PLACEHOLDER_IMAGE} 
                       alt={image.name || `Image ${index + 1}`}
                       className="object-cover w-full h-full max-w-full" 
-                        onError={(e) => {
-                          e.target.src = PLACEHOLDER_IMAGE;
-                        }}
-                      />
-                    </div>
+                      onError={(e) => {
+                        e.target.src = PLACEHOLDER_IMAGE;
+                      }}
+                    />
+                  </div>
                   
                   {index === featuredImageIndex && (
                     <div className="absolute top-0.5 right-0.5 bg-blue-500 text-white rounded-full p-0.5">
@@ -555,7 +555,7 @@ const ReviewSubmit = ({
                     <h4 className="text-xs font-semibold text-gray-700 mb-2">{categoryName}</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {groupedDocs[categoryName].map((doc, index) => (
-                        <DocumentCard key={doc.id || index} document={doc} index={index} />
+                        <DocumentCard key={doc.id || `doc_${index}_${doc.name?.replace(/\s+/g, '_') || Date.now()}_${Math.random().toString(36).substring(2, 8)}`} document={doc} index={index} />
                       ))}
                     </div>
                   </div>

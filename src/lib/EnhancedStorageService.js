@@ -30,17 +30,19 @@
 import { auth, storage, db } from './firebase';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
-import { DocumentObject } from '@/types/listings';
 
+/**
+ * Enhanced Storage Service class
+ * @class
+ * @property {string} dbName - IndexedDB database name
+ * @property {number} dbVersion - IndexedDB database version
+ * @property {boolean} dbReady - Whether the database is ready
+ * @property {IDBDatabase|null} db - IndexedDB database instance
+ * @property {PendingOperation[]} pendingOperations - Queue for operations before DB is ready
+ * @property {Map<string,string>} tempUrls - Map of temporary URLs
+ * @property {Object} storage - Firebase storage instance
+ */
 class EnhancedStorageService {
-  dbName: string;
-  dbVersion: number;
-  dbReady: boolean;
-  db: IDBDatabase | null;
-  pendingOperations: PendingOperation[];
-  tempUrls: Map<string, string>;
-  storage: any; // Firebase storage
-
   constructor() {
     this.dbName = 'businessOptionsDB';
     this.dbVersion = 1;
@@ -156,7 +158,7 @@ class EnhancedStorageService {
    * @param {string} formId - The form/listing ID
    * @returns {Promise<boolean>} - Success status
    */
-  async saveImageMetadata(images: any[], formId: string): Promise<boolean> {
+  async saveImageMetadata(images, formId) {
     if (!formId) return false;
     
     const operation = async () => {
@@ -167,7 +169,7 @@ class EnhancedStorageService {
           const store = transaction.objectStore('images');
           
           // Create a transaction promise
-          const txPromise = new Promise<boolean>((resolve, reject) => {
+          const txPromise = new Promise((resolve, reject) => {
             transaction.oncomplete = () => resolve(true);
             transaction.onerror = (e) => reject(e.target.error);
           });
@@ -241,7 +243,7 @@ class EnhancedStorageService {
    * @param {string} formId - The form/listing ID
    * @returns {Promise<boolean>} - Success status
    */
-  async saveImageMetadataToLocalStorage(images: any[], formId: string): Promise<boolean> {
+  async saveImageMetadataToLocalStorage(images, formId) {
     try {
       // Check if localStorage is nearly full
       if (this.isStorageNearFull()) {
@@ -319,7 +321,7 @@ class EnhancedStorageService {
    * @param {string} formId - The form ID to retrieve
    * @returns {Promise<Array>} - Array of image metadata
    */
-  async getImageMetadata(formId: string): Promise<any[]> {
+  async getImageMetadata(formId) {
     if (!formId) return [];
     
     // First try IndexedDB
@@ -329,7 +331,7 @@ class EnhancedStorageService {
         const store = transaction.objectStore('images');
         const request = store.get(`listing_images_${formId}`);
         
-        const result = await new Promise<any>((resolve, reject) => {
+        const result = await new Promise((resolve, reject) => {
           request.onsuccess = () => resolve(request.result);
           request.onerror = () => reject(request.error);
         });
@@ -404,9 +406,9 @@ class EnhancedStorageService {
    * @param {Array} basicData - Optional basic metadata
    * @returns {Array} - Combined image data
    */
-  getChunkedImageData(formId: string, basicData: any[] | null = null): any[] {
+  getChunkedImageData(formId, basicData = null) {
     try {
-      const allImages: any[] = [];
+      const allImages = [];
       
       // If basic data was provided, use it
       if (basicData && Array.isArray(basicData)) {
@@ -457,7 +459,7 @@ class EnhancedStorageService {
    * @param {string} formId - The form/listing ID
    * @returns {Promise<boolean>} - Success status
    */
-  async saveDocumentMetadata(documents: DocumentMetadata[], formId: string): Promise<boolean> {
+  async saveDocumentMetadata(documents, formId) {
     if (!formId) return false;
     
     const operation = async () => {
@@ -468,7 +470,7 @@ class EnhancedStorageService {
           const store = transaction.objectStore('documents');
           
           // Create a transaction promise
-          const txPromise = new Promise<boolean>((resolve, reject) => {
+          const txPromise = new Promise((resolve, reject) => {
             transaction.oncomplete = () => resolve(true);
             transaction.onerror = (e) => reject(e.target.error);
           });
@@ -544,7 +546,7 @@ class EnhancedStorageService {
    * @param {string} formId - The form/listing ID
    * @returns {Promise<boolean>} - Success status
    */
-  async saveDocumentMetadataToLocalStorage(documents: DocumentMetadata[], formId: string): Promise<boolean> {
+  async saveDocumentMetadataToLocalStorage(documents, formId) {
     try {
       // Check if localStorage is nearly full
       if (this.isStorageNearFull()) {
@@ -625,7 +627,7 @@ class EnhancedStorageService {
    * @param {string} formId - The form ID to retrieve
    * @returns {Promise<Array>} - Array of document metadata
    */
-  async getDocumentMetadata(formId: string): Promise<DocumentMetadata[]> {
+  async getDocumentMetadata(formId) {
     if (!formId) return [];
     
     // First try IndexedDB
@@ -635,7 +637,7 @@ class EnhancedStorageService {
         const store = transaction.objectStore('documents');
         const request = store.get(`listing_documents_${formId}`);
         
-        const result = await new Promise<any>((resolve, reject) => {
+        const result = await new Promise((resolve, reject) => {
           request.onsuccess = () => resolve(request.result);
           request.onerror = () => reject(request.error);
         });
@@ -710,9 +712,9 @@ class EnhancedStorageService {
    * @param {Array} basicData - Optional basic metadata
    * @returns {Array} - Combined document data
    */
-  getChunkedDocumentData(formId: string, basicData: DocumentMetadata[] | null = null): DocumentMetadata[] {
+  getChunkedDocumentData(formId, basicData = null) {
     try {
-      const allDocs: DocumentMetadata[] = [];
+      const allDocs = [];
       
       // If basic data was provided, use it
       if (basicData && Array.isArray(basicData)) {
@@ -764,7 +766,7 @@ class EnhancedStorageService {
    * @param {Object} options - Upload options
    * @returns {Promise<Object>} - Upload result
    */
-  async uploadFile(file: File, path: string, options: any = {}): Promise<any> {
+  async uploadFile(file, path, options = {}) {
     if (!file || !path) {
       throw new Error('File and path are required');
     }
@@ -800,7 +802,7 @@ class EnhancedStorageService {
    * @param {string} path - Path to the file
    * @returns {Promise<void>}
    */
-  async deleteFile(path: string): Promise<void> {
+  async deleteFile(path) {
     if (!path) {
       return;
     }
@@ -819,11 +821,12 @@ class EnhancedStorageService {
    * Save the featured image index
    * @param {number} index - Featured image index
    * @param {string} formId - Form ID
+   * @returns {Promise<boolean>|void} - Success status or void
    */
-  saveFeaturedImageIndex(index: number, formId: string): Promise<boolean> | void {
+  saveFeaturedImageIndex(index, formId) {
     if (!formId) return;
     
-    const operation = async (): Promise<boolean> => {
+    const operation = async () => {
       try {
         // Try IndexedDB first
         if (this.dbReady && this.db) {
@@ -874,7 +877,7 @@ class EnhancedStorageService {
    * @param {string} formId - Form ID
    * @returns {number} Featured image index
    */
-  getFeaturedImageIndex(formId: string): number {
+  getFeaturedImageIndex(formId) {
     if (!formId) return 0;
     
     try {
@@ -895,7 +898,7 @@ class EnhancedStorageService {
    * Check if localStorage is near its capacity limit
    * @returns {boolean} True if storage is nearly full
    */
-  isStorageNearFull(): boolean {
+  isStorageNearFull() {
     try {
       // Approximate total localStorage space (typically 5MB)
       const totalStorageSpace = 5 * 1024 * 1024;
@@ -925,10 +928,10 @@ class EnhancedStorageService {
   /**
    * Clean up old data from localStorage
    */
-  cleanupLocalStorage(): void {
+  cleanupLocalStorage() {
     try {
       // Find chunk-related keys
-      const chunkKeys: string[] = [];
+      const chunkKeys = [];
       
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -957,16 +960,16 @@ class EnhancedStorageService {
   /**
    * Force clean all old data to free up space
    */
-  forceCleanAllOldData(): void {
+  forceCleanAllOldData() {
     // First clean up all chunk data
     this.cleanupLocalStorage();
     
     // Then find and remove all duplicate or older items
-    const keysToRemove: string[] = [];
+    const keysToRemove = [];
     
     try {
       // Create a map of base keys (without chunk suffixes)
-      const baseKeyMap = new Map<string, string[]>();
+      const baseKeyMap = new Map();
       
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -988,7 +991,7 @@ class EnhancedStorageService {
         if (!baseKeyMap.has(baseKey)) {
           baseKeyMap.set(baseKey, [key]);
         } else {
-          baseKeyMap.get(baseKey)?.push(key);
+          baseKeyMap.get(baseKey).push(key);
         }
       }
       
@@ -999,7 +1002,7 @@ class EnhancedStorageService {
           const minimalKey = keys.find(k => k.includes('minimal'));
           const mainKey = keys.find(k => k === baseKey);
           
-          const keysToKeep: string[] = [];
+          const keysToKeep = [];
           if (minimalKey) keysToKeep.push(minimalKey);
           if (mainKey) keysToKeep.push(mainKey);
           
@@ -1032,7 +1035,7 @@ class EnhancedStorageService {
    * @param {string} formId - The form/listing ID
    * @returns {Promise<boolean>} - Success status
    */
-  async saveDocumentsToFirestore(documents: DocumentMetadata[], formId: string): Promise<boolean> {
+  async saveDocumentsToFirestore(documents, formId) {
     if (!documents || !Array.isArray(documents)) return false;
     
     // Ensure formId is valid for Firestore
@@ -1076,28 +1079,14 @@ class EnhancedStorageService {
   }
   
   /**
-   * Get documents from Firestore
-   * @param {string} formId - The form/listing ID
-   * @returns {Promise<Array<DocumentMetadata>>} - Array of document objects
+   * Get documents from Firestore by form ID
+   * @param {string} formId - Form ID
+   * @returns {Promise<Array>} - Array of document objects
    */
-  async getDocumentsFromFirestore(formId: string): Promise<DocumentMetadata[]> {
+  async getDocumentsFromFirestore(formId) {
     // Ensure formId is valid for Firestore
     if (!formId || formId === 'default' || formId === 'undefined' || formId === 'null') {
-      console.warn('Invalid formId for Firestore, trying user-documents collection');
-      try {
-        // Try to get from generic documents collection
-        const userId = auth?.currentUser?.uid || 'anonymous';
-        const docRef = doc(db, 'user-documents', userId);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists() && docSnap.data().documents) {
-          const firestoreDocs = docSnap.data().documents;
-          console.log(`Retrieved ${firestoreDocs.length} documents from user-documents collection`);
-          return firestoreDocs;
-        }
-      } catch (error) {
-        console.error('Error retrieving from user-documents collection:', error);
-      }
+      console.warn('Invalid formId for Firestore query:', formId);
       return [];
     }
     
@@ -1130,12 +1119,7 @@ class EnhancedStorageService {
    * @param {string} options.userId - The user ID
    * @returns {Promise<boolean>} - Success status
    */
-  async saveToFirebase(options: {
-    documents?: DocumentMetadata[];
-    images?: any[];
-    formId?: string;
-    userId?: string;
-  } = {}): Promise<boolean> {
+  async saveToFirebase(options = {}) {
     const { documents, images, formId, userId } = options;
     
     // Ensure we have at least one valid data type to save
@@ -1206,7 +1190,7 @@ class EnhancedStorageService {
    * @param {string} id - The ID of the object with the temp URL
    * @returns {void}
    */
-  revokeTempUrl(id: string): void {
+  revokeTempUrl(id) {
     try {
       // Check if we have this URL in the tempUrls map
       if (id) {
