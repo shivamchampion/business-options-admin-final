@@ -40,11 +40,207 @@ import { generateSlug, getCurrentUser } from '@/lib/utils';
 // Collection name
 const LISTINGS_COLLECTION = 'listings';
 
+// Extended interface for listing input with optional featuredImageIndex
+interface ListingInput extends Partial<Listing> {
+  featuredImageIndex?: number;
+}
+
+/**
+ * Sanitizes data before saving to Firestore by converting undefined values to null
+ * and handling special cases like Dates and nested arrays
+ * @param data Object to sanitize
+ * @returns Sanitized object safe for Firestore
+ */
+const sanitizeForFirestore = (data: any): any => {
+  // Use a non-recursive approach to avoid stack overflow
+  const seen = new WeakMap();
+  
+  function sanitize(value: any, path: string = ''): any {
+    // Handle null/undefined
+    if (value === undefined || value === null) {
+      return null;
+    }
+    
+    // Handle primitives
+    if (typeof value !== 'object') {
+      if (typeof value === 'function') {
+        // Skip functions - not supported by Firestore
+        console.warn(`Skipping function at ${path}`);
+        return null;
+      }
+      return value;
+    }
+    
+    // Handle Date objects
+    if (value instanceof Date) {
+      return value;
+    }
+    
+    // Special handling for Firebase types
+    if (value && typeof value === 'object') {
+      // DocumentReference has path and id
+      if ('path' in value && 'id' in value && typeof value.path === 'string') {
+        return value;
+      }
+      
+      // Handle FieldValue like serverTimestamp()
+      const constructorName = value?.constructor?.name;
+      if (constructorName === 'FieldValue' || 
+          constructorName === 'DocumentReference' || 
+          constructorName === 'GeoPoint') {
+        return value;
+      }
+    }
+    
+    // Special deep-copy handling for known problematic paths
+    if (path === 'subCategories' || path.includes('.subCategories') || 
+        path.includes('media.galleryImages') || path.includes('classifications')) {
+      // For known problematic objects, create a flattened copy without circular references
+      if (Array.isArray(value)) {
+        // For arrays of strings or primitive values, just return a copy
+        if (value.length === 0 || typeof value[0] !== 'object') {
+          return [...value];
+        }
+        
+        // For arrays of objects, do a simplified copy of core properties
+        console.log(`Special handling for problematic array at ${path}`);
+        return value.map((item, idx) => {
+          if (item === null || item === undefined) return null;
+          
+          // If it's a primitive, just return it
+          if (typeof item !== 'object') return item;
+          
+          // Make a simple copy with just core fields
+          const simplified: Record<string, any> = {};
+          
+          // Copy only essential primitive properties
+          for (const [k, v] of Object.entries(item)) {
+            if (v === null || v === undefined) {
+              simplified[k] = null;
+              continue;
+            }
+            
+            // Only include primitive values and simple objects
+            if (typeof v !== 'object' || v instanceof Date) {
+              simplified[k] = v;
+            } else if (typeof v === 'object' && !Array.isArray(v)) {
+              // If it's an object but not array, include a flattened version
+              // with only primitive properties
+              const flatObj: Record<string, any> = {};
+              for (const [subKey, subVal] of Object.entries(v)) {
+                if (typeof subVal !== 'object' || subVal instanceof Date) {
+                  flatObj[subKey] = subVal;
+                }
+              }
+              simplified[k] = flatObj;
+            }
+          }
+          return simplified;
+        });
+      }
+    }
+    
+    // Handle circular references
+    if (seen.has(value)) {
+      console.warn(`Circular reference detected at ${path}`);
+      return null;
+    }
+    
+    // Add to seen objects
+    seen.set(value, true);
+    
+    // Handle arrays - Firestore doesn't support nested arrays
+    if (Array.isArray(value)) {
+      const result = [];
+      
+      for (let i = 0; i < value.length; i++) {
+        const item = value[i];
+        const itemPath = `${path}[${i}]`;
+        
+        // For arrays, we need to be careful about nested arrays
+        if (Array.isArray(item)) {
+          // Convert nested arrays to objects with numeric keys
+          // e.g., [1, 2, 3] becomes { "0": 1, "1": 2, "2": 3 }
+          console.warn(`Converting nested array at ${itemPath} to object with numeric keys`);
+          const objFromArray: Record<string, any> = {};
+          
+          for (let j = 0; j < item.length; j++) {
+            const sanitizedValue = sanitize(item[j], `${itemPath}[${j}]`);
+            if (sanitizedValue !== undefined) {
+              objFromArray[j.toString()] = sanitizedValue;
+            }
+          }
+          
+          result.push(objFromArray);
+        } else {
+          const sanitizedItem = sanitize(item, itemPath);
+          if (sanitizedItem !== undefined) {
+            result.push(sanitizedItem);
+          }
+        }
+      }
+      
+      return result;
+    }
+    
+    // Handle objects
+    const result: Record<string, any> = {};
+    
+    for (const [key, val] of Object.entries(value)) {
+      // Skip __typename and other special GraphQL fields
+      if (key === '__typename') continue;
+      
+      // Skip functions
+      if (typeof val === 'function') {
+        console.warn(`Skipping function property "${key}"`);
+        continue;
+      }
+      
+      const sanitizedValue = sanitize(val, path ? `${path}.${key}` : key);
+      
+      // Only add the property if it's not undefined
+      if (sanitizedValue !== undefined) {
+        result[key] = sanitizedValue;
+      }
+    }
+    
+    return result;
+  }
+  
+  return sanitize(data);
+};
+
 /**
  * Converts a Firestore timestamp to Date
  */
-const convertTimestampToDate = (timestamp: Timestamp | undefined): Date | undefined => {
-  return timestamp ? timestamp.toDate() : undefined;
+const convertTimestampToDate = (timestamp: Timestamp | unknown | undefined): Date | undefined => {
+  // Check if timestamp exists and has a toDate method (valid Firestore Timestamp)
+  if (timestamp && typeof timestamp === 'object' && 'toDate' in timestamp && typeof timestamp.toDate === 'function') {
+    try {
+      return timestamp.toDate();
+    } catch (error) {
+      console.warn('Error converting timestamp to date:', error);
+      return undefined;
+    }
+  }
+  
+  // Handle case where timestamp is already a Date
+  if (timestamp instanceof Date) {
+    return timestamp;
+  }
+  
+  // Handle case where timestamp is a number (unix timestamp in milliseconds)
+  if (typeof timestamp === 'number' && !isNaN(timestamp)) {
+    return new Date(timestamp);
+  }
+  
+  // Handle case where timestamp is a string (ISO date string)
+  if (typeof timestamp === 'string' && timestamp.trim() !== '') {
+    const date = new Date(timestamp);
+    return isNaN(date.getTime()) ? undefined : date;
+  }
+  
+  return undefined;
 };
 
 /**
@@ -118,6 +314,7 @@ const generateDisplayLocation = (
   if (countryName && countryName !== 'India') parts.push(countryName);
   return parts.join(', ');
 };
+
 /**
  * Get listings with pagination and filtering
  */
@@ -133,6 +330,7 @@ export const getListings = async (
       console.warn('Authentication not established for fetching listings');
       return { listings: [], lastDoc: null };
     }
+    
     // Start with a base query
     let baseQuery = collection(db, LISTINGS_COLLECTION);
 
@@ -144,19 +342,25 @@ export const getListings = async (
 
     // Apply filters
     if (filters) {
-      // Filter by type
-      if (filters.type && filters.type.length > 0) {
-        conditions.push(where('type', 'in', filters.type));
+      // Filter by owner first (most important filter)
+      if (filters.ownerId) {
+        conditions.push(where('ownerId', '==', filters.ownerId));
       }
 
       // Filter by status
       if (filters.status && filters.status.length > 0) {
-        conditions.push(where('status', 'in', filters.status));
+        // If there's only one status, use a simple equality check
+        if (filters.status.length === 1) {
+          conditions.push(where('status', '==', filters.status[0]));
+        } else {
+          // For multiple statuses, use 'in' operator
+          conditions.push(where('status', 'in', filters.status));
+        }
       }
 
-      // Filter by owner
-      if (filters.ownerId) {
-        conditions.push(where('ownerId', '==', filters.ownerId));
+      // Filter by type
+      if (filters.type && filters.type.length > 0) {
+        conditions.push(where('type', 'in', filters.type));
       }
 
       // Filter by featured status
@@ -196,6 +400,7 @@ export const getListings = async (
     }
 
     // Create the query with conditions and ordering
+    // Use a simpler ordering to avoid index issues
     let finalQuery = query(baseQuery, ...conditions, orderBy('createdAt', 'desc'));
 
     // Apply pagination
@@ -249,9 +454,9 @@ export const getListings = async (
           price = listing.digitalAssetDetails.sale.askingPrice.value;
         }
 
-        // Apply min and max filters
-        const passesMin = filters.priceRange.min ? price >= filters.priceRange.min : true;
-        const passesMax = filters.priceRange.max ? price <= filters.priceRange.max : true;
+        // Apply min and max filters with safe access
+        const passesMin = filters.priceRange?.min !== undefined ? price >= filters.priceRange.min : true;
+        const passesMax = filters.priceRange?.max !== undefined ? price <= filters.priceRange.max : true;
 
         return passesMin && passesMax;
       });
@@ -263,6 +468,59 @@ export const getListings = async (
     };
   } catch (error) {
     console.error('Error getting listings:', error);
+    
+    // If we get an index error, try a simpler query
+    if (error instanceof Error && error.message.includes('index')) {
+      console.log('Trying a simpler query without complex filters...');
+      
+      try {
+        // Create a simpler query with just the essential filters
+        let simpleQuery = collection(db, LISTINGS_COLLECTION);
+        let simpleConditions: any[] = [];
+        
+        // Add standard condition to exclude deleted listings
+        simpleConditions.push(where('isDeleted', '==', false));
+        
+        // Add owner filter if available
+        if (filters?.ownerId) {
+          simpleConditions.push(where('ownerId', '==', filters.ownerId));
+        }
+        
+        // Create a simple query with just these conditions
+        let finalSimpleQuery = query(simpleQuery, ...simpleConditions, orderBy('createdAt', 'desc'));
+        
+        // Apply pagination
+        if (lastDoc) {
+          finalSimpleQuery = query(finalSimpleQuery, startAfter(lastDoc), limit(pageSize));
+        } else {
+          finalSimpleQuery = query(finalSimpleQuery, limit(pageSize));
+        }
+        
+        // Execute the simple query
+        const simpleSnapshot = await getDocs(finalSimpleQuery);
+        
+        // Convert documents to listings
+        const simpleListings = simpleSnapshot.docs.map(doc => convertDocToListing(doc));
+        
+        // Apply client-side filtering for status
+        let filteredSimpleListings = simpleListings;
+        
+        if (filters?.status && filters.status.length > 0) {
+          filteredSimpleListings = simpleListings.filter(listing => 
+            filters.status?.includes(listing.status)
+          );
+        }
+        
+        return {
+          listings: filteredSimpleListings,
+          lastDoc: simpleSnapshot.docs[simpleSnapshot.docs.length - 1] || null
+        };
+      } catch (simpleError) {
+        console.error('Error with simple query:', simpleError);
+        return { listings: [], lastDoc: null };
+      }
+    }
+    
     return { listings: [], lastDoc: null };
   }
 };
@@ -270,19 +528,125 @@ export const getListings = async (
 /**
  * Get a listing by ID
  */
-export const getListingById = async (id: string): Promise<Listing> => {
+export const getListingById = async (id: string, signal?: AbortSignal): Promise<Listing> => {
   try {
+    // Check if request has been aborted
+    if (signal?.aborted) {
+      throw new Error('Request was aborted');
+    }
+    
+    // First check if we're online
+    if (!navigator.onLine) {
+      console.log('Device is offline, checking for cached listing data');
+      
+      // Try to get from local storage first
+      const cachedListingJSON = localStorage.getItem(`listing_${id}`);
+      if (cachedListingJSON) {
+        console.log('Found cached listing data');
+        const cachedListing = JSON.parse(cachedListingJSON);
+        return cachedListing;
+      }
+      
+      // If we're offline and no cache is available
+      throw new Error('Failed to get document because the client is offline.');
+    }
+    
+    // Proceed with Firestore query if online
+    console.log(`Fetching listing with ID: ${id} from Firestore`);
     const listingRef = doc(db, LISTINGS_COLLECTION, id);
-    const listingSnap = await getDoc(listingRef);
+    
+    // Create options object with abort signal if provided
+    const options: any = {};
+    if (signal) {
+      options.signal = signal;
+    }
+    
+    // Set a timeout for the Firestore query
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new Error('Firestore query timed out'));
+      }, 10000); // 10 second timeout
+      
+      // If signal is provided, listen for abort event to clear timeout
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          clearTimeout(timeoutId);
+          reject(new Error('Request was aborted'));
+        });
+      }
+    });
+    
+    // Race the query against the timeout
+    const listingSnap = await Promise.race([
+      getDoc(listingRef),
+      timeoutPromise
+    ]) as DocumentSnapshot;
+    
+    // Check if request has been aborted after query completed
+    if (signal?.aborted) {
+      throw new Error('Request was aborted');
+    }
 
     if (!listingSnap.exists()) {
       throw new Error(`Listing with ID ${id} not found`);
     }
 
-    return convertDocToListing(listingSnap);
+    // Convert to listing object
+    const listing = convertDocToListing(listingSnap);
+    
+    // Cache the result
+    try {
+      const dataToCache = {
+        ...listing,
+        _cacheTimestamp: new Date().toISOString()
+      };
+      localStorage.setItem(`listing_${id}`, JSON.stringify(dataToCache));
+      console.log('Cached listing data to localStorage');
+    } catch (e) {
+      console.warn('Failed to cache listing data:', e);
+    }
+    
+    // Final check for abort
+    if (signal?.aborted) {
+      throw new Error('Request was aborted');
+    }
+    
+    return listing;
   } catch (error) {
+    // If request was aborted, don't try to recover
+    if (error instanceof Error && error.message === 'Request was aborted') {
+      throw error;
+    }
+    
     console.error('Error getting listing by ID:', error);
-    throw new Error(`Failed to fetch listing: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    
+    // Check for offline errors specifically
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const isOfflineError = 
+      errorMessage.includes('offline') || 
+      errorMessage.includes('network') || 
+      errorMessage.includes('timeout') ||
+      errorMessage.includes('unavailable') ||
+      !navigator.onLine;
+    
+    if (isOfflineError) {
+      // Try to get from local storage as fallback
+      try {
+        const cachedListingJSON = localStorage.getItem(`listing_${id}`);
+        if (cachedListingJSON) {
+          console.log('Found cached listing data as fallback after online failure');
+          const cachedListing = JSON.parse(cachedListingJSON);
+          return cachedListing;
+        }
+      } catch (e) {
+        console.error('Error accessing cached listing data:', e);
+      }
+      
+      // If still no cached data
+      throw new Error('Failed to get document because the client is offline.');
+    }
+    
+    throw new Error(`Failed to fetch listing: ${errorMessage}`);
   }
 };
 
@@ -323,9 +687,9 @@ export const uploadListingImage = async (
 
     console.log(`Successfully processed image: ${file.name}`);
     return imageObject;
-  } catch (error) {
+  } catch (error: any) {
     console.error(`Error uploading image ${file.name}:`, error);
-    throw new Error(`Failed to upload image ${file.name}: ${error.message}`);
+    throw new Error(`Failed to upload image ${file.name}: ${error.message || 'Unknown error'}`);
   }
 }
 
@@ -406,56 +770,59 @@ export const createListing = async (
     console.log(`Created listing document reference with ID: ${listingId}`);
 
     // Upload images with robust error handling
-let galleryImages: ImageObject[] = [];
-let featuredImage: ImageObject | undefined;
+    let galleryImages: ImageObject[] = [];
+    let featuredImage: ImageObject | undefined;
 
-if (images && images.length > 0) {
-  console.log(`Uploading ${images.length} images...`);
-  
-  // Process images one at a time to avoid any potential issues
-  // This is more reliable than batch processing for production
-  for (let i = 0; i < images.length; i++) {
-    try {
-      console.log(`Processing image ${i+1}/${images.length}`);
-      const file = images[i];
+    if (images && images.length > 0) {
+      console.log(`Uploading ${images.length} images...`);
       
-      // Add timeout protection for each image
-      const uploadPromise = uploadListingImage(file, listingId, i);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error(`Image upload timeout for ${file.name}`)), 30000) // 30 second timeout
-      );
+      // Process images one at a time to avoid any potential issues
+      // This is more reliable than batch processing for production
+      for (let i = 0; i < images.length; i++) {
+        try {
+          console.log(`Processing image ${i+1}/${images.length}`);
+          const file = images[i];
+          
+          // Add timeout protection for each image
+          const uploadPromise = uploadListingImage(file, listingId, i);
+          const timeoutPromise = new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error(`Image upload timeout for ${file.name}`)), 30000) // 30 second timeout
+          );
+          
+          // Race against timeout
+          const imageObject = await Promise.race([uploadPromise, timeoutPromise]) as ImageObject;
+          
+          // Add to gallery
+          galleryImages.push(imageObject);
+          uploadedImages.push(imageObject); // For cleanup in case of errors
+          console.log(`Successfully uploaded image ${i+1}/${images.length}: ${file.name}`);
+        } catch (imageError) {
+          console.error(`Error uploading image ${i+1}/${images.length}:`, imageError);
+          // Continue with other images instead of failing completely
+        }
+      }
       
-      // Race against timeout
-      const imageObject = await Promise.race([uploadPromise, timeoutPromise]);
+      // Check if we managed to upload at least 3 images
+      if (galleryImages.length < 3) {
+        throw new Error(`Not enough images uploaded successfully. Need at least 3, got ${galleryImages.length}.`);
+      }
       
-      // Add to gallery
-      galleryImages.push(imageObject);
-      uploadedImages.push(imageObject); // For cleanup in case of errors
-      console.log(`Successfully uploaded image ${i+1}/${images.length}: ${file.name}`);
-    } catch (imageError) {
-      console.error(`Error uploading image ${i+1}/${images.length}:`, imageError);
-      // Continue with other images instead of failing completely
+      console.log(`Successfully uploaded ${galleryImages.length} out of ${images.length} images`);
+
+      // Fix for featuredImageIndex handling
+      // Cast listingData to ListingInput to access the featuredImageIndex property safely
+      const listingInputData = listingData as ListingInput;
+      if (listingInputData.featuredImageIndex !== undefined && 
+          typeof listingInputData.featuredImageIndex === 'number' && 
+          listingInputData.featuredImageIndex >= 0 && 
+          listingInputData.featuredImageIndex < galleryImages.length) {
+        featuredImage = galleryImages[listingInputData.featuredImageIndex];
+      } else if (galleryImages.length > 0) {
+        featuredImage = galleryImages[0];
+      }
+    } else {
+      throw new Error('At least 3 images are required for a listing');
     }
-  }
-  
-  // Check if we managed to upload at least 3 images
-  if (galleryImages.length < 3) {
-    throw new Error(`Not enough images uploaded successfully. Need at least 3, got ${galleryImages.length}.`);
-  }
-  
-  console.log(`Successfully uploaded ${galleryImages.length} out of ${images.length} images`);
-
-  // Set featured image based on featuredImageIndex or default to first
-  if (typeof listingData.featuredImageIndex === 'number' && 
-      listingData.featuredImageIndex >= 0 && 
-      listingData.featuredImageIndex < galleryImages.length) {
-    featuredImage = galleryImages[listingData.featuredImageIndex];
-  } else if (galleryImages.length > 0) {
-    featuredImage = galleryImages[0];
-  }
-} else {
-  throw new Error('At least 3 images are required for a listing');
-}
 
     // Upload documents
     let documentObjects: DocumentObject[] = [];
@@ -496,9 +863,9 @@ if (images && images.length > 0) {
         }
         
         console.log(`Successfully uploaded ${documentObjects.length} documents out of ${documents.length} attempts`);
-      } catch (docsError) {
+      } catch (docsError: any) {
         console.error('Error in document batch processing:', docsError);
-        throw new Error(`Failed to process documents: ${docsError.message}`);
+        throw new Error(`Failed to process documents: ${docsError.message || 'Unknown error'}`);
       }
     }
 
@@ -694,8 +1061,11 @@ if (images && images.length > 0) {
 
     console.log(`Saving listing data to Firestore with ID: ${listingId}`);
     
+    // Sanitize the data before saving to Firestore
+    const sanitizedData = sanitizeForFirestore(listingDataToSave);
+    
     // Save the listing to Firestore
-    await setDoc(listingRef, listingDataToSave);
+    await setDoc(listingRef, sanitizedData);
     console.log(`Successfully saved listing to Firestore`);
 
     // Update user's listings array
@@ -753,6 +1123,7 @@ if (images && images.length > 0) {
     throw new Error(`Failed to create listing: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };
+
 /**
  * Update an existing listing
  */
@@ -917,9 +1288,15 @@ export const updateListing = async (
         }
       }
     };
-
+    
+    // Sanitize data before updating in Firestore
+    const sanitizedData = sanitizeForFirestore(updateData);
+    
     // Update the listing in Firestore
-    await updateDoc(listingRef, updateData);
+    await updateDoc(listingRef, sanitizedData);
+    
+    console.log(`Successfully updated listing ${id}`);
+    return;
   } catch (error) {
     console.error('Error updating listing:', error);
     throw new Error(`Failed to update listing: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -931,8 +1308,20 @@ export const updateListing = async (
  */
 export const deleteListing = async (id: string): Promise<void> => {
   try {
-    // Get the listing to verify ownership
-    const listing = await getListingById(id);
+    // Check if we have a cached listing in localStorage
+    let listing;
+    try {
+      const cachedData = localStorage.getItem(`listing_${id}`);
+      if (cachedData) {
+        listing = JSON.parse(cachedData);
+      } else {
+        // Get the listing to verify ownership
+        listing = await getListingById(id);
+      }
+    } catch (e) {
+      // Fallback to fetch if cache access fails
+      listing = await getListingById(id);
+    }
 
     // Check user permissions
     const currentUser = await getCurrentUser();
@@ -952,6 +1341,13 @@ export const deleteListing = async (id: string): Promise<void> => {
       deletedAt: serverTimestamp(),
       status: ListingStatus.ARCHIVED
     });
+    
+    // Clear the cache for this listing
+    try {
+      localStorage.removeItem(`listing_${id}`);
+    } catch (e) {
+      console.warn('Failed to clear listing cache:', e);
+    }
   } catch (error) {
     console.error('Error deleting listing:', error);
     throw new Error(`Failed to delete listing: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -1341,6 +1737,7 @@ export const getListingCountsByType = async (currentUserId?: string): Promise<{ 
     };
   }
 };
+
 // Helper Functions
 
 /**
@@ -1404,6 +1801,9 @@ const calculateCompletenessScore = (listing: Partial<Listing>): number => {
     if (sd.market?.targetMarket) score++; maxScore++;
     if (sd.funding?.currentRaisingAmount?.value) score++; maxScore++;
     if (sd.funding?.equityOffered) score++; maxScore++;
+    if (sd.funding?.preMoneyValuation?.value > 0) score += 2;
+    if (sd.market?.marketSize?.value > 0) score += 2;
+    if (sd.market?.monthlyRevenue?.value && sd.market.monthlyRevenue.value > 0) score += 2;
   }
   else if (listing.type === ListingType.INVESTOR && listing.investorDetails) {
     const id = listing.investorDetails;

@@ -82,7 +82,7 @@ const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
 
   // Inline spinner or error with improved styling
   return (
-    <div className="flex flex-col items-center justify-center">
+    <div className="flex flex-col items-center justify-center min-h-[200px] w-full">
       {error ? (
         <div className="text-center animate-fade-in">
           <AlertTriangle className="h-6 w-6 text-red-500 mx-auto mb-2" />

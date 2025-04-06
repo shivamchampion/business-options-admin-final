@@ -22,9 +22,13 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Button from '@/components/ui/Button';
-import { toast } from 'react-hot-toast';
 import { ListingType } from '@/types/listings';
-import listingStorage from '@/lib/ListingStorageService';
+import { enhancedStorage } from '@/lib';
+import { formPersistenceService } from '@/services/formPersistenceService';
+import ToastManager, { TOAST_IDS } from "@/utils/ToastManager";
+import { v4 as uuidv4 } from 'uuid';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { DOCUMENT_CATEGORIES } from './DocumentCategoryMapper';
 
 /**
  * Document Upload Component - Step 4 of the listing form
@@ -38,22 +42,169 @@ import listingStorage from '@/lib/ListingStorageService';
  * - Listing type-specific document requirements
  */
 
-// Create a placeholder document function
-const createPlaceholderDocument = (meta) => {
-  return {
-    id: meta.id || `placeholder-${Date.now()}-${Math.random().toString(36).substring(2)}`,
-    name: meta.name || 'Document',
-    description: meta.description || '',
-    type: meta.type || 'unknown',
-    category: meta.category || 'essential',
-    format: meta.format || 'unknown',
-    size: meta.size || 0,
-    isPublic: meta.isPublic || false,
-    verificationStatus: 'pending',
-    uploadedAt: meta.uploadedAt ? new Date(meta.uploadedAt) : new Date(),
-    isPlaceholder: true,
+// Comprehensive industry-standard upload tracking system
+const useUploadTracker = () => {
+  const [uploadingFiles, setUploadingFiles] = useState(new Map());
+  const [failedUploads, setFailedUploads] = useState(new Set());
+  
+  // Add a file to track
+  const trackUpload = (fileId, metadata = {}) => {
+    setUploadingFiles(prev => {
+      const newMap = new Map(prev);
+      newMap.set(fileId, {
+        startTime: Date.now(),
+        status: 'uploading', // 'uploading', 'completed', 'failed', 'timeout'
+        progress: 0,
+        metadata
+      });
+      return newMap;
+    });
+  };
+  
+  // Update progress
+  const updateProgress = (fileId, progress) => {
+    setUploadingFiles(prev => {
+      if (!prev.has(fileId)) return prev;
+      const newMap = new Map(prev);
+      const record = newMap.get(fileId);
+      newMap.set(fileId, { ...record, progress });
+      return newMap;
+    });
+  };
+  
+  // Mark as completed
+  const markCompleted = (fileId) => {
+    setUploadingFiles(prev => {
+      if (!prev.has(fileId)) return prev;
+      const newMap = new Map(prev);
+      const record = newMap.get(fileId);
+      newMap.set(fileId, { 
+        ...record, 
+        status: 'completed',
     progress: 100,
-    uploaded: true
+        completedTime: Date.now()
+      });
+      return newMap;
+    });
+    
+    // Remove from failed uploads if it was there
+    if (failedUploads.has(fileId)) {
+      setFailedUploads(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(fileId);
+        return newSet;
+      });
+    }
+  };
+  
+  // Mark as failed
+  const markFailed = (fileId, error) => {
+    setUploadingFiles(prev => {
+      if (!prev.has(fileId)) return prev;
+      const newMap = new Map(prev);
+      const record = newMap.get(fileId);
+      newMap.set(fileId, { 
+        ...record, 
+        status: 'failed',
+        error: error || 'Upload failed',
+        failedTime: Date.now()
+      });
+      return newMap;
+    });
+    
+    // Add to failed uploads set
+    setFailedUploads(prev => {
+      const newSet = new Set(prev);
+      newSet.add(fileId);
+      return newSet;
+    });
+  };
+  
+  // Check for timeouts (files stuck in uploading state)
+  const checkTimeouts = (timeoutMs = 20000) => {
+    const now = Date.now();
+    const timedOutFiles = [];
+    
+    setUploadingFiles(prev => {
+      const newMap = new Map(prev);
+      
+      for (const [fileId, record] of prev.entries()) {
+        if (record.status === 'uploading') {
+          const elapsed = now - record.startTime;
+          
+          if (elapsed > timeoutMs) {
+            record.status = 'timeout';
+            record.error = `Upload timed out after ${Math.round(elapsed/1000)}s`;
+            record.failedTime = now;
+            timedOutFiles.push(fileId);
+            
+            // Add to failed uploads
+            setFailedUploads(failed => {
+              const newSet = new Set(failed);
+              newSet.add(fileId);
+              return newSet;
+            });
+          }
+        }
+      }
+      
+      return newMap;
+    });
+    
+    return timedOutFiles;
+  };
+  
+  // Get upload status
+  const getUploadStatus = (fileId) => {
+    if (!uploadingFiles.has(fileId)) return null;
+    return uploadingFiles.get(fileId);
+  };
+  
+  // Check if file is currently uploading
+  const isUploading = (fileId) => {
+    const record = uploadingFiles.get(fileId);
+    return record && record.status === 'uploading';
+  };
+  
+  // Check if file has failed
+  const hasFailed = (fileId) => {
+    return failedUploads.has(fileId);
+  };
+  
+  // Clear a specific file from tracking
+  const clearFile = (fileId) => {
+    setUploadingFiles(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(fileId);
+      return newMap;
+    });
+    
+    setFailedUploads(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(fileId);
+      return newSet;
+    });
+  };
+  
+  // Clear all tracked files
+  const clearAll = () => {
+    setUploadingFiles(new Map());
+    setFailedUploads(new Set());
+  };
+  
+  return {
+    uploadingFiles,
+    failedUploads,
+    trackUpload,
+    updateProgress,
+    markCompleted,
+    markFailed,
+    checkTimeouts,
+    getUploadStatus,
+    isUploading,
+    hasFailed,
+    clearFile,
+    clearAll
   };
 };
 
@@ -79,107 +230,704 @@ const Documents = ({
   const [replacingDocId, setReplacingDocId] = useState(null);
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [needsReupload, setNeedsReupload] = useState(false);
+  const [lastUploadStartTime, setLastUploadStartTime] = useState(0);
 
-  // References for scroll actions and cleanup
+  // New upload tracking system
+  const {
+    uploadingFiles,
+    trackUpload,
+    updateProgress,
+    markCompleted,
+    markFailed,
+    checkTimeouts,
+    isUploading: isFileUploading,
+    hasFailed,
+    clearFile
+  } = useUploadTracker();
+  
+  // Refs
+  const isMounted = useRef(true);
   const uploadFormRef = useRef(null);
   const dropzoneRef = useRef(null);
-  const isMounted = useRef(true);
+  const documentsHandled = useRef(false); // Reference for tracking document changes
+  const isInitialLoadRef = useRef(true); // Reference for tracking initial visibility change
 
-  // Clean up on unmount
+  // Initialize documents from props
   useEffect(() => {
-    // Attempt to restore active category from storage
-    const savedCategory = listingStorage.getActiveCategory(formId);
-    if (savedCategory) {
-      setActiveCategory(savedCategory);
+    if (documents && documents.length > 0) {
+      setUploadedDocuments([...documents]);
     }
-
-    // Clean up function
+  }, [documents]);
+  
+  // Check for timeout uploads every 5 seconds
+  useEffect(() => {
+    const checkInterval = setInterval(() => {
+      if (!isMounted.current) {
+        clearInterval(checkInterval);
+        return;
+      }
+      
+      // Check for timeouts (files stuck in uploading state for > 20 seconds)
+      const timedOutFiles = checkTimeouts(20000);
+      
+      if (timedOutFiles.length > 0) {
+        console.warn(`${timedOutFiles.length} document uploads timed out`);
+        
+        // Update document objects to reflect timeout status
+        setUploadedDocuments(prevDocs => {
+          const updatedDocs = [...prevDocs];
+          
+          for (const doc of updatedDocs) {
+            if (timedOutFiles.includes(doc.id)) {
+              doc.uploading = false;
+              doc.error = "Upload timed out";
+              doc.isPlaceholder = true; // Mark as placeholder so user can try again
+            }
+          }
+          
+          // Save to storage
+          enhancedStorage.saveDocumentMetadata(updatedDocs, formId);
+          return updatedDocs;
+        });
+        
+        // Show error toast to user
+        ToastManager.error(
+          'Some uploads timed out. Please try again.', 
+          TOAST_IDS.UPLOAD_TIMEOUT
+        );
+      }
+    }, 5000);
+    
+    return () => clearInterval(checkInterval);
+  }, [checkTimeouts, formId]);
+  
+  // Cleanup on unmount
+  useEffect(() => {
     return () => {
       isMounted.current = false;
     };
+  }, []);
+
+  // Add a cleanup effect for any stale upload progress
+  useEffect(() => {
+    // Clear any stale upload progress on mount
+    setUploadProgress({});
+    
+    // Any document that's still marked as uploading but isn't in uploadProgress
+    // should be updated to show as failed
+    setUploadedDocuments(prevDocs => {
+      const updatedDocs = prevDocs.map(doc => {
+        if (doc.uploading && !doc.completed) {
+          return {
+            ...doc,
+            uploading: false,
+            error: "Upload interrupted",
+            isPlaceholder: true
+          };
+        }
+        return doc;
+      });
+      
+      // Only update storage if there were changes
+      if (JSON.stringify(updatedDocs) !== JSON.stringify(prevDocs)) {
+        enhancedStorage.saveDocumentMetadata(updatedDocs, formId);
+      }
+      
+      return updatedDocs;
+    });
+    
+    // Clear isUploading state
+    setIsUploading(false);
+    
+    // Additional check after a short delay to make sure UI is updated
+    const cleanupTimer = setTimeout(() => {
+      if (isMounted.current) {
+        // Force another check in case state updates didn't properly clean up
+        setUploadProgress({});
+        setIsUploading(false);
+      }
+    }, 500);
+    
+    return () => clearTimeout(cleanupTimer);
   }, [formId]);
 
-  // Update parent component when documents change
+  // Forward changes to parent component
   useEffect(() => {
-    if (onChange) {
-      // Only send non-placeholder documents to parent
-      const nonPlaceholderDocs = uploadedDocuments.filter(doc => !doc.isPlaceholder);
-      onChange({
-        documents: nonPlaceholderDocs
-      });
+    if (typeof onChange === 'function') {
+      // Filter out incomplete/placeholder documents for parent component
+      const completedDocs = uploadedDocuments.filter(doc => 
+        !doc.isPlaceholder && (!doc.uploading || doc.completed)
+      );
+      
+      onChange({ documents: completedDocs });
     }
   }, [uploadedDocuments, onChange]);
 
-  // Save active category when it changes
+  // Load saved documents when component mounts
   useEffect(() => {
-    listingStorage.saveActiveCategory(activeCategory, formId);
-  }, [activeCategory, formId]);
-
-  // Initialize documents from props or restore from storage
-  useEffect(() => {
-    console.log("Initializing documents component with props:", documents?.length);
-
-    const initializeDocuments = async () => {
-      // If we have documents from props (e.g., in edit mode), use those
-      if (documents && documents.length > 0) {
-        console.log("Using documents from props:", documents.length);
-        setUploadedDocuments(documents);
-
-        // Save to storage for potential restore after reload
-        listingStorage.saveDocumentMetadata(documents, formId);
-      } else {
-        // Otherwise, try to restore from storage
-        const savedMeta = listingStorage.getDocumentMetadata(formId);
-
-        if (savedMeta && savedMeta.length > 0) {
-          console.log("Found saved document metadata:", savedMeta);
-
-          const restoredDocs = [];
-          let needReupload = false;
-
-          // Process each saved document
-          for (const meta of savedMeta) {
-            // If this is already a placeholder or has no path/url, create a placeholder
-            if (meta.isPlaceholder || (!meta.path && !meta.url)) {
-              restoredDocs.push(createPlaceholderDocument(meta));
-              needReupload = true;
-              continue;
+    if (formId) {
+      try {
+        console.log(`[DEBUG] Documents: Checking for saved documents for form ${formId}`);
+        
+        // Check localStorage directly first for immediate feedback
+        const localStorageKey = `listing_form_documents_${formId || 'default'}`;
+        const rawLocalStorageData = localStorage.getItem(localStorageKey);
+        console.log('[DEBUG] Documents: Direct localStorage check:', 
+          rawLocalStorageData ? 'Data found' : 'No data found', 
+          rawLocalStorageData ? `(${rawLocalStorageData.length} chars)` : ''
+        );
+        
+        if (rawLocalStorageData) {
+          try {
+            // Try to parse the localStorage data directly as a backup
+            const parsedLocalDocs = JSON.parse(rawLocalStorageData);
+            console.log(`[DEBUG] Documents: Successfully parsed localStorage data, found ${parsedLocalDocs.length} documents`);
+            
+            if (parsedLocalDocs && Array.isArray(parsedLocalDocs) && parsedLocalDocs.length > 0) {
+              // Process documents and update state
+              const processedLocalDocs = parsedLocalDocs.map(doc => ({
+                ...doc,
+                // Convert string date back to Date object if needed
+                uploadedAt: doc.uploadedAt ? new Date(doc.uploadedAt) : new Date(),
+                // Ensure these flags are set correctly
+                uploading: false,
+                completed: true,
+                // Add any missing fields with defaults
+                verificationStatus: doc.verificationStatus || 'pending',
+                isPublic: !!doc.isPublic
+              }));
+              
+              // Update state with localStorage documents
+              setUploadedDocuments(processedLocalDocs);
+              
+              // Call onChange to update parent form
+              if (typeof onChange === 'function') {
+                onChange({ documents: processedLocalDocs });
+              }
+              
+              console.log(`[DEBUG] Documents: Successfully loaded ${processedLocalDocs.length} documents from localStorage`);
+              return; // Exit early since we've successfully loaded from localStorage
             }
-
-            // Otherwise, it's a valid document
-            restoredDocs.push({
-              id: meta.id,
-              name: meta.name,
-              description: meta.description || '',
-              type: meta.type,
-              category: meta.category,
-              size: meta.size || 0,
-              format: meta.format,
-              isPublic: !!meta.isPublic,
-              verificationStatus: meta.verificationStatus || 'pending',
-              uploadedAt: meta.uploadedAt ? new Date(meta.uploadedAt) : new Date(),
-              path: meta.path,
-              url: meta.url,
-              progress: 100,
-              uploaded: true
-            });
+          } catch (localParseError) {
+            console.error('[DEBUG] Documents: Error parsing localStorage data:', localParseError);
           }
-
-          if (needReupload) {
-            setNeedsReupload(true);
-            toast.error(`Please re-upload ${restoredDocs.filter(doc => doc.isPlaceholder).length} document(s) that were lost during page refresh`, {
-              duration: 5000
-            });
-          }
-
-          // Update state with restored documents
-          setUploadedDocuments(restoredDocs);
         }
+        
+        // Fall back to the storage service method if direct localStorage failed
+        const savedDocuments = enhancedStorage.getDocumentMetadata(formId);
+        console.log(`[DEBUG] Documents: Storage service returned:`, savedDocuments);
+        
+        if (savedDocuments && Array.isArray(savedDocuments) && savedDocuments.length > 0) {
+          console.log(`[DEBUG] Documents: Found ${savedDocuments.length} saved documents for form ${formId}`);
+          
+          // Process documents to ensure all required fields are present
+          const processedDocuments = savedDocuments.map(doc => ({
+            ...doc,
+            // Convert string date back to Date object if needed
+            uploadedAt: doc.uploadedAt ? new Date(doc.uploadedAt) : new Date(),
+            // Ensure these flags are set correctly
+            uploading: false,
+            completed: true,
+            // Add any missing fields with defaults
+            verificationStatus: doc.verificationStatus || 'pending',
+            isPublic: !!doc.isPublic
+          }));
+          
+          // Update state with saved documents
+          setUploadedDocuments(processedDocuments);
+          
+          // Call onChange to update parent form
+          if (typeof onChange === 'function') {
+            onChange({ documents: processedDocuments });
+          }
+        } else {
+          // If storage service didn't find anything, try Firestore as a last resort
+          console.log(`[DEBUG] Documents: No saved documents found, checking Firestore...`);
+          
+          enhancedStorage.getDocumentsFromFirestore(formId || 'default')
+            .then(firestoreDocs => {
+              console.log(`[DEBUG] Documents: Firestore returned:`, firestoreDocs);
+              
+              if (firestoreDocs && Array.isArray(firestoreDocs) && firestoreDocs.length > 0) {
+                console.log(`[DEBUG] Documents: Found ${firestoreDocs.length} documents in Firestore`);
+                
+                // Process documents
+                const processedFirestoreDocs = firestoreDocs.map(doc => ({
+                  ...doc,
+                  // Ensure these flags are set correctly
+                  uploading: false,
+                  completed: true,
+                  // Add any missing fields with defaults
+                  verificationStatus: doc.verificationStatus || 'pending',
+                  isPublic: !!doc.isPublic
+                }));
+                
+                // Update state
+                setUploadedDocuments(processedFirestoreDocs);
+                
+                // Save to localStorage for next time
+                const jsonData = JSON.stringify(processedFirestoreDocs);
+                localStorage.setItem(`listing_form_documents_${formId || 'default'}`, jsonData);
+                
+                // Call onChange to update parent form
+                if (typeof onChange === 'function') {
+                  onChange({ documents: processedFirestoreDocs });
+                }
+                
+                console.log(`[DEBUG] Documents: Successfully recovered ${processedFirestoreDocs.length} documents from Firestore`);
+              } else {
+                console.log(`[DEBUG] Documents: No documents found in Firestore either`);
+              }
+            })
+            .catch(firestoreError => {
+              console.error('[DEBUG] Documents: Error getting documents from Firestore:', firestoreError);
+            });
+        }
+      } catch (error) {
+        console.error("[DEBUG] Documents: Error loading saved documents:", error);
+        ToastManager.error(
+          "Error loading saved documents. You may need to re-upload.", 
+          TOAST_IDS.DOCUMENT_UPLOAD_ERROR
+        );
       }
-    };
+    }
+  }, [formId, onChange]);
 
-    initializeDocuments();
-  }, [documents, formId]);
+  // Document upload handler
+  const handleFiles = async (acceptedFiles, rejectedFiles) => {
+    if (acceptedFiles.length === 0) {
+      console.warn('[DEBUG] No files accepted for upload');
+      return;
+    }
+
+    // Show loading state
+    setIsUploading(true);
+    
+    // Dismiss any existing toasts
+    ToastManager.dismiss();
+    
+    // Create loading toast that will be updated
+    const loadingToastId = ToastManager.loadingToast(`Uploading ${acceptedFiles.length} document${acceptedFiles.length > 1 ? 's' : ''}...`);
+    
+    const lastUploadTime = Date.now();
+    setLastUploadStartTime(lastUploadTime);
+    
+    // Filter files for valid types and size
+    const validFiles = acceptedFiles.filter(file => {
+      // Size check (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        setErrors(prev => [...prev, `File "${file.name}" exceeds maximum size of 10MB`]);
+        return false;
+      }
+      
+      return true;
+    });
+    
+    if (validFiles.length === 0) {
+      ToastManager.dismiss(loadingToastId);
+      ToastManager.error("No valid files to upload");
+      setIsUploading(false);
+      return;
+    }
+    
+    // Generate temp upload IDs for tracking
+    const uploadPromises = [];
+    
+    console.log('[DEBUG] Selected document type:', selectedDocType);
+    console.log('[DEBUG] Active category:', activeCategory);
+    
+    for (const file of validFiles) {
+      try {
+        const tempId = `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Ensure the correct category is being used
+        const documentCategory = activeCategory;
+        console.log('[DEBUG] Using category for upload:', documentCategory);
+        
+        // Create temporary document to show in UI
+        const tempDocument = {
+          id: tempId,
+          name: file.name,
+          description: newDocDescription || file.name,
+          size: file.size,
+          format: file.type,
+          category: documentCategory,
+          type: selectedDocType,
+          isPublic: newDocVisibility,
+          verificationStatus: 'pending',
+          uploadedAt: new Date(),
+          progress: 0,
+          uploading: true,
+          completed: false,
+          uploadTime: Date.now()
+        };
+        
+        console.log('[DEBUG] Created temporary document with category:', tempDocument.category);
+        
+        // Handle replacements
+        if (isReplacing && replacingDocId) {
+          // Update UI immediately with temp data
+          setUploadedDocuments(prev =>
+            prev.map(doc => doc.id === replacingDocId ? {
+              ...tempDocument,
+              id: replacingDocId
+            } : doc)
+          );
+          
+          // Set initial progress
+          setUploadProgress(prev => ({
+            ...prev,
+            [file.name]: 0
+          }));
+          
+          // DIRECTLY START THE FIREBASE UPLOAD - no simulation
+          const uploadPromise = (async () => {
+            try {
+              console.log('[DEBUG] Documents: Starting direct Firebase upload for file:', file.name);
+              
+              // Create a unique file path to avoid collisions
+              const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+              const docPath = `documents/${formId}/${fileName}`;
+              
+              console.log('[DEBUG] Documents: Upload path:', docPath);
+              
+              // Create a reference to the storage location
+              const storageRef = ref(enhancedStorage.storage, docPath);
+              
+              // Create and start the upload task
+              const uploadTask = uploadBytesResumable(storageRef, file);
+              
+              // Track progress manually
+              uploadTask.on('state_changed', 
+                (snapshot) => {
+                  // Calculate and report progress
+                  const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                  console.log(`[DEBUG] Documents: Upload progress for ${file.name}: ${progress}%`);
+                  
+                  // Update progress in state
+                  setUploadProgress(prev => ({
+                    ...prev,
+                    [file.name]: progress
+                  }));
+                },
+                (error) => {
+                  // Handle errors
+                  console.error(`[DEBUG] Documents: Upload error for ${file.name}:`, error);
+                  throw error;
+                }
+              );
+              
+              // Wait for the upload to complete
+              const snapshot = await uploadTask;
+              console.log(`[DEBUG] Documents: Upload completed for ${file.name}`);
+              
+              // Get the download URL
+              const downloadURL = await getDownloadURL(snapshot.ref);
+              console.log(`[DEBUG] Documents: Download URL obtained for ${file.name}`);
+              
+              // Create the document object
+              const finalDoc = {
+                id: replacingDocId,
+                name: file.name,
+                path: docPath,
+                url: downloadURL,
+                size: file.size,
+                format: file.type,
+                description: newDocDescription || file.name,
+                category: activeCategory,
+                type: selectedDocType,
+                isPublic: newDocVisibility,
+                verificationStatus: 'pending',
+                uploadedAt: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+                uploading: false,
+                completed: true
+              };
+              
+              console.log('[DEBUG] Documents: Created document object:', finalDoc);
+              
+              // Update in state
+              setUploadedDocuments(prevDocs => {
+                const newDocs = prevDocs.map(doc =>
+                  doc.id === replacingDocId ? finalDoc : doc
+                );
+                
+                // Save to storage
+                saveDocuments(newDocs);
+                
+                // Set final progress
+                setUploadProgress(prev => ({
+                  ...prev,
+                  [file.name]: 100
+                }));
+                
+                return newDocs;
+              });
+              
+              // We'll show a single success toast after all uploads complete
+              // instead of one per file to avoid toast overload
+              
+              // Remove this file from upload progress after success
+              setTimeout(() => {
+                setUploadProgress(prev => {
+                  const newProgress = { ...prev };
+                  delete newProgress[file.name];
+                  return newProgress;
+                });
+              }, 1000);
+              
+              return finalDoc;
+            } catch (error) {
+              console.error("[DEBUG] Documents: Error uploading to Firebase:", error);
+              
+              // Update document to show error
+              setUploadedDocuments(prevDocs => {
+                const newDocs = prevDocs.map(doc =>
+                  doc.id === replacingDocId ? {
+                    ...doc,
+                    uploading: false,
+                    completed: false,
+                    error: error.message || "Upload failed",
+                    isPlaceholder: true
+                  } : doc
+                );
+                
+                // Save to storage
+                saveDocuments(newDocs);
+                return newDocs;
+              });
+              
+              // Show error toast for this file
+              ToastManager.error(
+                `Error uploading ${file.name}: ${error.message}`, 
+                TOAST_IDS.DOCUMENT_UPLOAD_ERROR
+              );
+              
+              // Remove this file from upload progress after error
+              setUploadProgress(prev => {
+                const newProgress = { ...prev };
+                delete newProgress[file.name];
+                return newProgress;
+              });
+              
+              throw error;
+            }
+          })();
+          
+          uploadPromises.push(uploadPromise);
+          
+        } else {
+          // Add to state for immediate feedback
+          setUploadedDocuments(prev => [...prev, tempDocument]);
+          
+          // Set initial progress
+          setUploadProgress(prev => ({
+            ...prev,
+            [file.name]: 0
+          }));
+          
+          // DIRECTLY START THE FIREBASE UPLOAD - no simulation
+          const uploadPromise = (async () => {
+            try {
+              console.log('[DEBUG] Documents: Starting direct Firebase upload for file:', file.name);
+              
+              // Create a unique file path to avoid collisions
+              const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+              const docPath = `documents/${formId}/${fileName}`;
+              
+              console.log('[DEBUG] Documents: Upload path:', docPath);
+              
+              // Create a reference to the storage location
+              const storageRef = ref(enhancedStorage.storage, docPath);
+              
+              // Create and start the upload task
+              const uploadTask = uploadBytesResumable(storageRef, file);
+              
+              // Track progress manually
+              uploadTask.on('state_changed', 
+                (snapshot) => {
+                  // Calculate and report progress
+                  const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                  console.log(`[DEBUG] Documents: Upload progress for ${file.name}: ${progress}%`);
+                  
+                  // Update progress in state
+                  setUploadProgress(prev => ({
+                    ...prev,
+                    [file.name]: progress
+                  }));
+                },
+                (error) => {
+                  // Handle errors
+                  console.error(`[DEBUG] Documents: Upload error for ${file.name}:`, error);
+                  throw error;
+                }
+              );
+              
+              // Wait for the upload to complete
+              const snapshot = await uploadTask;
+              console.log(`[DEBUG] Documents: Upload completed for ${file.name}`);
+              
+              // Get the download URL
+              const downloadURL = await getDownloadURL(snapshot.ref);
+              console.log(`[DEBUG] Documents: Download URL obtained for ${file.name}`);
+              
+              // Create the document object
+              const finalDoc = {
+                id: uuidv4(),
+                name: file.name,
+                path: docPath,
+                url: downloadURL,
+                size: file.size,
+                format: file.type,
+                description: newDocDescription || file.name,
+                category: activeCategory,
+                type: selectedDocType,
+                isPublic: newDocVisibility,
+                verificationStatus: 'pending',
+                uploadedAt: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+                uploading: false,
+                completed: true
+              };
+              
+              console.log('[DEBUG] Documents: Created document object:', finalDoc);
+              
+              // Update in state
+              setUploadedDocuments(prevDocs => {
+                // Filter out the temp document and add the real one
+                const newDocs = prevDocs.filter(doc => doc.id !== tempId);
+                newDocs.push(finalDoc);
+                
+                // Save to storage
+                saveDocuments(newDocs);
+                
+                // Set final progress
+                setUploadProgress(prev => ({
+                  ...prev,
+                  [file.name]: 100
+                }));
+                
+                return newDocs;
+              });
+              
+              // We'll show a single success toast after all uploads complete
+              // instead of one per file to avoid toast overload
+              
+              // Remove this file from upload progress after success
+              setTimeout(() => {
+                setUploadProgress(prev => {
+                  const newProgress = { ...prev };
+                  delete newProgress[file.name];
+                  return newProgress;
+                });
+              }, 1000);
+              
+              return finalDoc;
+            } catch (error) {
+              console.error("[DEBUG] Documents: Error uploading to Firebase:", error);
+              
+              // Update document to show error
+              setUploadedDocuments(prevDocs => {
+                const newDocs = prevDocs.map(doc =>
+                  doc.id === tempId ? {
+                    ...doc,
+                    uploading: false,
+                    completed: false,
+                    error: error.message || "Upload failed",
+                    isPlaceholder: true
+                  } : doc
+                );
+                
+                // Save to storage
+                saveDocuments(newDocs);
+                return newDocs;
+              });
+              
+              // Show error toast for this file
+              ToastManager.error(
+                `Error uploading ${file.name}: ${error.message}`, 
+                TOAST_IDS.DOCUMENT_UPLOAD_ERROR
+              );
+            }
+          })();
+          
+          uploadPromises.push(uploadPromise);
+        }
+      } catch (error) {
+        console.error("Error processing document:", error);
+        newErrors.push(`${file.name}: ${error.message}`);
+      }
+    }
+    
+    // Reset form fields after all uploads are initiated
+    setNewDocDescription('');
+    setSelectedDocType(null);
+    setShowUploadForm(false);
+    setIsReplacing(false);
+    setReplacingDocId(null);
+    
+    // Wait for all uploads to complete
+    Promise.allSettled(uploadPromises)
+      .then(results => {
+        const failedCount = results.filter(r => r.status === 'rejected').length;
+        const successCount = results.filter(r => r.status === 'fulfilled').length;
+        
+        // All done, dismiss loading toast
+        ToastManager.dismiss(loadingToastId);
+        
+        // Show overall status
+        if (successCount > 0 && failedCount === 0) {
+          ToastManager.success(
+            `${successCount} document${successCount > 1 ? 's' : ''} uploaded successfully`, 
+            TOAST_IDS.DOCUMENT_UPLOAD_SUCCESS
+          );
+        } else if (successCount > 0 && failedCount > 0) {
+          ToastManager.success(
+            `${successCount} document${successCount > 1 ? 's' : ''} uploaded, ${failedCount} failed`, 
+            TOAST_IDS.DOCUMENT_UPLOAD_SUCCESS
+          );
+        }
+        
+        // Set uploading to false
+        setIsUploading(false);
+        
+        // Verify documents are actually saved in localStorage after upload
+        setTimeout(() => {
+          const localStorageKey = `listing_form_documents_${formId || 'default'}`;
+          const rawData = localStorage.getItem(localStorageKey);
+          console.log('[DEBUG] Documents: After upload localStorage check:', 
+            rawData ? 'Data found' : 'No data found', 
+            rawData ? `(${rawData.length} chars)` : '');
+          
+          if (rawData) {
+            try {
+              const parsedDocs = JSON.parse(rawData);
+              console.log(`[DEBUG] Documents: Found ${parsedDocs.length} documents in localStorage after upload`);
+            } catch (e) {
+              console.error('[DEBUG] Documents: Error parsing localStorage data after upload:', e);
+            }
+          }
+        }, 500);
+        
+        // Call onChange to update parent form only if it's a function
+        if (typeof onChange === 'function') {
+          const completedDocs = uploadedDocuments.filter(doc => 
+            !doc.isPlaceholder && (!doc.uploading || doc.completed)
+          );
+          
+          onChange({ documents: completedDocs });
+        }
+      })
+      .catch(error => {
+        console.error("Error in upload promises:", error);
+        ToastManager.dismiss(loadingToastId);
+        ToastManager.error(
+          "An error occurred during document upload", 
+          TOAST_IDS.DOCUMENT_UPLOAD_ERROR
+        );
+        setIsUploading(false);
+      });
+  };
 
   // Count of already uploaded documents by type
   const getDocumentTypeCount = (type) => {
@@ -206,26 +954,28 @@ const Documents = ({
 
   // Get document categories based on listing type
   const getDocumentCategories = () => {
+    console.log("[DEBUG] Getting document categories for listing type:", listingType);
+    
     const essentialDocs = {
-      id: 'essential',
+      id: DOCUMENT_CATEGORIES.ESSENTIAL,
       name: 'Essential Documents',
       description: 'Required documents that verify your listing'
     };
 
     const financialDocs = {
-      id: 'financial',
+      id: DOCUMENT_CATEGORIES.FINANCIAL,
       name: 'Financial Documents',
       description: 'Documents that demonstrate financial performance'
     };
 
     const operationalDocs = {
-      id: 'operational',
+      id: DOCUMENT_CATEGORIES.OPERATIONAL,
       name: 'Operational Documents',
       description: 'Documents related to day-to-day operations'
     };
 
     const verificationDocs = {
-      id: 'verification',
+      id: DOCUMENT_CATEGORIES.VERIFICATION,
       name: 'Verification Documents',
       description: 'Documents that verify business details and claims'
     };
@@ -238,7 +988,7 @@ const Documents = ({
           financialDocs,
           operationalDocs,
           {
-            id: 'sale',
+            id: DOCUMENT_CATEGORIES.SALE,
             name: 'Sale Documents',
             description: 'Documents related to the sale of the business'
           }
@@ -247,13 +997,13 @@ const Documents = ({
         return [
           essentialDocs,
           {
-            id: 'franchise',
+            id: DOCUMENT_CATEGORIES.FRANCHISE,
             name: 'Franchise Documents',
             description: 'Franchise disclosure and agreement documents'
           },
           financialDocs,
           {
-            id: 'training',
+            id: DOCUMENT_CATEGORIES.TRAINING,
             name: 'Training & Support',
             description: 'Documents related to franchise training and support'
           }
@@ -262,18 +1012,18 @@ const Documents = ({
         return [
           essentialDocs,
           {
-            id: 'pitch',
+            id: DOCUMENT_CATEGORIES.PITCH,
             name: 'Pitch Documents',
             description: 'Pitch deck and executive summary'
           },
           financialDocs,
           {
-            id: 'product',
+            id: DOCUMENT_CATEGORIES.PRODUCT,
             name: 'Product Documents',
             description: 'Product specifications, roadmap and technical details'
           },
           {
-            id: 'market',
+            id: DOCUMENT_CATEGORIES.MARKET,
             name: 'Market Research',
             description: 'Market analysis and traction metrics'
           }
@@ -282,17 +1032,17 @@ const Documents = ({
         return [
           essentialDocs,
           {
-            id: 'investment',
+            id: DOCUMENT_CATEGORIES.INVESTMENT,
             name: 'Investment Thesis',
             description: 'Investment philosophy and criteria'
           },
           {
-            id: 'portfolio',
+            id: DOCUMENT_CATEGORIES.PORTFOLIO,
             name: 'Portfolio Documents',
             description: 'Past investments and success cases'
           },
           {
-            id: 'process',
+            id: DOCUMENT_CATEGORIES.PROCESS,
             name: 'Process Documents',
             description: 'Investment process and due diligence materials'
           }
@@ -303,7 +1053,7 @@ const Documents = ({
           verificationDocs,
           financialDocs,
           {
-            id: 'technical',
+            id: DOCUMENT_CATEGORIES.TECHNICAL,
             name: 'Technical Documents',
             description: 'Technical specifications and infrastructure details'
           }
@@ -513,7 +1263,7 @@ const Documents = ({
     });
 
     setUploadedDocuments(updatedDocs);
-    listingStorage.saveDocumentMetadata(updatedDocs, formId);
+    formPersistenceService.saveDocumentMetadata(formId, updatedDocs);
 
     // Reset replacement state
     setIsReplacing(false);
@@ -521,249 +1271,6 @@ const Documents = ({
 
     return true;
   };
-
-  // Simulate upload progress for UI feedback
-  const simulateProgress = (fileName, callback) => {
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 10;
-
-      if (!isMounted.current) {
-        clearInterval(interval);
-        return;
-      }
-
-      setUploadProgress(prev => ({
-        ...prev,
-        [fileName]: progress
-      }));
-
-      if (progress >= 100) {
-        clearInterval(interval);
-
-        // Remove from progress tracking after a delay
-        setTimeout(() => {
-          if (!isMounted.current) return;
-
-          setUploadProgress(prev => {
-            const newProgress = { ...prev };
-            delete newProgress[fileName];
-
-            // If no more uploads in progress, set isUploading to false
-            if (Object.keys(newProgress).length === 0) {
-              setIsUploading(false);
-            }
-
-            return newProgress;
-          });
-        }, 1000);
-
-        // Call the callback when done
-        if (callback) callback(progress);
-      }
-    }, 200);
-  };
-  // Handle file drop
-  const onDrop = useCallback(async (acceptedFiles) => {
-    // Reset errors
-    setErrors([]);
-
-    if (acceptedFiles.length === 0) return;
-
-    setIsUploading(true);
-    toast.loading('Uploading documents...', { id: 'document-upload' });
-
-    const newErrors = [];
-    const validFiles = [];
-
-    // Validate each file
-    for (const file of acceptedFiles) {
-      try {
-        // Check file size (20MB limit for documents)
-        if (file.size > 20 * 1024 * 1024) {
-          newErrors.push(`${file.name}: File size must be less than 20MB`);
-          continue;
-        }
-
-        // Add to valid files
-        validFiles.push(file);
-      } catch (error) {
-        newErrors.push(`${file.name}: ${error.message}`);
-      }
-    }
-
-    // Set errors if any
-    if (newErrors.length > 0) {
-      setErrors(newErrors);
-      if (onError) onError(newErrors);
-      toast.error('Some files could not be uploaded', { id: 'document-upload' });
-    }
-
-    // Process valid files
-    const newUploadedDocs = [];
-
-    for (const file of validFiles) {
-      // Update progress state for this file
-      setUploadProgress(prev => ({
-        ...prev,
-        [file.name]: 0
-      }));
-
-      try {
-        // Create document object with temp data
-        const tempId = listingStorage.generateUniqueId();
-        const tempUrl = listingStorage.createTempUrl(file, tempId);
-
-        // Temporary document for immediate display
-        const tempDocument = {
-          id: tempId,
-          name: file.name,
-          description: newDocDescription,
-          size: file.size,
-          format: file.type,
-          category: activeCategory,
-          type: selectedDocType,
-          isPublic: newDocVisibility,
-          verificationStatus: 'pending',
-          uploadedAt: new Date(),
-          progress: 0,
-          uploaded: false,
-          url: tempUrl,
-          preview: tempUrl,
-          file: file,
-          tempUrl: true,
-          uploading: true
-        };
-
-        // If replacing, update existing document
-        let replacementMade = false;
-
-        if (isReplacing && replacingDocId) {
-          // Add to state for immediate feedback
-          setUploadedDocuments(prev =>
-            prev.map(doc => doc.id === replacingDocId ? tempDocument : doc)
-          );
-
-          // Upload with progress simulation
-          simulateProgress(file.name, async (progress) => {
-            if (progress >= 100) {
-              try {
-                // Upload to Firebase
-                const uploadedDoc = await listingStorage.uploadFile(file, 'documents', formId);
-
-                // Add additional document info
-                const finalDoc = {
-                  ...uploadedDoc,
-                  description: newDocDescription,
-                  category: activeCategory,
-                  type: selectedDocType,
-                  isPublic: newDocVisibility,
-                  verificationStatus: 'pending',
-                  uploadedAt: new Date(),
-                  tempUrl: false,
-                  uploading: false
-                };
-
-                // Replace the temporary document with the uploaded one
-                setUploadedDocuments(prevDocs => {
-                  const newDocs = prevDocs.map(doc =>
-                    doc.id === replacingDocId ? finalDoc : doc
-                  );
-
-                  // Save to storage
-                  listingStorage.saveDocumentMetadata(newDocs, formId);
-
-                  return newDocs;
-                });
-
-                // Add to new documents array
-                newUploadedDocs.push(finalDoc);
-
-                // Revoke temp URL
-                listingStorage.revokeTempUrl(tempId);
-
-                toast.success('Document replaced successfully', { id: 'document-upload' });
-              } catch (error) {
-                console.error("Error uploading to Firebase:", error);
-                toast.error(`Error uploading ${file.name}`, { id: 'document-upload' });
-              }
-            }
-          });
-
-          replacementMade = true;
-        } else {
-          // Add to state for immediate feedback
-          setUploadedDocuments(prev => [...prev, tempDocument]);
-
-          // Upload with progress simulation
-          simulateProgress(file.name, async (progress) => {
-            if (progress >= 100) {
-              try {
-                // Upload to Firebase
-                const uploadedDoc = await listingStorage.uploadFile(file, 'documents', formId);
-
-                // Add additional document info
-                const finalDoc = {
-                  ...uploadedDoc,
-                  description: newDocDescription,
-                  category: activeCategory,
-                  type: selectedDocType,
-                  isPublic: newDocVisibility,
-                  verificationStatus: 'pending',
-                  uploadedAt: new Date(),
-                  tempUrl: false,
-                  uploading: false
-                };
-
-                // Replace the temporary document with the uploaded one
-                setUploadedDocuments(prevDocs => {
-                  const newDocs = prevDocs.map(doc =>
-                    doc.id === tempId ? finalDoc : doc
-                  );
-
-                  // Save metadata
-                  listingStorage.saveDocumentMetadata(newDocs, formId);
-
-                  return newDocs;
-                });
-
-                // Add to new documents array
-                newUploadedDocs.push(finalDoc);
-
-                // Revoke temp URL
-                listingStorage.revokeTempUrl(tempId);
-              } catch (error) {
-                console.error("Error uploading to Firebase:", error);
-                toast.error(`Error uploading ${file.name}`, { id: 'document-upload' });
-              }
-            }
-          });
-        }
-      } catch (error) {
-        console.error("Error processing file:", error);
-        newErrors.push(`${file.name}: ${error.message}`);
-      }
-    }
-
-    // Reset form fields after all uploads are initiated
-    setTimeout(() => {
-      if (!isMounted.current) return;
-
-      setNewDocDescription('');
-      setSelectedDocType(null);
-      setShowUploadForm(false);
-      setIsReplacing(false);
-      setReplacingDocId(null);
-
-      // Success toast if no errors
-      if (newErrors.length === 0) {
-        toast.success(`${validFiles.length} document(s) uploading`, {
-          id: 'document-upload'
-        });
-      }
-    }, 500);
-
-  }, [newDocDescription, activeCategory, selectedDocType, newDocVisibility, isReplacing, replacingDocId, onError, formId]);
 
   // Configure dropzone
   const {
@@ -774,7 +1281,7 @@ const Documents = ({
     isDragReject,
     open
   } = useDropzone({
-    onDrop,
+    onDrop: handleFiles,
     disabled: isLoading || !selectedDocType,
     maxSize: 20 * 1024 * 1024, // 20MB
     accept: {
@@ -811,41 +1318,87 @@ const Documents = ({
 
   // Handle deletion of a document
   const handleDeleteDocument = async (id, name) => {
-    // Find the document
-    const docToDelete = uploadedDocuments.find(doc => doc.id === id);
-
-    if (!docToDelete) {
-      console.warn("No document found with ID:", id);
-      return;
-    }
-
+    // Always dismiss existing toasts first
+    ToastManager.dismissAll();
+    
+    // Show loading toast
+    const loadingToastId = ToastManager.loading(
+      `Deleting document...`, 
+      TOAST_IDS.LOADING
+    );
+    
     try {
+      // Find the document
+      const docToDelete = uploadedDocuments.find(doc => doc.id === id);
+
+      if (!docToDelete) {
+        console.warn("No document found with ID:", id);
+        ToastManager.dismiss(loadingToastId);
+        return;
+      }
+
       // Delete from Firebase Storage if it has a path
       if (docToDelete.path && !docToDelete.isPlaceholder) {
-        await listingStorage.deleteFile(docToDelete.path);
+        try {
+          await enhancedStorage.deleteFile(docToDelete.path);
+        } catch (storageError) {
+          // Check if it's a "not found" error and log but continue
+          if (storageError.code === 'storage/object-not-found') {
+            console.log(`[DEBUG] Documents: File ${docToDelete.path} not found in storage, but continuing with document deletion`);
+            // We can continue with document deletion even if the file doesn't exist
+          } else {
+            // For other storage errors, log but don't throw to allow document deletion to proceed
+            console.error("Error deleting file from storage:", storageError);
+          }
+        }
       }
 
       // If it has a temp URL, revoke it
       if (docToDelete.tempUrl) {
-        listingStorage.revokeTempUrl(docToDelete.id);
+        enhancedStorage.revokeTempUrl(docToDelete.id);
+      }
+
+      // Remove from uploadingFiles tracking if present
+      if (uploadingFiles.has(id)) {
+        const newUploadingFiles = new Map(uploadingFiles);
+        newUploadingFiles.delete(id);
+        setUploadingFiles(newUploadingFiles);
       }
 
       // Remove from state
-      const updatedDocs = uploadedDocuments.filter(doc => doc.id !== id);
-      setUploadedDocuments(updatedDocs);
+      const newDocs = uploadedDocuments.filter(doc => doc.id !== id);
+      setUploadedDocuments(newDocs);
 
-      // Update storage
-      listingStorage.saveDocumentMetadata(updatedDocs, formId);
+      // Save to storage
+      saveDocuments(newDocs);
 
-      toast.success(`Document "${name}" deleted successfully`);
+      // Dismiss loading toast
+      ToastManager.dismiss(loadingToastId);
+      
+      // Show success toast
+      ToastManager.success(
+        `Document "${name}" deleted`, 
+        TOAST_IDS.DOCUMENT_DELETE_SUCCESS
+      );
     } catch (error) {
       console.error("Error deleting document:", error);
-      toast.error("Error deleting document");
+      
+      // Dismiss loading toast
+      ToastManager.dismiss(loadingToastId);
+      
+      // Show error toast
+      ToastManager.error(
+        `Error deleting document: ${error.message}`, 
+        TOAST_IDS.DOCUMENT_DELETE_ERROR
+      );
     }
   };
 
   // Handle replacing a document
   const handleReplaceDocument = (id, type, name) => {
+    // Always dismiss existing toasts first
+    ToastManager.dismissAll();
+    
     setIsReplacing(true);
     setReplacingDocId(id);
     setSelectedDocType(type);
@@ -855,8 +1408,12 @@ const Documents = ({
     setTimeout(() => {
       if (uploadFormRef.current) {
         uploadFormRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
         // Show toast message with instruction
-        toast.info(`Select a file to replace: ${name}`, { duration: 4000 });
+        ToastManager.info(
+          `Select a file to replace: ${name}`, 
+          TOAST_IDS.DOCUMENT_REPLACE_INFO
+        );
       }
     }, 100);
   };
@@ -934,8 +1491,682 @@ const Documents = ({
     );
   };
 
+  // Improved document status check function
+  const isDocumentStuck = (doc) => {
+    if (!doc.uploading || doc.completed) return false;
+    
+    const currentTime = new Date().getTime();
+    // Check both tracking methods
+    const uploadStartTime = uploadingFiles.get(doc.id) || doc.uploadStartTime;
+    if (!uploadStartTime) return false;
+    
+    // Show as stuck after 10 seconds (before actually timing out) to give user early feedback
+    return (currentTime - uploadStartTime > 10000); 
+  };
+
+  // Add the enhanced document status indicator component
+  const DocumentStatusIndicator = ({ document }) => {
+    const isStuck = isDocumentStuck(document);
+    
+    if (isStuck) {
   return (
-    <div className="space-y-6">
+        <span className="ml-1 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full flex items-center flex-shrink-0">
+          <AlertTriangle className="h-3 w-3 mr-1" />
+          Upload stuck
+        </span>
+      );
+    }
+    
+    if (document.uploading && !document.completed) {
+      return (
+        <span className="ml-1 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center flex-shrink-0">
+          <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+          Uploading
+        </span>
+      );
+    }
+    
+    if (document.error) {
+      return (
+        <span className="ml-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full flex items-center flex-shrink-0">
+          <AlertTriangle className="h-3 w-3 mr-1" />
+          Upload failed
+        </span>
+      );
+    }
+    
+    if (document.completed || (!document.uploading && !document.error)) {
+      return (
+        <span className="ml-1 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center flex-shrink-0">
+          <Check className="h-3 w-3 mr-1" />
+          Uploaded
+        </span>
+      );
+    }
+    
+    return null;
+  };
+
+  // Periodically clean up stale upload states every 30 seconds after mount
+  useEffect(() => {
+    // Schedule a periodic cleanup
+    const periodicCleanup = setInterval(() => {
+      if (!isMounted.current) return;
+      
+      // Check if there are any active uploads according to state
+      const hasActiveUploads = Object.keys(uploadProgress).length > 0 || isUploading;
+      
+      // Check if any documents are still marked as uploading
+      const hasUploadingDocs = uploadedDocuments.some(doc => doc.uploading && !doc.completed);
+      
+      // If upload states are inconsistent, clean them up
+      if ((hasActiveUploads && !hasUploadingDocs) || 
+          (!hasActiveUploads && hasUploadingDocs) ||
+          // Or if uploads have been "active" for too long (more than 5 minutes)
+          (hasActiveUploads && Date.now() - lastUploadStartTime > 5 * 60 * 1000)) {
+        // Clear upload progress
+        setUploadProgress({});
+        
+        // Clear isUploading state
+        setIsUploading(false);
+        
+        console.log('[Documents] Auto-cleaned stale upload states');
+      }
+    }, 30000); // Check every 30 seconds
+    
+    return () => clearInterval(periodicCleanup);
+  }, [uploadProgress, isUploading, uploadedDocuments]);
+
+  // Document card with improved status indication for stuck uploads
+  const renderDocumentCard = (document) => {
+    const docName = document.name || 'Document';
+    const docSize = formatFileSize(document.size);
+    const isStuck = isDocumentStuck(document);
+    const isPlaceholder = document.isPlaceholder;
+    
+    return (
+      <div 
+        id={`document-${document.id}`}
+        className={`p-4 border rounded-md shadow-sm bg-white hover:bg-gray-50 transition-colors ${
+          isStuck ? 'border-orange-300 bg-orange-50' :
+          document.uploading && !document.completed ? 'border-blue-200' : 
+          document.error ? 'border-red-200' : 
+          isPlaceholder ? 'border-orange-200' : 
+          'border-gray-200'
+        }`}
+      >
+        <div className="flex items-start mb-2">
+          <div className="flex-shrink-0 mr-3">
+            {getDocumentIcon(document.format || document.type)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center">
+              <h3 className="text-sm font-medium text-gray-900 truncate mr-1">
+                {docName}
+              </h3>
+              
+              {/* Use the enhanced status indicator */}
+              <DocumentStatusIndicator document={document} />
+            </div>
+            <div className="flex items-center text-xs text-gray-500 mt-1">
+              <span className="truncate">{getDocumentTypeName(document.type)}</span>
+              <span className="mx-1.5">•</span>
+              <span>{docSize}</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* Show progress bar during upload */}
+        {document.uploading && !document.completed && (
+          <div className="mt-2">
+            <div className="flex items-center justify-between text-xs mb-1">
+              <span className={isStuck ? "text-orange-600 font-medium" : "text-gray-500"}>
+                {isStuck ? "Upload appears stuck" : "Uploading..."}
+              </span>
+              <span className="text-gray-700 font-medium">
+                {uploadProgress[document.name] || 0}%
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-1.5">
+              <div 
+                className={`h-1.5 rounded-full ${
+                  isStuck ? "bg-orange-500" : 
+                  getProgressColor(uploadProgress[document.name] || 0)
+                }`} 
+                style={{ width: `${uploadProgress[document.name] || 0}%` }}
+              ></div>
+            </div>
+            
+            {/* Add clear button for stuck uploads */}
+            {isStuck && (
+              <div className="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Mark as failed and clear upload progress
+                    setUploadedDocuments(prevDocs => {
+                      const updatedDocs = prevDocs.map(doc => 
+                        doc.id === document.id ? {
+                          ...doc,
+                          uploading: false,
+                          error: "Upload cancelled",
+                          isPlaceholder: true
+                        } : doc
+                      );
+                      enhancedStorage.saveDocumentMetadata(updatedDocs, formId);
+                      return updatedDocs;
+                    });
+                    
+                    // Clear from upload progress
+                    setUploadProgress(prev => {
+                      const newProgress = { ...prev };
+                      delete newProgress[document.name];
+                      return newProgress;
+                    });
+                  }}
+                  className="text-xs px-2 py-1 bg-white text-orange-600 hover:text-orange-800 border border-orange-200 rounded-md"
+                >
+                  Cancel upload
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        
+        <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+          <div className="text-xs">
+            {document.isPublic ? (
+              <span className="inline-flex items-center text-green-600">
+                <Eye className="h-3 w-3 mr-1" />
+                Public
+              </span>
+            ) : (
+              <span className="inline-flex items-center text-gray-500">
+                <EyeOff className="h-3 w-3 mr-1" />
+                Private
+              </span>
+            )}
+          </div>
+          
+          <div className="flex space-x-2">
+            {/* Only show buttons for completed documents or placeholders */}
+            {(!document.uploading || document.completed || isPlaceholder) && (
+              <>
+                {document.isPlaceholder ? (
+                  <button
+                    type="button"
+                    onClick={() => handleDocumentTypeSelect(document.type, getDocumentTypeName(document.type))}
+                    className="text-xs px-2 py-1 text-blue-600 hover:text-blue-700"
+                  >
+                    <Upload className="h-3 w-3 mr-1 inline-block" />
+                    Retry
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleReplaceDocument(document.id, document.type, docName)}
+                    className="text-xs px-2 py-1 text-blue-600 hover:text-blue-700"
+                    disabled={isLoading}
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1 inline-block" />
+                    Replace
+                  </button>
+                )}
+                
+                <button
+                  type="button"
+                  onClick={() => handleDeleteDocument(document.id, docName)}
+                  className="text-xs px-2 py-1 text-red-600 hover:text-red-700"
+                  disabled={isLoading}
+                >
+                  <Trash2 className="h-3 w-3 mr-1 inline-block" />
+                  Delete
+                </button>
+              </>
+            )}
+            
+            {/* Show cancel button for in-progress uploads */}
+            {document.uploading && !document.completed && (
+              <button
+                type="button"
+                onClick={() => handleDeleteDocument(document.id, docName)}
+                className="text-xs px-2 py-1 text-red-600 hover:text-red-700"
+                disabled={isLoading}
+              >
+                <X className="h-3 w-3 mr-1 inline-block" />
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Add a function to force cleanup of any stale uploads
+  const forceCleanupStaleUploads = () => {
+    // Clear upload progress
+    setUploadProgress({});
+    
+    // Clear isUploading state
+    setIsUploading(false);
+    
+    // Update any documents still showing as uploading
+    setUploadedDocuments(prevDocs => {
+      const updatedDocs = prevDocs.map(doc => {
+        if (doc.uploading && !doc.completed) {
+          return {
+            ...doc,
+            uploading: false,
+            error: "Upload interrupted",
+            isPlaceholder: true
+          };
+        }
+        return doc;
+      });
+      
+      // Save to storage if changes were made
+      if (JSON.stringify(updatedDocs) !== JSON.stringify(prevDocs)) {
+        enhancedStorage.saveDocumentMetadata(updatedDocs, formId);
+      }
+      
+      return updatedDocs;
+    });
+    
+    ToastManager.success(
+      'Upload state cleared', 
+      TOAST_IDS.GENERIC_SUCCESS
+    );
+  };
+
+  // Sanitize document for Firestore storage - deep clean all undefined values
+  const sanitizeDocumentForFirestore = (doc) => {
+    console.log('[DEBUG] Sanitizing document for Firestore with category:', doc.category);
+    
+    // Handle null or undefined input
+    if (!doc) {
+      console.log('[DEBUG] Documents: Null document provided, creating empty object');
+      return { 
+        id: uuidv4(), 
+        type: 'other', 
+        name: 'Unnamed Document', 
+        category: 'essential',
+        createdAt: new Date().toISOString(),
+        uploading: false,
+        completed: true,
+        isPublic: false,
+        verificationStatus: 'pending',
+        size: 0
+      };
+    }
+    
+    // Store original category for preservation
+    const originalCategory = doc.category || 'other';
+    console.log('[DEBUG] Original document category before cleaning:', originalCategory);
+    
+    // Function to recursively clean objects
+    const cleanObject = (obj) => {
+      // Handle non-objects
+      if (!obj || typeof obj !== 'object') {
+        return obj;
+      }
+      
+      // Handle arrays
+      if (Array.isArray(obj)) {
+        return obj.map(item => typeof item === 'object' ? cleanObject(item) : item)
+                  .filter(item => item !== undefined);
+      }
+      
+      // Create a new clean object
+      const cleaned = {};
+      
+      // Process each key
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          const value = obj[key];
+          
+          // Skip undefined values
+          if (value === undefined) {
+            console.log(`[DEBUG] Documents: Removing undefined value for key: ${key}`);
+            continue;
+          }
+          
+          // Handle nested objects (including arrays)
+          if (value !== null && typeof value === 'object') {
+            const cleanedValue = cleanObject(value);
+            // Only add non-empty objects
+            if (cleanedValue !== null && 
+               (typeof cleanedValue !== 'object' || 
+                Object.keys(cleanedValue).length > 0 || 
+                Array.isArray(cleanedValue))) {
+              cleaned[key] = cleanedValue;
+            }
+          } else {
+            // For primitive values, add directly
+            cleaned[key] = value;
+          }
+        }
+      }
+      
+      return cleaned;
+    };
+    
+    // Create a clean copy of the document
+    let sanitized = cleanObject(doc);
+    
+    // Make sure we return at least an empty object
+    if (!sanitized || typeof sanitized !== 'object') {
+      sanitized = {};
+    }
+    
+    // Make sure required fields are present with valid values (not undefined)
+    if (!sanitized.id) {
+      sanitized.id = uuidv4();
+      console.log('[DEBUG] Documents: Added missing id:', sanitized.id);
+    }
+    
+    if (!sanitized.type) {
+      sanitized.type = 'other';
+      console.log('[DEBUG] Documents: Added missing type: other');
+    }
+    
+    if (!sanitized.name) {
+      sanitized.name = 'Unnamed Document';
+      console.log('[DEBUG] Documents: Added missing name: Unnamed Document');
+    }
+    
+    // Always ensure we keep the original category
+    sanitized.category = originalCategory;
+    console.log('[DEBUG] Documents: Restored original category:', originalCategory);
+    
+    // Ensure Date objects are converted to ISO strings
+    if (sanitized.uploadedAt) {
+      if (sanitized.uploadedAt instanceof Date) {
+        sanitized.uploadedAt = sanitized.uploadedAt.toISOString();
+      } else if (typeof sanitized.uploadedAt !== 'string') {
+        sanitized.uploadedAt = new Date().toISOString();
+      }
+    } else {
+      sanitized.uploadedAt = new Date().toISOString();
+    }
+    
+    if (sanitized.createdAt) {
+      if (sanitized.createdAt instanceof Date) {
+        sanitized.createdAt = sanitized.createdAt.toISOString();
+      } else if (typeof sanitized.createdAt !== 'string') {
+        sanitized.createdAt = new Date().toISOString();
+      }
+    } else {
+      sanitized.createdAt = new Date().toISOString();
+    }
+    
+    // Format for Firestore - handle specific properties that might cause issues
+    sanitized.format = sanitized.format || 'application/octet-stream';
+    sanitized.size = typeof sanitized.size === 'number' ? sanitized.size : 0;
+    sanitized.path = sanitized.path || '';
+    sanitized.url = sanitized.url || '';
+    
+    // Make sure boolean properties are actual booleans
+    sanitized.isPublic = sanitized.isPublic === true;
+    sanitized.completed = sanitized.completed === true;
+    sanitized.uploading = sanitized.uploading === true;
+    sanitized.isPlaceholder = sanitized.isPlaceholder === true;
+    
+    // Ensure verification status is valid
+    if (!['pending', 'verified', 'rejected'].includes(sanitized.verificationStatus)) {
+      sanitized.verificationStatus = 'pending';
+    }
+    
+    console.log('[DEBUG] Documents: Final sanitized document category:', sanitized.category);
+    return sanitized;
+  };
+
+  // Save documents to localStorage and Firestore
+  const saveDocuments = async (documents) => {
+    console.log('[DEBUG] Documents: saveDocuments called with documents count:', documents?.length);
+    
+    try {
+      if (!documents || !Array.isArray(documents)) {
+        console.error('[DEBUG] Documents: Invalid documents data:', documents);
+        return;
+      }
+      
+      // Sanitize documents before saving - using our enhanced deep cleaner
+      const sanitizedDocs = documents.map(sanitizeDocumentForFirestore);
+      console.log('[DEBUG] Documents: All documents sanitized for storage');
+      
+      // First save to localStorage directly to ensure data is definitely stored
+      try {
+        const localStorageKey = `listing_form_documents_${formId || 'default'}`;
+        const jsonData = JSON.stringify(sanitizedDocs);
+        localStorage.setItem(localStorageKey, jsonData);
+        console.log(`[DEBUG] Documents: Successfully saved directly to localStorage - ${jsonData.length} chars`);
+        
+        // Also use the storage service as a backup
+        const storageResult = enhancedStorage.saveDocumentMetadata(sanitizedDocs, formId || 'default');
+        console.log('[DEBUG] Documents: Storage service result:', storageResult);
+      } catch (localStorageError) {
+        console.error('[DEBUG] Documents: Error saving to localStorage:', localStorageError);
+      }
+      
+      // Then save to Firestore if formId exists
+      if (formId) {
+        try {
+          await enhancedStorage.saveDocumentsToFirestore(sanitizedDocs, formId);
+          console.log('[DEBUG] Documents: Successfully saved to Firestore');
+          
+          // Verify documents are actually in Firestore 
+          setTimeout(async () => {
+            try {
+              const firestoreDocs = await enhancedStorage.getDocumentsFromFirestore(formId || 'default');
+              console.log('[DEBUG] Documents: Verification check - Firestore contains', 
+                firestoreDocs?.length || 0, 'documents');
+            } catch (error) {
+              console.error('[DEBUG] Documents: Error verifying Firestore documents:', error);
+            }
+          }, 1000);
+        } catch (firestoreError) {
+          console.error('[DEBUG] Documents: Error saving to Firestore:', firestoreError);
+          ToastManager.error(`Error saving documents: ${firestoreError.message}`);
+        }
+      } else {
+        console.log('[DEBUG] Documents: No formId provided, skipping Firestore save');
+      }
+      
+      // Call onChange with the sanitized documents
+      if (typeof onChange === 'function') {
+        const validDocs = sanitizedDocs.filter(doc => !doc.isPlaceholder && (!doc.uploading || doc.completed));
+        console.log('[DEBUG] Documents: Calling onChange with valid documents count:', validDocs.length);
+        onChange({ documents: validDocs });
+      }
+      
+      return sanitizedDocs;
+    } catch (error) {
+      console.error('[DEBUG] Documents: General error in saveDocuments function:', error);
+      ToastManager.error(`Error saving documents: ${error.message}`);
+      return [];
+    }
+  };
+
+  // Reload documents from localStorage and Firestore
+  const reloadDocuments = useCallback(async () => {
+    console.log('[DEBUG] Documents: Manually reloading documents for formId', formId);
+    
+    if (!formId) {
+      console.log('[DEBUG] Documents: No formId provided, cannot reload');
+      return;
+    }
+    
+    // First try localStorage direct access
+    try {
+      const localStorageKey = `listing_form_documents_${formId || 'default'}`;
+      const rawData = localStorage.getItem(localStorageKey);
+      console.log('[DEBUG] Documents: Manual reload - localStorage check:', 
+        rawData ? 'Data found' : 'No data found', 
+        rawData ? `(${rawData.length} chars)` : '');
+      
+      if (rawData) {
+        try {
+          const parsedDocs = JSON.parse(rawData);
+          console.log(`[DEBUG] Documents: Found ${parsedDocs.length} documents in localStorage during manual reload`);
+          
+          if (parsedDocs && Array.isArray(parsedDocs) && parsedDocs.length > 0) {
+            // Process and set documents
+            const processedDocs = parsedDocs.map(doc => ({
+              ...doc,
+              uploading: false,
+              completed: true,
+              verificationStatus: doc.verificationStatus || 'pending'
+            }));
+            
+            setUploadedDocuments(processedDocs);
+            
+            // Call onChange
+            if (typeof onChange === 'function') {
+              onChange({ documents: processedDocs });
+            }
+            
+            console.log('[DEBUG] Documents: Successfully restored documents from localStorage');
+            return true;
+          }
+        } catch (parseError) {
+          console.error('[DEBUG] Documents: Error parsing localStorage during manual reload:', parseError);
+        }
+      }
+      
+      // If localStorage fails, try Firestore
+      console.log('[DEBUG] Documents: No valid localStorage data, trying Firestore...');
+      const firestoreDocs = await enhancedStorage.getDocumentsFromFirestore(formId || 'default');
+      
+      if (firestoreDocs && Array.isArray(firestoreDocs) && firestoreDocs.length > 0) {
+        console.log(`[DEBUG] Documents: Found ${firestoreDocs.length} documents in Firestore during manual reload`);
+        
+        // Process and update
+        const processedDocs = firestoreDocs.map(doc => ({
+          ...doc,
+          uploading: false,
+          completed: true,
+          verificationStatus: doc.verificationStatus || 'pending'
+        }));
+        
+        setUploadedDocuments(processedDocs);
+        
+        // Save to localStorage for next time
+        const jsonData = JSON.stringify(processedDocs);
+        localStorage.setItem(`listing_form_documents_${formId || 'default'}`, jsonData);
+        
+        // Call onChange
+        if (typeof onChange === 'function') {
+          onChange({ documents: processedDocs });
+        }
+        
+        console.log('[DEBUG] Documents: Successfully restored documents from Firestore');
+        return true;
+      }
+      
+      console.log('[DEBUG] Documents: No documents found during manual reload');
+      return false;
+    } catch (error) {
+      console.error('[DEBUG] Documents: Error during manual document reload:', error);
+      return false;
+    }
+  }, [formId, onChange]);
+
+  // Expose reload function to parent through ref if provided
+  useEffect(() => {
+    if (formId) {
+      // Attach the reload function to the window for manual triggering if needed
+      window.reloadDocumentsFor = window.reloadDocumentsFor || {};
+      window.reloadDocumentsFor[formId] = reloadDocuments;
+      
+      // Cleanup
+      return () => {
+        if (window.reloadDocumentsFor && window.reloadDocumentsFor[formId]) {
+          delete window.reloadDocumentsFor[formId];
+        }
+      };
+    }
+  }, [formId, reloadDocuments]);
+
+  // Attempt to reload documents when returning to this component
+  useEffect(() => {
+    // This effect runs when the component becomes visible after being hidden
+    const handleVisibilityChange = () => {
+      if (!document.hidden && !isInitialLoadRef.current) {
+        console.log('[DEBUG] Documents: Tab became visible, reloading documents');
+        reloadDocuments();
+      }
+      isInitialLoadRef.current = false;
+    };
+    
+    // Add visibility change listener
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Clean up
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [reloadDocuments]);
+
+  // Detect when the component becomes active in a multi-step form
+  useEffect(() => {
+    // Create a MutationObserver to detect when this component becomes visible
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        // Check if our component's parent element style changed from display:none to block/flex
+        if (mutation.type === 'attributes' && 
+            mutation.attributeName === 'style' && 
+            mutation.target.style.display !== 'none') {
+          console.log('[DEBUG] Documents: Component became visible in form, reloading documents');
+          // Component became visible, reload documents
+          reloadDocuments();
+        }
+      }
+    });
+
+    // Start observing with a delay to ensure DOM is ready
+    setTimeout(() => {
+      const element = document.getElementById('form-step-documents');
+      if (element) {
+        observer.observe(element, { attributes: true, attributeFilter: ['style'] });
+        console.log('[DEBUG] Documents: Started observing visibility changes');
+      }
+    }, 1000);
+
+    // Clean up observer
+    return () => {
+      observer.disconnect();
+    };
+  }, [reloadDocuments]);
+
+  // Also reload on parent data changes that might indicate step navigation
+  useEffect(() => {
+    // Use the ref defined at the component scope
+    if (documents && documents.length === 0 && uploadedDocuments.length > 0 && !documentsHandled.current) {
+      console.log('[DEBUG] Documents: Detected potential step change, documents array was cleared');
+      // Mark as handled to prevent infinite loops
+      documentsHandled.current = true;
+      // This might indicate a step change - try reloading to get our documents back
+      reloadDocuments();
+      
+      // Also explicitly call onChange to pass documents to parent
+      if (typeof onChange === 'function' && uploadedDocuments.length > 0) {
+        console.log('[DEBUG] Documents: Explicitly calling onChange with documents:', uploadedDocuments.length);
+        onChange({ documents: uploadedDocuments });
+      }
+    }
+    
+    // Reset the handled flag if documents actually has content
+    if (documents && documents.length > 0) {
+      documentsHandled.current = false;
+    }
+    
+    // Only include documents in dependency array, not uploadedDocuments.length
+  }, [documents, reloadDocuments, onChange, uploadedDocuments]);
+
+  return (
+    <div className="grid grid-cols-1 gap-4 relative">
       {/* Header */}
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-gray-900 mb-1">Upload Supporting Documents</h2>
@@ -957,8 +2188,25 @@ const Documents = ({
         </div>
       )}
 
-      {/* Document categories tabs */}
-      <div className="border-b border-gray-200">
+      {/* Display errors if any */}
+      {errors.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-start">
+            <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-red-800 mb-1">The following issues were found:</p>
+              <ul className="text-sm text-red-700 list-disc pl-5 space-y-1">
+                {errors.map((error, index) => (
+                  <li key={index}>{error}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Document tabs */}
+      <div className="border-b border-gray-200 w-full">
         <nav className="-mb-px flex space-x-1 overflow-x-auto hide-scrollbar">
           {documentCategories.map((category) => (
             <button
@@ -1002,57 +2250,10 @@ const Documents = ({
         </div>
       </div>
 
-      {/* Display errors if any */}
-      {errors.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-start">
-            <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-red-800 mb-1">The following issues were found:</p>
-              <ul className="text-sm text-red-700 list-disc pl-5 space-y-1">
-                {errors.map((error, index) => (
-                  <li key={index}>{error}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {(isUploading || Object.keys(uploadProgress).length > 0) && (
-        <div className="p-4 border border-blue-200 bg-blue-50 rounded-lg">
-          <div className="flex items-center">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-700 mr-3"></div>
-            <p className="text-sm font-medium text-blue-800">
-              Uploading documents... Please wait.
-            </p>
-          </div>
-
-          {Object.keys(uploadProgress).length > 0 && (
-            <div className="mt-2 space-y-2">
-              {Object.entries(uploadProgress).map(([fileName, progress]) => (
-                <div key={fileName} className="text-xs">
-                  <div className="flex justify-between text-gray-700 mb-1">
-                    <span className="truncate max-w-xs">{fileName}</span>
-                    <span>{Math.round(progress)}%</span>
-                  </div>
-                  <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                    <div
-                      className={progress < 70 ? "bg-blue-500 h-full" : "bg-green-500 h-full"}
-                      style={{ width: `${progress}%` }}
-                    ></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Current Documents Section - Show at the top with recommended documents */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+      {/* Main content container with fixed height */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative" style={{ minHeight: '400px', maxHeight: '90vh', overflow: 'visible' }}>
         {/* Left column: Recommended documents & form */}
-        <div className="lg:col-span-3 space-y-6">
+        <div className="lg:col-span-2 space-y-6">
           {/* Recommended documents - Optimized for action */}
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
             <div className="p-4 bg-gray-50 border-b border-gray-200">
@@ -1063,7 +2264,7 @@ const Documents = ({
             </div>
 
             <div className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {getRecommendedDocuments(activeCategory).map((doc, index) => {
                   const isUploaded = isDocumentTypeUploaded(doc.type);
                   const count = getDocumentTypeCount(doc.type);
@@ -1160,6 +2361,7 @@ const Documents = ({
               ref={uploadFormRef}
               id="upload-form"
               className="bg-white border border-[#0031ac] rounded-lg overflow-hidden shadow-md transition-all"
+              style={{ position: 'relative', maxHeight: '600px' }}
             >
               <div className="p-4 bg-blue-50 border-b border-[#0031ac] flex items-center justify-between">
                 <h3 className="text-sm font-medium text-[#0031ac] flex items-center">
@@ -1183,7 +2385,7 @@ const Documents = ({
                 </button>
               </div>
 
-              <div className="p-4">
+              <div className="p-4 overflow-y-auto" style={{ maxHeight: '500px' }}>
                 <div className="space-y-4">
                   {/* Description field - For ALL document types, but only required for "Other" */}
                   <div className="space-y-2">
@@ -1232,7 +2434,7 @@ const Documents = ({
                     </div>
                   </div>
 
-                  {/* Upload area */}
+                  {/* Upload area - maintain proper height even when error is visible */}
                   <div
                     {...getRootProps()}
                     className={cn(
@@ -1248,6 +2450,7 @@ const Documents = ({
                         open();
                       }
                     }}
+                    style={{ minHeight: '160px' }}
                   >
                     <input {...getInputProps()} />
 
@@ -1295,8 +2498,8 @@ const Documents = ({
           )}
         </div>
 
-        {/* Right column: Uploaded documents list */}
-        <div className="lg:col-span-2">
+        {/* Right column: Uploaded documents list - improved mobile responsiveness */}
+        <div className="lg:col-span-1">
           {/* Uploaded documents list */}
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden h-full">
             <div className="p-4 bg-gray-50 border-b border-gray-200">
@@ -1327,188 +2530,18 @@ const Documents = ({
             </div>
 
             {filteredDocuments.length > 0 ? (
-              <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
+              <div className="divide-y divide-gray-200 overflow-y-auto" style={{ maxHeight: showUploadForm ? '400px' : '600px' }}>
                 {filteredDocuments.map((document) => (
-                  <div
-                    key={document.id}
-                    id={`document-${document.id}`}
-                    className={cn(
-                      "p-4 hover:bg-gray-50 transition-colors duration-300",
-                      document.isPlaceholder ? "bg-amber-50 opacity-75" : "",
-                      document.uploading ? "bg-blue-50" : ""
-                    )}
-                  >
-                    <div className="flex items-start">
-                      {/* Document icon */}
-                      <div className="mr-3 mt-1 flex-shrink-0">
-                        {getDocumentIcon(document.format)}
-                      </div>
-
-                      {/* Document info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-col">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <h4 className="text-sm font-medium text-gray-900 truncate flex items-center">
-                                {document.name}
-                                {document.isPlaceholder && (
-                                  <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full flex items-center">
-                                    <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                                    Needs re-upload
-                                  </span>
-                                )}
-                                {document.uploading && (
-                                  <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex items-center">
-                                    <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                                    Uploading
-                                  </span>
-                                )}
-                              </h4>
-                              <p className="text-xs text-gray-600 mt-0.5">
-                                {getDocumentTypeName(document.type)}
-                              </p>
-                              {document.description && (
-                                <p className="text-xs text-gray-500 mt-1 italic">
-                                  "{document.description}"
-                                </p>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="mt-2 flex items-center justify-between">
-                            <div className="flex items-center text-xs text-gray-500 space-x-3">
-                              <span>{formatFileSize(document.size)}</span>
-                              <span className="flex items-center">
-                                {document.isPublic ? (
-                                  <>
-                                    <Eye className="h-3 w-3 mr-1 text-green-500" />
-                                    Public
-                                  </>
-                                ) : (
-                                  <>
-                                    <EyeOff className="h-3 w-3 mr-1 text-gray-400" />
-                                    Private
-                                  </>
-                                )}
-                              </span>
-                            </div>
-
-                            {/* Verification Status */}
-                            <div>
-                              {document.isPlaceholder ? (
-                                <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-800">
-                                  <AlertTriangle className="h-3 w-3 mr-1" />
-                                  Missing
-                                </span>
-                              ) : document.uploading ? (
-                                <span className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800">
-                                  <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                                  Uploading
-                                </span>
-                              ) : (
-                                getVerificationBadge(document.verificationStatus)
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Actions */}
-                          <div className="mt-3 flex space-x-2 justify-end">
-                            {document.isPlaceholder ? (
-                              <button
-                                type="button"
-                                onClick={() => handleReplaceDocument(document.id, document.type, document.name)}
-                                className="px-2 py-1 text-xs rounded border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors flex items-center"
-                                title="Re-upload document"
-                              >
-                                <RefreshCw className="h-3 w-3 mr-1" />
-                                Re-upload
-                              </button>
-                            ) : document.uploading ? (
-                              <div className="px-2 py-1 text-xs rounded border border-blue-300 bg-blue-50 text-blue-700 flex items-center">
-                                <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                                Uploading...
-                              </div>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleReplaceDocument(document.id, document.type, document.name)}
-                                  className="px-2 py-1 text-xs rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors flex items-center"
-                                  title="Replace document"
-                                >
-                                  <RefreshCw className="h-3 w-3 mr-1" />
-                                  Replace
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (document.url) {
-                                      // Create a download link
-                                      const a = document.createElement('a');
-                                      a.href = document.url;
-                                      a.download = document.name;
-                                      a.target = '_blank';
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      document.body.removeChild(a);
-                                    }
-                                  }}
-                                  className="px-2 py-1 text-xs rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors flex items-center"
-                                  title="Download document"
-                                  disabled={!document.url}
-                                >
-                                  <Download className="h-3 w-3 mr-1" />
-                                  Download
-                                </button>
-                              </>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteDocument(document.id, document.name)}
-                              disabled={document.uploading}
-                              className={cn(
-                                "px-2 py-1 text-xs rounded border",
-                                document.uploading
-                                  ? "border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed"
-                                  : "border-red-200 bg-white text-red-600 hover:bg-red-50 transition-colors"
-                              )}
-                              title="Delete document"
-                            >
-                              <Trash2 className="h-3 w-3 mr-1" />
-                              {document.uploading ? '' : 'Delete'}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                  <div key={document.id || `doc-${document.name}-${Date.now()}`}>
+                    {renderDocumentCard(document)}
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="p-8 text-center flex flex-col items-center justify-center h-[300px]">
-                <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-gray-100">
-                  <File className="h-6 w-6 text-gray-400" />
-                </div>
-                <h3 className="mt-4 text-sm font-medium text-gray-900">No documents in this category</h3>
-                <p className="mt-2 text-sm text-gray-500">
-                  Click on any recommended document to upload it.
-                </p>
-                <button
-                  onClick={() => {
-                    setSelectedDocType('other');
-                    setShowUploadForm(true);
-                    setTimeout(() => {
-                      if (uploadFormRef.current) {
-                        uploadFormRef.current.scrollIntoView({ behavior: 'smooth' });
-                      }
-                    }, 100);
-                  }}
-                  className="mt-4 px-4 py-2 text-sm font-medium text-white bg-[#0031ac] rounded-md hover:bg-blue-700 focus:outline-none"
-                >
-                  Upload a Document
-                </button>
+              <div className="text-center p-6 border border-gray-200 rounded-md bg-gray-50">
+                <File className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                <p className="text-sm text-gray-600 mb-1">No documents in this category</p>
+                <p className="text-xs text-gray-500">Click the upload button to add documents</p>
               </div>
             )}
           </div>

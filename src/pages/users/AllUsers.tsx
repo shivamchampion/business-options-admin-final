@@ -163,9 +163,6 @@ export default function AllUsers() {
   // Load admin panel users
   const loadAdminUsers = async (reset = false) => {
     try {
-      if (selectedTab === 0) {
-        startLoading('Loading admin panel users...');
-      }
       setIsLoading(true);
       
       const result = await getAdminPanelUsers(
@@ -186,18 +183,12 @@ export default function AllUsers() {
       toast.error('Failed to load admin users');
     } finally {
       setIsLoading(false);
-      if (selectedTab === 0) {
-        stopLoading();
-      }
     }
   };
   
   // Load website users
   const loadWebsiteUsers = async (reset = false) => {
     try {
-      if (selectedTab === 1) {
-        startLoading('Loading website users...');
-      }
       setIsLoading(true);
       
       const result = await getWebsiteUsers(
@@ -218,9 +209,6 @@ export default function AllUsers() {
       toast.error('Failed to load website users');
     } finally {
       setIsLoading(false);
-      if (selectedTab === 1) {
-        stopLoading();
-      }
     }
   };
   
@@ -301,55 +289,50 @@ export default function AllUsers() {
       // Show success toast
       toast.success(`User ${status === UserStatus.ACTIVE ? 'activated' : 'deactivated'} successfully`);
       
-      // Update local state
+      // Reload users based on current tab
       if (selectedTab === 0) {
-        setAdminUsers(prev => 
-          prev.map(user => user.id === userId ? { ...user, status } : user)
-        );
+        await loadAdminUsers(true);
       } else {
-        setWebsiteUsers(prev => 
-          prev.map(user => user.id === userId ? { ...user, status } : user)
-        );
+        await loadWebsiteUsers(true);
       }
     } catch (error) {
       console.error('Error updating user status:', error);
-      
-      // Show error toast
-      toast.error(error instanceof Error 
-        ? error.message 
-        : `Failed to update user status. Please try again.`
-      );
+      toast.error('Failed to update user status');
     } finally {
       stopLoading();
     }
   };
   
-  // Handle bulk actions
+  // Handle bulk activate
   const handleBulkActivate = async () => {
+    const selectedUsers = selectedTab === 0 ? selectedAdminUsers : selectedWebsiteUsers;
+    
+    if (selectedUsers.length === 0) {
+      toast.error('Please select users to activate');
+      return;
+    }
+    
     try {
       startLoading('Activating users...');
       
-      const userIds = selectedTab === 0 ? selectedAdminUsers : selectedWebsiteUsers;
-      await bulkUpdateUserStatus(userIds, UserStatus.ACTIVE);
+      await bulkUpdateUserStatus(selectedUsers, UserStatus.ACTIVE);
       
-      // Update local state
+      // Show success toast
+      toast.success(`${selectedUsers.length} users activated successfully`);
+      
+      // Clear selection
       if (selectedTab === 0) {
-        setAdminUsers(prev => 
-          prev.map(user => 
-            selectedAdminUsers.includes(user.id) ? { ...user, status: UserStatus.ACTIVE } : user
-          )
-        );
         setSelectedAdminUsers([]);
       } else {
-        setWebsiteUsers(prev => 
-          prev.map(user => 
-            selectedWebsiteUsers.includes(user.id) ? { ...user, status: UserStatus.ACTIVE } : user
-          )
-        );
         setSelectedWebsiteUsers([]);
       }
       
-      toast.success(`Successfully activated ${userIds.length} users`);
+      // Reload users based on current tab
+      if (selectedTab === 0) {
+        await loadAdminUsers(true);
+      } else {
+        await loadWebsiteUsers(true);
+      }
     } catch (error) {
       console.error('Error activating users:', error);
       toast.error('Failed to activate users');
@@ -358,31 +341,36 @@ export default function AllUsers() {
     }
   };
   
+  // Handle bulk deactivate
   const handleBulkDeactivate = async () => {
+    const selectedUsers = selectedTab === 0 ? selectedAdminUsers : selectedWebsiteUsers;
+    
+    if (selectedUsers.length === 0) {
+      toast.error('Please select users to deactivate');
+      return;
+    }
+    
     try {
       startLoading('Deactivating users...');
       
-      const userIds = selectedTab === 0 ? selectedAdminUsers : selectedWebsiteUsers;
-      await bulkUpdateUserStatus(userIds, UserStatus.INACTIVE);
+      await bulkUpdateUserStatus(selectedUsers, UserStatus.INACTIVE);
       
-      // Update local state
+      // Show success toast
+      toast.success(`${selectedUsers.length} users deactivated successfully`);
+      
+      // Clear selection
       if (selectedTab === 0) {
-        setAdminUsers(prev => 
-          prev.map(user => 
-            selectedAdminUsers.includes(user.id) ? { ...user, status: UserStatus.INACTIVE } : user
-          )
-        );
         setSelectedAdminUsers([]);
       } else {
-        setWebsiteUsers(prev => 
-          prev.map(user => 
-            selectedWebsiteUsers.includes(user.id) ? { ...user, status: UserStatus.INACTIVE } : user
-          )
-        );
         setSelectedWebsiteUsers([]);
       }
       
-      toast.success(`Successfully deactivated ${userIds.length} users`);
+      // Reload users based on current tab
+      if (selectedTab === 0) {
+        await loadAdminUsers(true);
+      } else {
+        await loadWebsiteUsers(true);
+      }
     } catch (error) {
       console.error('Error deactivating users:', error);
       toast.error('Failed to deactivate users');
@@ -391,32 +379,43 @@ export default function AllUsers() {
     }
   };
   
-  // Handle bulk deletion
+  // Handle bulk delete
   const handleBulkDelete = async () => {
-    if (!window.confirm(`Are you sure you want to delete ${selectedTab === 0 ? selectedAdminUsers.length : selectedWebsiteUsers.length} users? This action cannot be undone.`)) {
+    const selectedUsers = selectedTab === 0 ? selectedAdminUsers : selectedWebsiteUsers;
+    
+    if (selectedUsers.length === 0) {
+      toast.error('Please select users to delete');
+      return;
+    }
+    
+    if (!window.confirm(`Are you sure you want to delete ${selectedUsers.length} users? This action cannot be undone.`)) {
       return;
     }
     
     try {
       startLoading('Deleting users...');
       
-      const userIds = selectedTab === 0 ? selectedAdminUsers : selectedWebsiteUsers;
-      
-      // Delete each user
-      for (const userId of userIds) {
+      // Delete users one by one
+      for (const userId of selectedUsers) {
         await deleteUser(userId);
       }
       
-      // Update local state
+      // Show success toast
+      toast.success(`${selectedUsers.length} users deleted successfully`);
+      
+      // Clear selection
       if (selectedTab === 0) {
-        setAdminUsers(prev => prev.filter(user => !selectedAdminUsers.includes(user.id)));
         setSelectedAdminUsers([]);
       } else {
-        setWebsiteUsers(prev => prev.filter(user => !selectedWebsiteUsers.includes(user.id)));
         setSelectedWebsiteUsers([]);
       }
       
-      toast.success(`Successfully deleted ${userIds.length} users`);
+      // Reload users based on current tab
+      if (selectedTab === 0) {
+        await loadAdminUsers(true);
+      } else {
+        await loadWebsiteUsers(true);
+      }
     } catch (error) {
       console.error('Error deleting users:', error);
       toast.error('Failed to delete users');
@@ -425,7 +424,7 @@ export default function AllUsers() {
     }
   };
   
-  // Handle user deletion
+  // Handle delete user
   const handleDeleteUser = async (userId: string) => {
     if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
       return;
@@ -436,14 +435,15 @@ export default function AllUsers() {
       
       await deleteUser(userId);
       
-      // Update local state
-      if (selectedTab === 0) {
-        setAdminUsers(prev => prev.filter(user => user.id !== userId));
-      } else {
-        setWebsiteUsers(prev => prev.filter(user => user.id !== userId));
-      }
-      
+      // Show success toast
       toast.success('User deleted successfully');
+      
+      // Reload users based on current tab
+      if (selectedTab === 0) {
+        await loadAdminUsers(true);
+      } else {
+        await loadWebsiteUsers(true);
+      }
     } catch (error) {
       console.error('Error deleting user:', error);
       toast.error('Failed to delete user');
@@ -452,38 +452,49 @@ export default function AllUsers() {
     }
   };
   
-  // Handle selection changes
+  // Handle select admin user
   const handleSelectAdminUser = (userId: string, isSelected: boolean) => {
-    setSelectedAdminUsers(prev => 
-      isSelected 
-        ? [...prev, userId]
-        : prev.filter(id => id !== userId)
-    );
+    if (isSelected) {
+      setSelectedAdminUsers(prev => [...prev, userId]);
+    } else {
+      setSelectedAdminUsers(prev => prev.filter(id => id !== userId));
+    }
   };
   
+  // Handle select website user
   const handleSelectWebsiteUser = (userId: string, isSelected: boolean) => {
-    setSelectedWebsiteUsers(prev => 
-      isSelected 
-        ? [...prev, userId]
-        : prev.filter(id => id !== userId)
-    );
+    if (isSelected) {
+      setSelectedWebsiteUsers(prev => [...prev, userId]);
+    } else {
+      setSelectedWebsiteUsers(prev => prev.filter(id => id !== userId));
+    }
   };
   
+  // Handle select all admin users
   const handleSelectAllAdminUsers = (isSelected: boolean) => {
-    setSelectedAdminUsers(isSelected ? adminUsers.map(user => user.id) : []);
+    if (isSelected) {
+      setSelectedAdminUsers(adminUsers.map(user => user.id));
+    } else {
+      setSelectedAdminUsers([]);
+    }
   };
   
+  // Handle select all website users
   const handleSelectAllWebsiteUsers = (isSelected: boolean) => {
-    setSelectedWebsiteUsers(isSelected ? websiteUsers.map(user => user.id) : []);
+    if (isSelected) {
+      setSelectedWebsiteUsers(websiteUsers.map(user => user.id));
+    } else {
+      setSelectedWebsiteUsers([]);
+    }
   };
   
-  // View verification code
+  // Handle view verification code
   const handleViewVerificationCode = (userId: string) => {
-    const user = adminUsers.find(user => user.id === userId);
-    if (user && user.verificationCode) {
-      setVerificationCode(user.verificationCode);
-      setVerificationEmail(user.email);
-      setLoginEmail(user.loginEmail || ''); // Set the login email if available
+    const user = websiteUsers.find(user => user.id === userId);
+    if (user && user.loginEmail) {
+      setVerificationEmail(user.loginEmail);
+      setLoginEmail(user.loginEmail);
+      setVerificationCode(user.verificationCode || '');
     }
   };
   

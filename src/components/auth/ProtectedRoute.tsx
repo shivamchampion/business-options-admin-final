@@ -1,109 +1,52 @@
-import { useState, useEffect, useRef } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '@/context/AuthContext';
-import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { Navigate, useLocation } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
+import { useEffect, useState } from "react";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
   allowedRoles?: string[];
 }
 
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }) => {
-  const { user, isAuthenticated, isLoading, error } = useAuth();
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ 
+  children, 
+  allowedRoles 
+}) => {
+  const { isAuthenticated, user, isLoading } = useAuth();
   const location = useLocation();
-  const [showLoading, setShowLoading] = useState(false);
-  const loadingTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const initialLoadCompleted = useRef(false);
-  const initialVerification = useRef(true);
-  const pageRefreshing = useRef(true);
-  
-  // Clean up any timers on unmount
-  useEffect(() => {
-    return () => {
-      if (loadingTimerRef.current) {
-        clearTimeout(loadingTimerRef.current);
-      }
-    };
-  }, []);
-  
-  // Effect to handle initial verification
+  const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
+
+  // Check role-based permissions after initial loading
   useEffect(() => {
     if (!isLoading) {
-      initialLoadCompleted.current = true;
-      
-      // After first load completes, set pageRefreshing to false
-      // This prevents premature redirects on page refresh
-      setTimeout(() => {
-        pageRefreshing.current = false;
-      }, 50);
-    }
-    
-    // Only show loading if verification takes too long
-    if (isLoading && initialLoadCompleted.current) {
-      // If we're already authenticated, don't show loading again
-      if (isAuthenticated && !initialVerification.current) {
+      if (!isAuthenticated || !user) {
+        setIsAuthorized(false);
         return;
       }
-      
-      // Clear any existing timer
-      if (loadingTimerRef.current) {
-        clearTimeout(loadingTimerRef.current);
+
+      if (allowedRoles && !allowedRoles.includes(user.role)) {
+        setIsAuthorized(false);
+        return;
       }
-      
-      // Set a delay before showing loading
-      loadingTimerRef.current = setTimeout(() => {
-        setShowLoading(true);
-      }, 300);
-    } else {
-      // Reset loading state
-      if (loadingTimerRef.current) {
-        clearTimeout(loadingTimerRef.current);
-        loadingTimerRef.current = null;
-      }
-      setShowLoading(false);
-      
-      // Mark initial verification as complete if we're authenticated
-      if (isAuthenticated) {
-        initialVerification.current = false;
-      }
+
+      setIsAuthorized(true);
     }
-  }, [isLoading, isAuthenticated]);
+  }, [isAuthenticated, user, isLoading, allowedRoles]);
 
-  // Show loading screen only if it's taking a significant amount of time
-  // AND it's not the initial login verification
-  if (isLoading && showLoading) {
-    return (
-      <LoadingSpinner 
-        fullScreen 
-        size="lg" 
-        text="Verifying authentication..." 
-      />
-    );
-  }
-
-  // Handle authentication errors
-  if (error) {
-    return (
-      <LoadingSpinner 
-        fullScreen 
-        error={error.message} 
-        onRetry={() => window.location.reload()} 
-      />
-    );
-  }
-
-  // Redirect to login if not authenticated
-  // CRITICAL FIX: Don't redirect immediately during page refresh
-  if (!isAuthenticated && !isLoading && !pageRefreshing.current) {
+  // If not authenticated, redirect to login
+  if (!isAuthenticated && !isLoading) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Check role-based permissions, but only after initial loading
-  if (!isLoading && isAuthenticated && allowedRoles && !allowedRoles.includes(user?.role || '')) {
+  // If not authorized for this route, redirect to unauthorized page
+  if (isAuthorized === false) {
     return <Navigate to="/unauthorized" replace />;
   }
 
-  // Show children once authenticated or during initial load
-  // This prevents flashing during page refresh
+  // If still checking authorization, render nothing (root loading will show)
+  if (isAuthorized === null || isLoading) {
+    return null;
+  }
+
+  // If authorized, render the protected content
   return <>{children}</>;
 };

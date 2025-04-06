@@ -1,18 +1,20 @@
 // src/App.tsx
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "@/context/AuthContext";
-import { LoadingProvider } from "@/context/LoadingContext";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { LoadingProvider, useLoading } from "@/context/LoadingContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import { PublicRoute } from "@/components/auth/PublicRoute"; // New import
+import { PublicRoute } from "@/components/auth/PublicRoute";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import SuspenseBoundary from "@/components/ui/SuspenseBoundary";
-import { Toaster } from 'react-hot-toast';
 import Login from "@/pages/Login";
 import Unauthorized from "@/pages/Unauthorized";
 import MainLayout from "@/components/layout/MainLayout";
+import { useEffect, useRef, useState, Suspense, useCallback } from "react";
+import { auth } from "@/lib/firebase";
+import { toast } from "react-hot-toast";
+import LoadingSpinner from "@/components/ui/LoadingSpinner";
+import React from 'react';
 
 // Use React.lazy for code splitting
-import React from 'react';
 const Dashboard = React.lazy(() => import("@/pages/Dashboard"));
 const AllUsers = React.lazy(() => import("@/pages/users/AllUsers"));
 const UserRoles = React.lazy(() => import("@/pages/users/UserRoles"));
@@ -26,6 +28,166 @@ const AllAdvisors = React.lazy(() => import("@/pages/advisors/AllAdvisors"));
 const CommissionStructure = React.lazy(() => import("@/pages/advisors/CommissionStructure"));
 const AdvisorLeads = React.lazy(() => import("@/pages/advisors/Leads"));
 const AdvisorPayments = React.lazy(() => import("@/pages/advisors/Payments"));
+
+// Root-level authentication component
+const RootAuth: React.FC = () => {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isLoading: globalLoading } = useLoading();
+  const [showInitialLoading, setShowInitialLoading] = useState(false);
+  
+  // Check if this is the first load of the app
+  useEffect(() => {
+    const isInitialized = sessionStorage.getItem('appInitialized');
+    if (!isInitialized) {
+      setShowInitialLoading(true);
+      sessionStorage.setItem('appInitialized', 'true');
+    }
+  }, []);
+  
+  // Handle initial loading completion
+  useEffect(() => {
+    if (!authLoading && !globalLoading && showInitialLoading) {
+      setShowInitialLoading(false);
+    }
+  }, [authLoading, globalLoading, showInitialLoading]);
+  
+  // Show full-page loading only during initial app load
+  if (showInitialLoading) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-white">
+        <div className="text-center">
+          <LoadingSpinner size="lg" />
+          <p className="mt-4 text-gray-600">
+            Establishing secure connection...
+          </p>
+        </div>
+      </div>
+    );
+  }
+  
+  return null; // This component doesn't render anything
+};
+
+// Auth verification component that runs at the root level
+const AuthVerifier: React.FC = () => {
+  const { isAuthenticated, refreshToken, signOut } = useAuth();
+  const { startLoading, stopLoading } = useLoading();
+  const [verifyingAuth, setVerifyingAuth] = useState(false);
+  const refreshAttemptRef = useRef(0);
+  const maxRefreshAttempts = 3;
+
+  // Handle Firebase auth error
+  const handleAuthError = useCallback(async (event: CustomEvent) => {
+    // Skip if not authenticated
+    if (!isAuthenticated) return;
+    
+    // Skip if already verifying
+    if (verifyingAuth) return;
+    
+    const error = event.detail?.error;
+    if (!error) return;
+    
+    console.warn('Auth error detected by AuthVerifier:', error);
+    
+    const errorCode = error?.code;
+    const errorMessage = error?.message || '';
+    
+    // Authentication/token errors that require refresh or logout
+    const isAuthError = 
+      errorMessage.includes('auth/network-request-failed') ||
+      errorMessage.includes('permission-denied') || 
+      errorMessage.includes('unauthenticated') ||
+      errorMessage.includes('invalid-argument') ||
+      errorMessage.includes('deadline-exceeded') ||
+      errorMessage.includes('failed-precondition') ||
+      errorCode === 'auth/user-token-expired' ||
+      errorCode === 'auth/id-token-expired' ||
+      errorCode === 'auth/requires-recent-login';
+    
+    // If not authentication related, ignore
+    if (!isAuthError) return;
+    
+    // Start verification process
+    setVerifyingAuth(true);
+    startLoading("Verifying authentication...");
+    
+    // Attempt to refresh token (if fewer than max attempts)
+    if (refreshAttemptRef.current < maxRefreshAttempts) {
+      refreshAttemptRef.current += 1;
+      console.log(`Attempting to refresh token (${refreshAttemptRef.current}/${maxRefreshAttempts})`);
+      
+      try {
+        const success = await refreshToken();
+        
+        if (success) {
+          console.log("Token refreshed successfully");
+          toast.success("Authentication refreshed", { id: "auth-refresh-toast" });
+          refreshAttemptRef.current = 0; // Reset on success
+        } else {
+          console.error("Token refresh failed");
+          
+          // Only log out if we've maxed out attempts
+          if (refreshAttemptRef.current >= maxRefreshAttempts) {
+            toast.error("Authentication expired. Please log in again.", { id: "auth-expired-toast" });
+            await signOut();
+          }
+        }
+      } catch (error) {
+        console.error("Error during token refresh:", error);
+        
+        // If max attempts reached, log out
+        if (refreshAttemptRef.current >= maxRefreshAttempts) {
+          toast.error("Authentication expired. Please log in again.", { id: "auth-expired-toast" });
+          await signOut();
+        }
+      } finally {
+        setVerifyingAuth(false);
+        stopLoading();
+      }
+    } else {
+      // Max attempts reached, just logout
+      toast.error("Authentication issues detected. Please login again.", { id: "auth-expired-toast" });
+      try {
+        await signOut();
+      } finally {
+        setVerifyingAuth(false);
+        stopLoading();
+      }
+    }
+  }, [isAuthenticated, verifyingAuth, refreshToken, signOut, startLoading, stopLoading]);
+  
+  // Listen for Firebase auth error events
+  useEffect(() => {
+    // Reset refresh attempts when component mounts or auth changes
+    refreshAttemptRef.current = 0;
+    
+    // Listen for auth errors with proper type casting
+    window.addEventListener('firebase-auth-error', handleAuthError as unknown as EventListener);
+    
+    return () => {
+      window.removeEventListener('firebase-auth-error', handleAuthError as unknown as EventListener);
+    };
+  }, [handleAuthError]);
+  
+  // Render loading spinner when verifying auth
+  if (verifyingAuth) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-50">
+        <div className="text-center">
+          <LoadingSpinner size="lg" />
+          <p className="mt-4 text-gray-700 font-medium">
+            Verifying authentication...
+          </p>
+          <p className="mt-2 text-sm text-gray-500">
+            Refreshing your secure connection
+          </p>
+        </div>
+      </div>
+    );
+  }
+  
+  return null;
+};
 
 // Simple fallback for non-existent pages
 const PageNotFound = () => (
@@ -45,11 +207,54 @@ const PageNotFound = () => (
 );
 
 export default function App() {
+  // Set up global Firebase error handling
+  useEffect(() => {
+    // Configure global error handling for Firebase/Firestore errors
+    const originalConsoleError = console.error;
+    
+    // Override console.error to detect Firebase/Firestore issues
+    console.error = (...args) => {
+      // Log original error
+      originalConsoleError.apply(console, args);
+      
+      // Check if this is a Firebase/Firestore error to dispatch
+      const errorString = args.join(' ');
+      if (
+        errorString.includes('firebase') || 
+        errorString.includes('firestore') ||
+        errorString.includes('permission-denied') ||
+        errorString.includes('unauthenticated') ||
+        errorString.includes('PERMISSION_DENIED') ||
+        errorString.includes('failed to get document') ||
+        errorString.includes('Missing or insufficient permissions') ||
+        errorString.includes('WebChannelConnection RPC') ||
+        errorString.includes('transport errored')
+      ) {
+        // Dispatch custom error event for AuthVerifier to handle
+        const errorEvent = new CustomEvent('firebase-auth-error', { 
+          detail: { error: args[0] || errorString } 
+        });
+        window.dispatchEvent(errorEvent);
+      }
+    };
+    
+    // Restore original console.error on cleanup
+    return () => {
+      console.error = originalConsoleError;
+    };
+  }, []);
+  
   return (
     <ErrorBoundary>
       <LoadingProvider>
         <Router>
           <AuthProvider>
+            {/* Root-level authentication loading */}
+            <RootAuth />
+            
+            {/* Auth verification at root level */}
+            <AuthVerifier />
+            
             <Routes>
               {/* Public routes - wrapped with PublicRoute to redirect if already authenticated */}
               <Route path="/login" element={
@@ -67,69 +272,64 @@ export default function App() {
               }>
                 {/* Dashboard with suspense for code splitting example */}
                 <Route index element={
-                  <SuspenseBoundary>
+                  <Suspense fallback={<LoadingSpinner size="lg" text="Loading dashboard..." />}>
                     <Dashboard />
-                  </SuspenseBoundary>
-                } />
-                <Route path="/" element={
-                  <SuspenseBoundary>
-                    <Dashboard />
-                  </SuspenseBoundary>
+                  </Suspense>
                 } />
                 
                 {/* User Management Routes */}
                 <Route path="/users" element={
-                  <SuspenseBoundary>
+                  <Suspense fallback={<LoadingSpinner size="lg" text="Loading users..." />}>
                     <AllUsers />
-                  </SuspenseBoundary>
+                  </Suspense>
                 } />
                 <Route path="/users/roles" element={
-                  <SuspenseBoundary>
+                  <Suspense fallback={<LoadingSpinner size="lg" text="Loading user roles..." />}>
                     <UserRoles />
-                  </SuspenseBoundary>
+                  </Suspense>
                 } />
                 
                 {/* Listings Routes */}
                 <Route path="/listings" element={
-                  <SuspenseBoundary>
+                  <Suspense fallback={<LoadingSpinner size="lg" text="Loading listings..." />}>
                     <AllListings />
-                  </SuspenseBoundary>
+                  </Suspense>
                 } />
                 <Route path="/listings/create" element={
-                  <SuspenseBoundary>
+                  <Suspense fallback={<LoadingSpinner size="lg" text="Loading new listing form..." />}>
                     <ListingCreate />
-                  </SuspenseBoundary>
+                  </Suspense>
                 } />
                 <Route path="/listings/:id" element={
-                  <SuspenseBoundary>
+                  <Suspense fallback={<LoadingSpinner size="lg" text="Loading listing details..." />}>
                     <ListingDetail />
-                  </SuspenseBoundary>
+                  </Suspense>
                 } />
                 <Route path="/listings/:id/edit" element={
-                  <SuspenseBoundary>
+                  <Suspense fallback={<LoadingSpinner size="lg" text="Loading listing editor..." />}>
                     <ListingEdit />
-                  </SuspenseBoundary>
+                  </Suspense>
                 } />
                   {/* Advisor Routes */}
                   <Route path="/advisors" element={
-                  <SuspenseBoundary>
+                  <Suspense fallback={<LoadingSpinner size="lg" text="Loading advisors..." />}>
                     <AllAdvisors />
-                  </SuspenseBoundary>
+                  </Suspense>
                 } />
                 <Route path="/advisors/commission" element={
-                  <SuspenseBoundary>
+                  <Suspense fallback={<LoadingSpinner size="lg" text="Loading commission structure..." />}>
                     <CommissionStructure />
-                  </SuspenseBoundary>
+                  </Suspense>
                 } />
                 <Route path="/advisors/leads" element={
-                  <SuspenseBoundary>
+                  <Suspense fallback={<LoadingSpinner size="lg" text="Loading advisor leads..." />}>
                     <AdvisorLeads />
-                  </SuspenseBoundary>
+                  </Suspense>
                 } />
                 <Route path="/advisors/payments" element={
-                  <SuspenseBoundary>
+                  <Suspense fallback={<LoadingSpinner size="lg" text="Loading advisor payments..." />}>
                     <AdvisorPayments />
-                  </SuspenseBoundary>
+                  </Suspense>
                 } />
               </Route>
               
@@ -137,43 +337,6 @@ export default function App() {
               <Route path="*" element={<PageNotFound />} />
             </Routes>
           </AuthProvider>
-          
-          {/* Enhanced Toast Container */}
-          <Toaster 
-            position="top-right"
-            toastOptions={{
-              duration: 5000,
-              className: 'toast-custom',
-              style: {
-                background: '#FFFFFF',
-                color: '#111827',
-                maxWidth: '380px',
-                padding: '12px 16px',
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-                fontSize: '14px',
-                borderRadius: '6px',
-                border: '1px solid #E5E7EB',
-              },
-              success: {
-                iconTheme: {
-                  primary: '#00A651',
-                  secondary: '#FFFFFF',
-                },
-                style: {
-                  borderLeft: '4px solid #00A651',
-                }
-              },
-              error: {
-                iconTheme: {
-                  primary: '#DC3545',
-                  secondary: '#FFFFFF',
-                },
-                style: {
-                  borderLeft: '4px solid #DC3545',
-                }
-              },
-            }}
-          />
         </Router>
       </LoadingProvider>
     </ErrorBoundary>

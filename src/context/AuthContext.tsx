@@ -22,6 +22,15 @@ import {
   setPersistence,
   onIdTokenChanged
 } from 'firebase/auth';
+import { toast } from 'react-hot-toast';
+
+// Custom event for Firebase auth errors
+const createFirebaseErrorEvent = (error: any) => {
+  const errorEvent = new CustomEvent('firebase-auth-error', { 
+    detail: { error } 
+  });
+  window.dispatchEvent(errorEvent);
+};
 
 interface AuthContextType {
   user: UserDetails | null;
@@ -30,6 +39,7 @@ interface AuthContextType {
   signIn: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
   signOut: () => Promise<void>;
   error: Error | null;
+  refreshToken: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -48,6 +58,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const initialAuthCheckComplete = useRef(false);
   const loginVerificationInProgress = useRef(false);
   const tokenRefreshTimeout = useRef<NodeJS.Timeout | null>(null);
+  const tokenRefreshInProgress = useRef(false);
+  const authErrorOccurred = useRef(false);
   
   // Cleanup function for all timeouts
   const clearAllTimeouts = useCallback(() => {
@@ -57,6 +69,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
   
+  // Internal logout function that can be used within this file without creating circular dependencies
+  const performLogout = useCallback(async (): Promise<void> => {
+    if (signOutInProgress.current) return;
+    signOutInProgress.current = true;
+    
+    try {
+      // Clear cached user data first
+      sessionStorage.removeItem('user_data');
+      
+      // Clear all timeouts
+      clearAllTimeouts();
+      
+      // Update state first to prevent UI flickering
+      setUser(null);
+      setIsAuthenticated(false);
+      
+      // Sign out from Firebase
+      await firebaseSignOut(auth);
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      signOutInProgress.current = false;
+    }
+  }, [clearAllTimeouts]);
+  
+  // Function to refresh the auth token
+  const refreshToken = useCallback(async (): Promise<boolean> => {
+    if (!auth.currentUser || signOutInProgress.current || tokenRefreshInProgress.current) {
+      return false;
+    }
+    
+    tokenRefreshInProgress.current = true;
+    
+    try {
+      await auth.currentUser.getIdToken(true);
+      console.log("Token refreshed successfully");
+      authErrorOccurred.current = false;
+      tokenRefreshInProgress.current = false;
+      return true;
+    } catch (error) {
+      console.error("Error refreshing token:", error);
+      authErrorOccurred.current = true;
+      tokenRefreshInProgress.current = false;
+      createFirebaseErrorEvent(error);
+      return false;
+    }
+  }, []);
+
   // Check for cached user data and set up auth state listener
   useEffect(() => {
     let unsubscribe: () => void;
@@ -213,65 +273,188 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [clearAllTimeouts]);
 
-  // Token refresh effect
+  // Token refresh effect with auth error handling
   useEffect(() => {
-    const refreshToken = async () => {
+    // Schedule a periodic token refresh
+    const scheduleTokenRefresh = async () => {
       if (auth.currentUser && !signOutInProgress.current) {
         try {
+          // Force refresh token 
           await auth.currentUser.getIdToken(true);
           console.log("Token refreshed successfully");
           
-          // Schedule next refresh (every 55 minutes)
-          tokenRefreshTimeout.current = setTimeout(refreshToken, 55 * 60 * 1000);
+          // Schedule next refresh (every 50 minutes instead of 55 to be safer)
+          tokenRefreshTimeout.current = setTimeout(scheduleTokenRefresh, 50 * 60 * 1000);
+          
+          // Reset any auth error flags or states
+          authErrorOccurred.current = false;
         } catch (error) {
           console.error("Error refreshing token:", error);
+          
+          // Mark auth error
+          authErrorOccurred.current = true;
+          
+          // Try one more refresh after a short delay
+          tokenRefreshTimeout.current = setTimeout(scheduleTokenRefresh, 30 * 1000); // 30 seconds
         }
       }
     };
     
+    // Immediately refresh token when auth state becomes authenticated
     if (isAuthenticated && !isLoading) {
-      refreshToken();
+      scheduleTokenRefresh();
     }
     
-    return () => clearAllTimeouts();
-  }, [isAuthenticated, isLoading, clearAllTimeouts]);
-
-  const signIn = useCallback(async (email: string, password: string, rememberMe: boolean = false) => {
-    // Mark sign out as not in progress
-    signOutInProgress.current = false;
+    // Listen for Firestore errors that might indicate token issues
+    const handleFirestoreError = (event: ErrorEvent) => {
+      if (!isAuthenticated || signOutInProgress.current) return;
+      
+      const errorMessage = event.error?.message || event.message || '';
+      if (typeof errorMessage === 'string' && 
+          (errorMessage.includes('Firestore') || 
+           errorMessage.includes('permission') || 
+           errorMessage.includes('token') ||
+           errorMessage.includes('transport errored'))) {
+        
+        // Force a token refresh if we haven't already marked an auth error
+        if (!authErrorOccurred.current) {
+          console.log("Firestore error detected, refreshing authentication");
+          refreshToken();
+        }
+      }
+    };
     
-    // Mark login verification as in progress - this should NOT trigger loading state in UI
+    // Add listener for Firestore errors
+    window.addEventListener('error', handleFirestoreError);
+    
+    // Handle Firebase auth error events
+    const handleAuthError = (event: CustomEvent) => {
+      const error = event.detail?.error;
+      if (!error || !isAuthenticated || signOutInProgress.current) return;
+      
+      const errorCode = error?.code;
+      const errorMessage = error?.message || '';
+      
+      // Check if error requires token refresh
+      if (errorMessage.includes('permission-denied') || 
+          errorMessage.includes('unauthenticated') ||
+          errorMessage.includes('token') ||
+          errorCode === 'auth/network-request-failed' ||
+          errorCode === 'auth/user-token-expired') {
+        
+        console.log("Firebase auth error detected, attempting token refresh");
+        toast.loading("Refreshing authentication...", { id: "auth-refresh-toast" });
+        
+        refreshToken()
+          .then(success => {
+            if (success) {
+              toast.success("Authentication refreshed", { id: "auth-refresh-toast" });
+            } else {
+              toast.error("Authentication failed. Please log in again.", { id: "auth-refresh-toast" });
+              // Use performLogout instead of signOut to avoid circular dependency
+              setTimeout(() => performLogout(), 1000);
+            }
+          });
+      }
+    };
+    
+    // Listen for custom auth error events
+    window.addEventListener('firebase-auth-error', handleAuthError as unknown as EventListener);
+    
+    return () => {
+      clearAllTimeouts();
+      window.removeEventListener('error', handleFirestoreError);
+      window.removeEventListener('firebase-auth-error', handleAuthError as unknown as EventListener);
+    };
+  }, [isAuthenticated, isLoading, clearAllTimeouts, refreshToken, performLogout]);
+
+  // Sign in function with improved error handling
+  const signIn = useCallback(async (email: string, password: string, rememberMe = false) => {
+    if (loginVerificationInProgress.current) return;
+    
     loginVerificationInProgress.current = true;
+    setIsLoading(true);
+    setError(null);
     
     try {
-      // Clear any previous errors
-      setError(null);
+      // Set the persistence type based on remember me checkbox
+      const persistenceType = rememberMe ? browserLocalPersistence : browserSessionPersistence;
+      await setPersistence(auth, persistenceType);
       
-      // Clear any existing session data
-      sessionStorage.removeItem('user_data');
-      
-      // Set persistence based on remember me option
-      await setPersistence(auth,
-        rememberMe 
-          ? browserLocalPersistence 
-          : browserSessionPersistence 
-      );
-      
-      // Sign in with Firebase
+      // Attempt sign in with email and password
       await signInWithEmailAndPassword(auth, email, password);
       
-      // The onIdTokenChanged listener will handle the rest of the process
-      // We don't need to set any loading state here - it should be handled by the component
+      // Auth success is handled by the auth state listener in the useEffect
+      
     } catch (error: any) {
-      // Reset login verification flag
+      // Clear any existing cached user data
+      sessionStorage.removeItem('user_data');
+      
+      // Reset auth state
+      setUser(null);
+      setIsAuthenticated(false);
+      
+      // Convert Firebase errors to user-friendly messages
+      let errorMessage = 'Login failed. Please check your credentials.';
+      
+      if (error.code) {
+        // Create user-friendly error messages based on Firebase error codes
+        switch (error.code) {
+          case 'auth/user-not-found':
+            errorMessage = 'Account not found. Please check your email address.';
+            break;
+          case 'auth/wrong-password':
+            errorMessage = 'Incorrect password. Please try again.';
+            break;
+          case 'auth/invalid-credential':
+            errorMessage = 'Invalid login credentials. Please check your email and password.';
+            break;
+          case 'auth/too-many-requests':
+            errorMessage = 'Too many login attempts. Please try again later.';
+            break;
+          case 'auth/invalid-email':
+            errorMessage = 'Invalid email address format.';
+            break;
+          case 'auth/network-request-failed':
+            errorMessage = 'Network error. Please check your internet connection.';
+            break;
+          default:
+            errorMessage = 'Authentication failed. Please try again or contact support.';
+        }
+      } else if (error.message) {
+        // Handle non-code errors, but don't expose raw Firebase messages
+        if (error.message.includes('Firebase: Error')) {
+          // Extract the error code if possible
+          const errorCodeMatch = error.message.match(/\((.*?)\)/);
+          if (errorCodeMatch && errorCodeMatch[1]) {
+            const errorCode = errorCodeMatch[1];
+            
+            switch (errorCode) {
+              case 'auth/invalid-credential':
+                errorMessage = 'Invalid login credentials. Please check your email and password.';
+                break;
+              case 'auth/user-not-found':
+                errorMessage = 'We couldn\'t find an account with this email. Please check your email.';
+                break;
+              case 'auth/invalid-email':
+                errorMessage = 'Please enter a valid email address.';
+                break;
+              case 'auth/wrong-password':
+                errorMessage = 'The password you entered is incorrect. Please try again.';
+                break;
+              default:
+                errorMessage = 'Authentication failed. Please try again or contact support.';
+            }
+          }
+        }
+      }
+      
+      setError(new Error(errorMessage));
       loginVerificationInProgress.current = false;
-      
-      // Set error state
-      setError(new Error(error.message));
-      console.error('Sign in error:', error);
-      
-      // Rethrow to let component handle it
-      throw error;
+      throw error; // Re-throw to be caught by the component
+    } finally {
+      setIsLoading(false);
+      loginVerificationInProgress.current = false;
     }
   }, []);
 
@@ -296,11 +479,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(null);
       setIsAuthenticated(false);
       
+      // Set a flag in session storage to indicate successful sign-out
+      // This will be used by the Login component to show the success toast
+      sessionStorage.setItem('signedOut', 'true');
+      
       // Sign out from Firebase
       await firebaseSignOut(auth);
+      
+      // Log out toast message with consistent ID to prevent duplicates
+      toast.success("Logged out successfully", { id: "logout-success-toast" });
+      
+      // Add a longer delay to ensure the loading spinner is visible for a reasonable time
+      // This gives users visual feedback that the sign-out process is happening
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
     } catch (error: any) {
       console.error('Sign out error:', error);
       setError(new Error(error.message));
+      toast.error("Error signing out", { id: "logout-error-toast" });
       throw error;
     } finally {
       // Reset loading state
@@ -317,11 +513,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     user,
     isAuthenticated,
     // Hide loading state during login verification - crucial for UX
-    isLoading: isLoading && !loginVerificationInProgress.current,
+    // Also hide loading state after initial auth check to prevent "establishing secure connection" message
+    isLoading: isLoading && !loginVerificationInProgress.current && !initialAuthCheckComplete.current,
     signIn,
     signOut,
-    error
-  }), [user, isAuthenticated, isLoading, loginVerificationInProgress, signIn, signOut, error]);
+    error,
+    refreshToken
+  }), [user, isAuthenticated, isLoading, loginVerificationInProgress, signIn, signOut, error, refreshToken]);
 
   return (
     <AuthContext.Provider value={contextValue}>

@@ -21,7 +21,7 @@ const loginSchema = z.object({
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signIn, isAuthenticated } = useAuth();
+  const { signIn, isAuthenticated, isLoading, error } = useAuth();
   const { startLoading, stopLoading } = useLoading();
   
   // Form state
@@ -38,7 +38,10 @@ export default function Login() {
   const toastIdRef = useRef<string | null>(null);
   const authSuccessful = useRef(false);
   
-  // Cleanup function to dismiss any existing toasts
+  // Check if we're returning from a sign-out
+  const isReturningFromSignOut = useRef(false);
+  
+  // Dismiss any existing toasts
   const dismissToasts = () => {
     if (toastIdRef.current) {
       toast.dismiss(toastIdRef.current);
@@ -54,13 +57,25 @@ export default function Login() {
       
       const from = location.state?.from?.pathname || '/';
       
-      // Start full-screen loading state for redirect phase ONLY
-      startLoading('Redirecting to dashboard...');
+      // Always show authentication success toast
+      toastIdRef.current = toast.success('Authentication successful! Redirecting to dashboard...', {
+        id: 'login-success-toast',
+        duration: 3000,
+        position: 'top-center',
+        style: {
+          background: '#10B981',
+          color: '#fff',
+          fontWeight: 500,
+          padding: '12px 16px',
+          borderRadius: '8px',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+        }
+      });
       
-      // Delay navigation slightly to show transition
+      // Delay navigation to allow toast to be visible
       const redirectTimer = setTimeout(() => {
         navigate(from, { replace: true });
-      }, 1000);
+      }, 2000);
       
       return () => clearTimeout(redirectTimer);
     }
@@ -71,7 +86,26 @@ export default function Login() {
         stopLoading();
       }
     };
-  }, [isAuthenticated, navigate, location, startLoading, stopLoading]);
+  }, [isAuthenticated, navigate, location, stopLoading]);
+
+  // Check if we're returning from a sign-out
+  useEffect(() => {
+    // Check if we have a "signedOut" flag in session storage
+    const signedOut = sessionStorage.getItem('signedOut');
+    if (signedOut === 'true') {
+      isReturningFromSignOut.current = true;
+      // Clear the flag
+      sessionStorage.removeItem('signedOut');
+      
+      // We don't need to show the toast here anymore as it's shown in the AuthContext
+      // when performing the logout operation
+    }
+    
+    // Cleanup function
+    return () => {
+      dismissToasts();
+    };
+  }, []);
 
   // Clear auth error when user types
   useEffect(() => {
@@ -165,54 +199,27 @@ export default function Login() {
       
       // Handle successful authentication
       authSuccessful.current = true;
-      toastIdRef.current = toast.success('Authentication successful');
+      
+      // Don't show success toast here - it will be shown in the useEffect
+      // based on the loginSuccess flag set in AuthContext
       
       // Note: we don't need to call startLoading here as the useEffect for isAuthenticated
       // will handle showing the loading state during redirect
       
-    } catch (err: any) {
-      console.error('Login error:', err);
+    } catch (error: any) {
+      console.error("Login error:", error);
+      
+      // Let the AuthContext handle showing the error message
+      // Don't set duplicate error messages here
+      
       setIsSubmitting(false);
-      
-      // Create user-friendly error message
-      let errorMessage = 'Login failed. Please check your credentials.';
-      
-      if (err.code) {
-        switch (err.code) {
-          case 'auth/user-not-found':
-            errorMessage = 'We couldn\'t find an account with this email. Please check your email or create a new account.';
-            break;
-          case 'auth/wrong-password':
-            errorMessage = 'The password you entered is incorrect. Please try again or reset your password.';
-            break;
-          case 'auth/too-many-requests':
-            errorMessage = 'Too many login attempts. For your security, please try again later or reset your password.';
-            break;
-          case 'auth/user-disabled':
-            errorMessage = 'This account has been disabled. Please contact your administrator.';
-            break;
-          case 'auth/invalid-credential':
-            errorMessage = 'Invalid login credentials. Please check your email and password.';
-            break;
-          case 'auth/network-request-failed':
-            errorMessage = 'Network connection error. Please check your internet connection and try again.';
-            break;
-          default:
-            errorMessage = 'Authentication failed. Please try again or contact support.';
-        }
-      } else if (err.message && err.message.includes('Access denied')) {
-        errorMessage = 'Your account doesn\'t have permission to access the admin panel. Please contact your administrator.';
-      } else if (err.message && err.message.includes('User not found in system')) {
-        errorMessage = 'Your account exists but is not configured correctly. Please contact your administrator.';
-      }
-      
-      // Set the error message in the form
-      setAuthError(errorMessage);
-      
-      // Show toast notification for error (with custom ID)
-      toastIdRef.current = toast.error(errorMessage);
     }
   };
+
+  // If already authenticated, redirect to dashboard
+  if (isAuthenticated && !isRedirecting.current) {
+    return null; // Return null to prevent flash of login form
+  }
 
   return (
     <ErrorBoundary>
@@ -234,6 +241,14 @@ export default function Login() {
               <p className="text-sm text-gray-600 text-center mb-6">
                 Enter your credentials to access admin panel
               </p>
+
+              {/* Authentication Error Message */}
+              {error && (
+                <div className="p-3 bg-red-50 text-red-700 rounded-lg flex items-start text-sm border border-red-200 animate-fade-in mb-6">
+                  <AlertCircle className="h-5 w-5 text-red-500 mr-2 mt-0.5 flex-shrink-0" />
+                  <span>{error.message}</span>
+                </div>
+              )}
 
               <form onSubmit={handleSubmit} className="space-y-5" noValidate>
                 {/* Authentication Error Message */}
@@ -265,7 +280,7 @@ export default function Login() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       onBlur={() => validateField('email', email)}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || isLoading}
                       aria-invalid={!!formErrors.email}
                       aria-describedby={formErrors.email ? "email-error" : undefined}
                     />
@@ -317,7 +332,7 @@ export default function Login() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       onBlur={() => validateField('password', password)}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || isLoading}
                       aria-invalid={!!formErrors.password}
                       aria-describedby={formErrors.password ? "password-error" : undefined}
                     />
@@ -352,7 +367,7 @@ export default function Login() {
                     className="h-4 w-4 text-[#0031ac] focus:ring-blue-500 border-gray-300 rounded"
                     checked={remember}
                     onChange={(e) => setRemember(e.target.checked)}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isLoading}
                   />
                   <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
                     Keep me signed in
@@ -364,11 +379,11 @@ export default function Login() {
                   type="submit"
                   variant="primary"
                   size="md"
-                  isLoading={isSubmitting}
+                  isLoading={isSubmitting || isLoading}
                   fullWidth
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isLoading}
                 >
-                  Sign in
+                  {isSubmitting || isLoading ? 'Signing in...' : 'Sign in'}
                 </Button>
               </form>
             </div>

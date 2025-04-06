@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import Select from 'react-select';
 import { 
-  Info, 
   AlertCircle, 
   HelpCircle, 
   Plus, 
@@ -10,32 +9,74 @@ import {
   ChevronDown, 
   ChevronUp,
   Briefcase,
-  Tag,
   Tags
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toast } from 'react-hot-toast';
 import Button from '@/components/ui/Button';
 import { getAllIndustries, getCategoriesByIndustry, getSubCategoriesByCategory } from '@/services/industryService';
+import ToastManager, { TOAST_IDS } from "@/utils/ToastManager";
 
-// Tooltip component
+// Tooltip component using span elements to prevent DOM nesting issues
 const Tooltip = ({ content, children }) => {
   return (
-    <div className="group relative inline-block">
+    <span className="group relative inline-block">
       {children}
-      <div className="absolute z-10 w-60 opacity-0 invisible group-hover:opacity-100 group-hover:visible transform -translate-x-1/2 left-1/2 bottom-full mb-2 transition-all duration-150">
-        <div className="relative bg-gray-800 text-white text-xs rounded p-2 text-center shadow-lg">
+      <span className="absolute z-10 w-60 opacity-0 invisible group-hover:opacity-100 group-hover:visible transform -translate-x-1/2 left-1/2 bottom-full mb-2 transition-all duration-150">
+        <span className="relative bg-gray-800 text-white text-xs rounded p-2 block text-center shadow-lg">
           {content}
-          <div className="absolute w-2 h-2 bg-gray-800 transform rotate-45 translate-y-1 translate-x-0 left-1/2 -ml-1 bottom-0"></div>
-        </div>
-      </div>
-    </div>
+          <span className="absolute w-2 h-2 bg-gray-800 transform rotate-45 translate-y-1 translate-x-0 left-1/2 -ml-1 bottom-0"></span>
+        </span>
+      </span>
+    </span>
   );
+};
+
+// Default styles for react-select
+const defaultSelectStyles = {
+  control: (base, state) => ({
+    ...base,
+    minHeight: '42px',
+    fontSize: '0.875rem',
+    borderRadius: '0.5rem',
+    borderColor: state.isFocused ? '#0031ac' : '#D1D5DB',
+    boxShadow: state.isFocused ? '0 0 0 1px #0031ac' : 'none',
+    '&:hover': {
+      borderColor: state.isFocused ? '#0031ac' : '#9CA3AF'
+    }
+  }),
+  option: (base, state) => ({
+    ...base,
+    padding: '8px 12px',
+    fontSize: '0.875rem',
+    backgroundColor: state.isSelected ? '#0031ac' : state.isFocused ? '#E6EEFF' : null,
+    color: state.isSelected ? 'white' : '#333333'
+  }),
+  menuPortal: base => ({ ...base, zIndex: 9999 }),
+  menu: base => ({ ...base, zIndex: 9999 }),
+  placeholder: base => ({
+    ...base,
+    fontSize: '0.875rem',
+    padding: '2px 0'
+  }),
+  singleValue: base => ({
+    ...base,
+    fontSize: '0.875rem',
+    padding: '2px 0'
+  }),
+  valueContainer: base => ({
+    ...base,
+    padding: '2px 12px'
+  }),
+  input: base => ({
+    ...base,
+    margin: '0',
+    padding: '2px 0'
+  })
 };
 
 // Industry Classifications Section Component
 const IndustryClassifications = () => {
-  const { control, register, formState: { errors }, watch, setValue, trigger, getValues } = useFormContext();
+  const { control, formState: { errors }, watch, setValue, trigger, getValues } = useFormContext();
   
   // Use fieldArray for classifications
   const { fields, append, remove } = useFieldArray({
@@ -44,16 +85,29 @@ const IndustryClassifications = () => {
   });
   
   // Track expanded industry sections
-  const [expandedSections, setExpandedSections] = useState(fields.map((_, i) => true));
+  const [expandedSections, setExpandedSections] = useState(fields.map(() => true));
   
   // State for industries data
   const [allIndustries, setAllIndustries] = useState([]);
   const [categoriesMap, setCategoriesMap] = useState({}); // industryId -> categories[]
   const [subCategoriesMap, setSubCategoriesMap] = useState({}); // categoryId -> subCategories[]
-  const [loadingIndustries, setLoadingIndustries] = useState(false);
+  
+  // Loading states
+  const [loading, setLoading] = useState({
+    industries: false,
+    categories: {},  // industryId -> bool
+    subcategories: {} // categoryId -> bool
+  });
 
-  // Watch the classifications array to keep track of selected industries
-  const classifications = watch('classifications') || [];
+  // Track API requests to avoid hammering the server
+  const apiRequestTracker = useMemo(() => ({
+    industries: { inProgress: false, lastRequest: null },
+    categories: {}, // industryId -> {inProgress, lastRequest}
+    subcategories: {} // categoryId -> {inProgress, lastRequest}
+  }), []);
+
+  // Watch the classifications array to keep track of selected industries and categories
+  const classificationsData = watch('classifications') || [];
 
   // Toggle expansion of industry section
   const toggleSection = (index) => {
@@ -66,134 +120,369 @@ const IndustryClassifications = () => {
 
   // Fetch all industries on component mount
   useEffect(() => {
-    const loadIndustries = async () => {
+    const loadIndustries = async (retryCount = 0) => {
+      if (apiRequestTracker.industries.inProgress) {
+        return;
+      }
+      
+      // Update tracker
+      apiRequestTracker.industries.inProgress = true;
+      apiRequestTracker.industries.lastRequest = new Date();
+      
       try {
-        setLoadingIndustries(true);
+        setLoading(prev => ({ ...prev, industries: true }));
+        console.log('Loading all industries...');
+        
         const industriesData = await getAllIndustries();
         
-        if (industriesData.length === 0) {
-          console.warn('No industries found in the database. Check your Firestore permissions and data.');
+        if (industriesData && industriesData.length > 0) {
+          console.log(`Loaded ${industriesData.length} industries`);
+          setAllIndustries(industriesData);
+        } else {
+          console.warn('No industries found in the database or empty response received');
+          
+          // Retry logic - up to 3 retries with increasing delays
+          if (retryCount < 3) {
+            const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff: 1s, 2s, 4s
+            console.log(`Retrying to load industries after ${delay}ms (attempt ${retryCount + 1}/3)`);
+            
+            setTimeout(() => {
+              apiRequestTracker.industries.inProgress = false;
+              loadIndustries(retryCount + 1);
+            }, delay);
+          } else {
+            ToastManager.error('Could not load industry data. Please try again later.', TOAST_IDS.GENERIC_ERROR);
+          }
         }
-        
-        setAllIndustries(industriesData);
       } catch (error) {
         console.error('Error loading industries:', error);
-        toast.error('Failed to load industries. Please refresh the page or contact support.');
+        
+        // Check if error is related to authentication
+        const errorMessage = error?.message || '';
+        const isAuthError = 
+          errorMessage.includes('permission') || 
+          errorMessage.includes('auth') || 
+          errorMessage.includes('token') ||
+          errorMessage.includes('transport errored');
+        
+        if (isAuthError) {
+          // Auth-related errors will be handled by the AuthVerifier at root level
+          ToastManager.error('Authentication issue detected. Refreshing connection...', TOAST_IDS.AUTH_ERROR);
+          
+          // Just display fallback UI and let AuthVerifier handle it
+          return;
+        }
+        
+        // For non-auth errors, implement retry
+        if (retryCount < 3) {
+          const delay = Math.pow(2, retryCount) * 1000;
+          console.log(`Retrying to load industries after ${delay}ms (attempt ${retryCount + 1}/3)`);
+          
+          setTimeout(() => {
+            apiRequestTracker.industries.inProgress = false;
+            loadIndustries(retryCount + 1);
+          }, delay);
+        } else {
+          ToastManager.error('Failed to load industry data. Please refresh the page.', TOAST_IDS.GENERIC_ERROR);
+        }
       } finally {
-        setLoadingIndustries(false);
+        setLoading(prev => ({ ...prev, industries: false }));
+        apiRequestTracker.industries.inProgress = false;
       }
     };
 
     loadIndustries();
+    
+    // Load categories and subcategories for existing selections
+    const loadExistingData = async () => {
+      const existingData = getValues('classifications') || [];
+      
+      for (const classification of existingData) {
+        if (classification.industry) {
+          await loadCategoriesForIndustry(classification.industry);
+          
+          if (classification.category) {
+            await loadSubcategoriesForCategory(classification.category);
+          }
+        }
+      }
+    };
+    
+    loadExistingData();
   }, []);
 
-  // Load categories for all selected industries
-  useEffect(() => {
-    const loadAllCategories = async () => {
-      const newCategoriesMap = { ...categoriesMap };
-
-      for (const classification of classifications) {
-        const industryId = classification.industry;
-        if (industryId && !newCategoriesMap[industryId]) {
-          try {
-            const categoriesData = await getCategoriesByIndustry(industryId);
-            if (categoriesData.length === 0) {
-              console.warn(`No categories found for industry ${industryId}. You may need to add some categories.`);
-            }
-            newCategoriesMap[industryId] = categoriesData;
-          } catch (error) {
-            console.error(`Error loading categories for industry ${industryId}:`, error);
-            toast.error(`Failed to load categories for the selected industry. Please try again.`);
-          }
+  // Load categories for a specific industry - memoized for performance
+  const loadCategoriesForIndustry = useCallback(async (industryId, retryCount = 0) => {
+    // Skip if no industry selected or if request is in progress
+    if (!industryId) return;
+    
+    // Check tracker to avoid duplicate requests
+    if (!apiRequestTracker.categories[industryId]) {
+      apiRequestTracker.categories[industryId] = { inProgress: false, lastRequest: null };
+    }
+    
+    if (apiRequestTracker.categories[industryId].inProgress) {
+      return;
+    }
+    
+    // Check if we already have categories for this industry
+    if (categoriesMap[industryId] && categoriesMap[industryId].length > 0) {
+      return;
+    }
+    
+    // Update tracker
+    apiRequestTracker.categories[industryId].inProgress = true;
+    apiRequestTracker.categories[industryId].lastRequest = new Date();
+    
+    // Update loading state
+      setLoading(prev => ({
+        ...prev,
+      categories: {
+        ...prev.categories,
+        [industryId]: true
+      }
+      }));
+      
+    try {
+      console.log(`Loading categories for industry ${industryId}`);
+      const categoriesData = await getCategoriesByIndustry(industryId);
+      
+      if (categoriesData && categoriesData.length > 0) {
+        console.log(`Loaded ${categoriesData.length} categories for industry ${industryId}`);
+        setCategoriesMap(prev => ({
+          ...prev,
+          [industryId]: categoriesData
+        }));
+      } else {
+        console.log(`No categories found for industry ${industryId}`);
+        
+        // Retry logic for categories
+        if (retryCount < 2) {
+          const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s
+          console.log(`Retrying to load categories after ${delay}ms (attempt ${retryCount + 1}/2)`);
+          
+          setTimeout(() => {
+            apiRequestTracker.categories[industryId].inProgress = false;
+            loadCategoriesForIndustry(industryId, retryCount + 1);
+          }, delay);
+      } else {
+          // After retries, just set empty array
+          setCategoriesMap(prev => ({
+            ...prev,
+            [industryId]: []
+          }));
         }
       }
-
-      setCategoriesMap(newCategoriesMap);
-    };
-
-    if (classifications.length > 0) {
-      loadAllCategories();
-    }
-  }, [classifications.map(c => c.industry).join(',')]);
-
-  // Load subcategories for all selected categories
-  useEffect(() => {
-    const loadAllSubCategories = async () => {
-      const newSubCategoriesMap = { ...subCategoriesMap };
-
-      for (const classification of classifications) {
-        const categoryId = classification.category;
-        if (categoryId && !newSubCategoriesMap[categoryId]) {
-          try {
-            const subCategoriesData = await getSubCategoriesByCategory(categoryId);
-            if (subCategoriesData.length === 0) {
-              console.warn(`No subcategories found for category ${categoryId}. You may need to add some subcategories.`);
-            }
-            newSubCategoriesMap[categoryId] = subCategoriesData;
           } catch (error) {
-            console.error(`Error loading subcategories for category ${categoryId}:`, error);
-            toast.error(`Failed to load subcategories for the selected category. Please try again.`);
-          }
+      console.error(`Error loading categories for industry ${industryId}:`, error);
+      
+      // Check if error is related to authentication
+      const errorMessage = error?.message || '';
+      const isAuthError = 
+        errorMessage.includes('permission') || 
+        errorMessage.includes('auth') || 
+        errorMessage.includes('token') ||
+        errorMessage.includes('transport errored');
+      
+      if (isAuthError) {
+        // Auth errors will be handled by AuthVerifier
+        return;
+      }
+      
+      // Retry for non-auth errors
+      if (retryCount < 2) {
+        const delay = Math.pow(2, retryCount) * 1000;
+        setTimeout(() => {
+          apiRequestTracker.categories[industryId].inProgress = false;
+          loadCategoriesForIndustry(industryId, retryCount + 1);
+        }, delay);
+      } else {
+        // After retries, just set empty array
+        setCategoriesMap(prev => ({
+          ...prev,
+          [industryId]: []
+        }));
+      }
+    } finally {
+      setLoading(prev => ({
+        ...prev,
+        categories: {
+          ...prev.categories,
+          [industryId]: false
+        }
+      }));
+        apiRequestTracker.categories[industryId].inProgress = false;
+    }
+  }, [categoriesMap]);
+
+  // Load subcategories for a specific category - memoized for performance
+  const loadSubcategoriesForCategory = useCallback(async (categoryId, retryCount = 0) => {
+    // Skip if no category selected or if request is in progress
+    if (!categoryId) return;
+    
+    // Check tracker to avoid duplicate requests
+    if (!apiRequestTracker.subcategories[categoryId]) {
+      apiRequestTracker.subcategories[categoryId] = { inProgress: false, lastRequest: null };
+    }
+    
+    if (apiRequestTracker.subcategories[categoryId].inProgress) {
+      return;
+    }
+    
+    // Check if we already have subcategories for this category
+    if (subCategoriesMap[categoryId] && subCategoriesMap[categoryId].length > 0) {
+      return;
+    }
+    
+    // Update tracker
+    apiRequestTracker.subcategories[categoryId].inProgress = true;
+    apiRequestTracker.subcategories[categoryId].lastRequest = new Date();
+    
+    // Update loading state
+      setLoading(prev => ({
+        ...prev,
+      subcategories: {
+        ...prev.subcategories,
+        [categoryId]: true
+      }
+      }));
+      
+    try {
+      console.log(`Loading subcategories for category ${categoryId}`);
+      const subcategoriesData = await getSubCategoriesByCategory(categoryId);
+      
+      if (subcategoriesData && subcategoriesData.length > 0) {
+        console.log(`Loaded ${subcategoriesData.length} subcategories for category ${categoryId}`);
+        setSubCategoriesMap(prev => ({
+          ...prev,
+          [categoryId]: subcategoriesData
+        }));
+      } else {
+        console.log(`No subcategories found for category ${categoryId}`);
+        
+        // Retry logic for subcategories
+        if (retryCount < 2) {
+          const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s
+          console.log(`Retrying to load subcategories after ${delay}ms (attempt ${retryCount + 1}/2)`);
+          
+          setTimeout(() => {
+            apiRequestTracker.subcategories[categoryId].inProgress = false;
+            loadSubcategoriesForCategory(categoryId, retryCount + 1);
+          }, delay);
+      } else {
+          // After retries, just set empty array
+          setSubCategoriesMap(prev => ({
+            ...prev,
+            [categoryId]: []
+          }));
         }
       }
-
-      setSubCategoriesMap(newSubCategoriesMap);
-    };
-
-    if (classifications.length > 0) {
-      loadAllSubCategories();
-    }
-  }, [classifications.map(c => c.category).join(',')]);
-
-  // Add validation effect for classifications
-  useEffect(() => {
-    if (fields.length > 0) {
-      fields.forEach((field, index) => {
-        const industry = watch(`classifications.${index}.industry`);
-        const category = watch(`classifications.${index}.category`);
-        const subCategories = watch(`classifications.${index}.subCategories`) || [];
-
-        if (industry) {
-          trigger(`classifications.${index}.industry`);
-
-          if (category) {
-            trigger(`classifications.${index}.category`);
-
-            if (subCategories.length > 0) {
-              trigger(`classifications.${index}.subCategories`);
-            }
-          }
+    } catch (error) {
+      console.error(`Error loading subcategories for category ${categoryId}:`, error);
+      
+      // Check if error is related to authentication
+      const errorMessage = error?.message || '';
+      const isAuthError = 
+        errorMessage.includes('permission') || 
+        errorMessage.includes('auth') || 
+        errorMessage.includes('token') ||
+        errorMessage.includes('transport errored');
+      
+      if (isAuthError) {
+        // Auth errors will be handled by AuthVerifier
+        return;
+      }
+      
+      // Retry for non-auth errors
+      if (retryCount < 2) {
+        const delay = Math.pow(2, retryCount) * 1000;
+        setTimeout(() => {
+          apiRequestTracker.subcategories[categoryId].inProgress = false;
+          loadSubcategoriesForCategory(categoryId, retryCount + 1);
+        }, delay);
+      } else {
+        // After retries, just set empty array
+        setSubCategoriesMap(prev => ({
+          ...prev,
+          [categoryId]: []
+        }));
+      }
+    } finally {
+      setLoading(prev => ({
+        ...prev,
+        subcategories: {
+          ...prev.subcategories,
+          [categoryId]: false
         }
-      });
+      }));
+        apiRequestTracker.subcategories[categoryId].inProgress = false;
     }
-  }, [fields, trigger, watch]);
+  }, [subCategoriesMap]);
 
-  // Handle industry selection
-  const handleIndustryChange = (option, index) => {
+  // Handle industry selection - memoized to avoid recreating function
+  const handleIndustryChange = useCallback((option, index) => {
+    console.log(`Industry selected: ${option?.label} (${option?.value}) for index ${index}`);
+    
     // Update industry and clear category and subcategories
-    setValue(`classifications.${index}.industry`, option?.value || '');
-    setValue(`classifications.${index}.industryName`, option?.label || '');
+    if (option && option.value) {
+      setValue(`classifications.${index}.industry`, option.value);
+      setValue(`classifications.${index}.industryName`, option.label);
+      
+      // Clear dependent fields
+      setValue(`classifications.${index}.category`, '');
+      setValue(`classifications.${index}.categoryName`, '');
+      setValue(`classifications.${index}.subCategories`, []);
+      setValue(`classifications.${index}.subCategoryNames`, []);
+      
+      // Immediately load categories (no timeout needed)
+      loadCategoriesForIndustry(option.value);
+      
+      // Trigger validation
+      trigger(`classifications.${index}.industry`);
+    } else {
+      // If no option selected, clear all fields
+      setValue(`classifications.${index}.industry`, '');
+      setValue(`classifications.${index}.industryName`, '');
     setValue(`classifications.${index}.category`, '');
     setValue(`classifications.${index}.categoryName`, '');
     setValue(`classifications.${index}.subCategories`, []);
     setValue(`classifications.${index}.subCategoryNames`, []);
 
     trigger(`classifications.${index}.industry`);
-  };
+    }
+  }, [setValue, trigger, loadCategoriesForIndustry]);
 
-  // Handle category selection
-  const handleCategoryChange = (option, index) => {
+  // Handle category selection - memoized to avoid recreating function
+  const handleCategoryChange = useCallback((option, index) => {
+    console.log(`Category selected: ${option?.label} (${option?.value}) for index ${index}`);
+    
     // Update category and clear subcategories
-    setValue(`classifications.${index}.category`, option?.value || '');
-    setValue(`classifications.${index}.categoryName`, option?.label || '');
+    if (option && option.value) {
+      setValue(`classifications.${index}.category`, option.value);
+      setValue(`classifications.${index}.categoryName`, option.label);
+      
+      // Clear subcategories
+      setValue(`classifications.${index}.subCategories`, []);
+      setValue(`classifications.${index}.subCategoryNames`, []);
+      
+      // Immediately load subcategories (no timeout needed)
+      loadSubcategoriesForCategory(option.value);
+      
+      // Trigger validation
+      trigger(`classifications.${index}.category`);
+    } else {
+      // If no option selected, clear dependent fields
+      setValue(`classifications.${index}.category`, '');
+      setValue(`classifications.${index}.categoryName`, '');
     setValue(`classifications.${index}.subCategories`, []);
     setValue(`classifications.${index}.subCategoryNames`, []);
 
     trigger(`classifications.${index}.category`);
-  };
+    }
+  }, [setValue, trigger, loadSubcategoriesForCategory]);
 
   // Handle subcategory selection
-  const handleSubCategoryToggle = (subCategoryId, subCategoryName, index) => {
+  const handleSubCategoryToggle = useCallback((subCategoryId, subCategoryName, index) => {
     const currentSubCategories = watch(`classifications.${index}.subCategories`) || [];
     const currentSubCategoryNames = watch(`classifications.${index}.subCategoryNames`) || [];
 
@@ -214,17 +503,17 @@ const IndustryClassifications = () => {
         setValue(`classifications.${index}.subCategories`, [...currentSubCategories, subCategoryId]);
         setValue(`classifications.${index}.subCategoryNames`, [...currentSubCategoryNames, subCategoryName]);
       } else {
-        toast.error('You can select up to 3 subcategories');
+        ToastManager.error('You can select up to 3 subcategories', TOAST_IDS.GENERIC_ERROR);
       }
     }
 
     trigger(`classifications.${index}.subCategories`);
-  };
+  }, [watch, setValue, trigger]);
 
   // Add new industry classification
-  const addClassification = () => {
-    if (classifications.length >= 3) {
-      toast.error('You can select up to 3 industries');
+  const addClassification = useCallback(() => {
+    if (fields.length >= 3) {
+      ToastManager.error('You can select up to 3 industries', TOAST_IDS.GENERIC_ERROR);
       return;
     }
 
@@ -238,11 +527,11 @@ const IndustryClassifications = () => {
     });
 
     // Expand the newly added section
-    setExpandedSections([...expandedSections, true]);
-  };
+    setExpandedSections(prev => [...prev, true]);
+  }, [append, fields.length]);
 
   // Remove an industry classification
-  const removeClassification = (index) => {
+  const removeClassification = useCallback((index) => {
     remove(index);
 
     // Update expanded sections
@@ -251,47 +540,23 @@ const IndustryClassifications = () => {
       newState.splice(index, 1);
       return newState;
     });
-  };
+  }, [remove]);
 
-  // Custom styles for react-select
-  const selectStyles = {
+  // Custom styles for react-select with error handling
+  const getSelectStyles = useCallback((index, fieldName) => {
+    return {
+      ...defaultSelectStyles,
     control: (base, state) => ({
-      ...base,
-      minHeight: '36px',
-      borderRadius: '0.375rem',
-      borderColor: state.isFocused ? '#0031ac' : errors.classifications?.[state.selectProps.fieldIndex]?.industry ? '#fca5a5' : '#D1D5DB',
+        ...defaultSelectStyles.control(base, state),
+        borderColor: state.isFocused 
+          ? '#0031ac' 
+          : errors.classifications?.[index]?.[fieldName] 
+            ? '#fca5a5' 
+            : '#D1D5DB',
       boxShadow: state.isFocused ? '0 0 0 1px #0031ac' : 'none',
-      '&:hover': {
-        borderColor: state.isFocused ? '#0031ac' : '#9CA3AF'
-      }
-    }),
-    option: (base, state) => ({
-      ...base,
-      backgroundColor: state.isSelected ? '#0031ac' : state.isFocused ? '#E6EEFF' : null,
-      color: state.isSelected ? 'white' : '#333333',
-      fontSize: '0.8125rem'
-    }),
-    // Add menuPortal to make dropdown float above other elements
-    menuPortal: base => ({ ...base, zIndex: 9999 }),
-    menu: base => ({ ...base, zIndex: 9999 }),
-    placeholder: base => ({
-      ...base,
-      fontSize: '0.8125rem'
-    }),
-    singleValue: base => ({
-      ...base,
-      fontSize: '0.8125rem'
-    }),
-    valueContainer: base => ({
-      ...base,
-      padding: '0 8px'
-    }),
-    input: base => ({
-      ...base,
-      margin: '0',
-      padding: '0'
-    })
-  };
+      })
+    };
+  }, [errors.classifications]);
 
   // Check if we have any array-level validation errors
   const hasArrayValidationError = errors.classifications && typeof errors.classifications.message === 'string';
@@ -328,6 +593,7 @@ const IndustryClassifications = () => {
           </div>
         </Button>
       </div>
+      
       {/* Error for classifications array */}
       {hasArrayValidationError && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-2">
@@ -421,11 +687,10 @@ const IndustryClassifications = () => {
                             : null
                         }
                         onChange={(option) => handleIndustryChange(option, index)}
-                        placeholder={loadingIndustries ? "Loading industries..." : "Select an industry"}
-                        styles={selectStyles}
+                        placeholder={loading.industries ? "Loading industries..." : "Select an industry"}
+                        styles={getSelectStyles(index, 'industry')}
                         isSearchable
-                        isLoading={loadingIndustries}
-                        fieldIndex={index}
+                        isLoading={loading.industries}
                         menuPortalTarget={document.body}
                         menuPosition={'fixed'}
                         className={cn(
@@ -464,11 +729,12 @@ const IndustryClassifications = () => {
                               : null
                           }
                           onChange={(option) => handleCategoryChange(option, index)}
-                          placeholder={!categoriesMap[watch(`classifications.${index}.industry`)] ? "Loading..." : "Select category"}
-                          styles={selectStyles}
+                          placeholder={loading.categories[watch(`classifications.${index}.industry`)] 
+                            ? "Loading categories..." 
+                            : "Select category"}
+                          styles={getSelectStyles(index, 'category')}
                           isSearchable
-                          isLoading={!categoriesMap[watch(`classifications.${index}.industry`)]}
-                          fieldIndex={index}
+                          isLoading={loading.categories[watch(`classifications.${index}.industry`)]}
                           menuPortalTarget={document.body}
                           menuPosition={'fixed'}
                           className={cn(
@@ -492,7 +758,7 @@ const IndustryClassifications = () => {
                           Subcategories <span className="text-red-500">*</span> (1-3)
                         </label>
 
-                        {!subCategoriesMap[watch(`classifications.${index}.category`)] ? (
+                        {loading.subcategories[watch(`classifications.${index}.category`)] ? (
                           <div className="text-xs text-gray-500 flex items-center p-2 bg-gray-50 rounded border border-gray-200">
                             <div className="animate-spin mr-2 h-3 w-3 border-2 border-blue-600 border-t-transparent rounded-full"></div>
                             Loading subcategories...

@@ -75,10 +75,8 @@ export const getAllIndustries = async (currentUserId?: string): Promise<Industry
 */
 export const getCategoriesByIndustry = async (industryId: string, currentUserId?: string): Promise<CategoryObject[]> => {
 try {
-  if (!auth.currentUser && !currentUserId) {
-    console.warn('Authentication not established for fetching categories');
-    return [];
-  }
+  // Remove auth check - categories should be accessible without authentication
+  // This is taxonomy data that doesn't need protection
   
   const categoriesQuery = query(
     collection(db, CATEGORIES_COLLECTION),
@@ -117,10 +115,8 @@ try {
 */
 export const getSubCategoriesByCategory = async (categoryId: string, currentUserId?: string): Promise<SubCategoryObject[]> => {
 try {
-  if (!auth.currentUser && !currentUserId) {
-    console.warn('Authentication not established for fetching subcategories');
-    return [];
-  }
+  // Remove auth check - subcategories should be accessible without authentication
+  // This is taxonomy data that doesn't need protection
   
   const subCategoriesQuery = query(
     collection(db, SUBCATEGORIES_COLLECTION),
@@ -1163,3 +1159,13 @@ const seedSubCategoriesForCategory = async (
     console.error(`Error seeding subcategories for category ${categoryId}:`, error);
   }
 };
+
+// Add the Industry type export
+export interface Industry {
+  id: string;
+  name: string;
+  description?: string;
+  parentId?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}

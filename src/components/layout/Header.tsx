@@ -9,7 +9,6 @@ import {
   User
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { useLoading } from '@/context/LoadingContext';
 import ConfirmationDialog from '@/components/common/ConfirmationDialog';
 import toast from 'react-hot-toast';
 
@@ -21,7 +20,6 @@ interface HeaderProps {
 
 export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = false }: HeaderProps) {
   const { user, signOut } = useAuth();
-  const { startLoading, stopLoading } = useLoading();
   const [showLogoutConfirmation, setShowLogoutConfirmation] = useState(false);
   const toastIdRef = useRef<string | null>(null);
   const logoutInProgress = useRef(false);
@@ -54,25 +52,17 @@ export default function Header({ toggleSidebar, isSidebarOpen, isScrolled = fals
     dismissToasts();
     
     try {
-      // Show loading state immediately
-      startLoading('Signing out...');
+      // Don't show toast here - AuthContext now handles the logout toast
+      // to avoid duplicates
       
-      // Add a small delay for better UX (~1 second)
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Perform logout
+      // Perform logout - the AuthContext will handle its own loading state and toast notifications
       await signOut();
-      
-      // CRITICAL FIX: Explicitly stop loading state after successful logout
-      stopLoading();
-      
-      // Show success toast (user will see it on login page)
-      toastIdRef.current = toast.success('You have been signed out successfully');
       
     } catch (error) {
       console.error("Error signing out:", error);
-      stopLoading();
-      toastIdRef.current = toast.error("Failed to sign out. Please try again.");
+      toastIdRef.current = toast.error("Failed to sign out. Please try again.", {
+        id: "logout-error-toast"
+      });
     } finally {
       logoutInProgress.current = false;
     }

@@ -18,6 +18,7 @@ import {
   BoardInvolvement 
 } from '@/types/listings';
 import { cn, formatCurrency } from '@/lib/utils';
+import { FormSection, Switch, Checkbox } from '@/components/ui/FormField';
 
 // Tooltip component - exact match with BasicInfo and BusinessForm
 const Tooltip = ({ content, children }) => {
@@ -31,28 +32,6 @@ const Tooltip = ({ content, children }) => {
           <div className="absolute w-2.5 h-2.5 bg-gray-800 transform rotate-45 -bottom-[5px] left-1/2 -translate-x-1/2"></div>
         </div>
       </div>
-    </div>
-  );
-};
-
-// Switch component (Toggle) - consistency with BusinessForm
-const Switch = ({ checked, onChange, label }) => {
-  return (
-    <div className="flex items-center space-x-2">
-      <button
-        type="button"
-        onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 transition-colors duration-200 ease-in-out focus:outline-none ${
-          checked ? 'bg-[#0031ac] border-[#0031ac]' : 'bg-gray-200 border-gray-200'
-        }`}
-      >
-        <span
-          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-            checked ? 'translate-x-5' : 'translate-x-0'
-          }`}
-        />
-      </button>
-      <span className="text-sm text-gray-700">{label}</span>
     </div>
   );
 };
@@ -678,214 +657,25 @@ const InvestorForm = ({ submitAttempted = false, editMode = false }) => {
           </div>
 
           {/* Lead Investor Status */}
-          <div className="col-span-full mt-2">
-            <div className="flex items-start">
-              <div className="flex items-center h-5">
-                <input
-                  id="isLeadInvestor"
-                  type="checkbox"
-                  className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300 rounded"
-                  {...register("investorDetails.investment.isLeadInvestor")}
-                />
-              </div>
-              <div className="ml-3">
-                <label htmlFor="isLeadInvestor" className="text-sm font-medium text-gray-700">
-                  Willing to Lead Investment Rounds
-                </label>
-                <p className="text-xs text-gray-500">
-                  Indicates your willingness to set deal terms and coordinate with other investors
-                </p>
-              </div>
-            </div>
-          </div>
+          <Switch
+            name="investorDetails.investment.isLeadInvestor"
+            label="Willing to Lead Investment Rounds"
+            description="Indicates your willingness to set deal terms and coordinate with other investors"
+          />
 
-          {/* Preferred Equity Stake - Range slider */}
-          <div className="col-span-full space-y-2 mt-2">
-            <div className="flex items-center">
-              <label className="block text-sm font-semibold text-gray-800 mr-2">
-                Preferred Equity Stake Range <span className="text-gray-400">(Optional)</span>
-              </label>
-              <Tooltip content="Typical ownership percentage you target in investments.">
-                <HelpCircle className="h-4 w-4 text-gray-500" />
-              </Tooltip>
-            </div>
-            <div className="mb-2">
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-sm text-gray-500">{minEquity}%</span>
-                <span className="text-sm text-gray-500">{maxEquity}%</span>
-              </div>
-            </div>
-            <div className="relative">
-              <div className="h-2 bg-gray-200 rounded-full">
-                <div
-                  className="absolute h-2 bg-primary-500 rounded-full"
-                  style={{
-                    left: `${minEquity}%`,
-                    width: `${maxEquity - minEquity}%`
-                  }}
-                ></div>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                step="1"
-                value={minEquity}
-                onChange={handleMinChange}
-                className="absolute top-0 left-0 w-full h-2 appearance-none bg-transparent pointer-events-none"
-                style={{
-                  background: 'transparent',
-                  WebkitAppearance: 'none',
-                }}
-              />
-              <input
-                type="range"
-                min="0"
-                max="100"
-                step="1"
-                value={maxEquity}
-                onChange={handleMaxChange}
-                className="absolute top-0 left-0 w-full h-2 appearance-none bg-transparent pointer-events-none"
-                style={{
-                  background: 'transparent',
-                  WebkitAppearance: 'none',
-                }}
-              />
-            </div>
-            <div className="flex justify-between mt-4">
-              <div className="relative w-full md:w-1/3">
-                <label htmlFor="minEquity" className="block text-xs font-medium text-gray-500 mb-1">
-                  Min %
-                </label>
-                <input
-                  type="number"
-                  id="minEquity"
-                  min="0"
-                  max={maxEquity}
-                  value={minEquity}
-                  onChange={handleMinChange}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
-                />
-              </div>
-              <div className="relative w-full md:w-1/3 ml-4">
-                <label htmlFor="maxEquity" className="block text-xs font-medium text-gray-500 mb-1">
-                  Max %
-                </label>
-                <input
-                  type="number"
-                  id="maxEquity"
-                  min={minEquity}
-                  max="100"
-                  value={maxEquity}
-                  onChange={handleMaxChange}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
-                />
-              </div>
-            </div>
-            <p className="text-xs text-gray-500">
-              Typical ownership percentage you target in investments
-            </p>
-          </div>
-        </div>
-      </div>
+          {/* Co-Investment Option */}
+          <Switch
+            name="investorDetails.investment.openToCoInvestment"
+            label="Open to Co-Investment"
+            description="Indicate your willingness to invest alongside other investors"
+          />
 
-      {/* Investment Focus Section */}
-      <div className="space-y-6">
-        <h3 className="text-base font-semibold text-gray-800">Investment Focus</h3>
-
-        <div className="grid grid-cols-1 gap-6">
-          {/* Primary Industries - Multi-select */}
-          <div className="space-y-2">
-            <div className="flex items-center">
-              <label className="block text-sm font-semibold text-gray-800 mr-2">
-                Primary Industries <span className="text-red-500">*</span>
-              </label>
-              <Tooltip content="Select up to 5 industries where you primarily focus your investments.">
-                <HelpCircle className="h-4 w-4 text-gray-500" />
-              </Tooltip>
-            </div>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {/* This would ideally be populated from a list of industries via API */}
-              {[
-                "Technology", "Healthcare", "Finance", "Education", 
-                "Real Estate", "E-commerce", "Manufacturing", "Energy", 
-                "Food & Beverage", "Media & Entertainment", "Transport & Logistics",
-                "Agriculture", "Retail", "Hospitality", "Consumer Goods"
-              ].map((industry) => (
-                <div key={industry} className="relative flex items-start">
-                  <div className="flex items-center h-5">
-                    <input
-                      id={`industry-${industry}`}
-                      type="checkbox"
-                      className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300 rounded"
-                      value={industry.toLowerCase().replace(/\s+/g, '_')}
-                      {...registerWithValidation("investorDetails.focus.primaryIndustries", { 
-                        required: "Please select at least one primary industry",
-                        validate: {
-                          maxFive: value => !value || value.length <= 5 || "You can select up to 5 primary industries"
-                        }
-                      })}
-                    />
-                  </div>
-                  <div className="ml-2 text-sm">
-                    <label htmlFor={`industry-${industry}`} className="font-medium text-gray-700">
-                      {industry}
-                    </label>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {errors.investorDetails?.focus?.primaryIndustries ? (
-              <p className="text-sm text-red-600 flex items-center mt-1">
-                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.investorDetails.focus.primaryIndustries.message}
-              </p>
-            ) : (
-              <p className="text-xs text-gray-500">
-                Select up to 5 industries where you primarily focus your investments
-              </p>
-            )}
-          </div>
-
-          {/* Secondary Industries - Multi-select */}
-          <div className="space-y-2">
-            <div className="flex items-center">
-              <label className="block text-sm font-semibold text-gray-800 mr-2">
-                Secondary Industries <span className="text-gray-400">(Optional)</span>
-              </label>
-              <Tooltip content="Additional industries you're interested in but are not your primary focus.">
-                <HelpCircle className="h-4 w-4 text-gray-500" />
-              </Tooltip>
-            </div>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {/* This would ideally be populated from a list of industries via API */}
-              {[
-                "Biotechnology", "AI & Machine Learning", "IoT", "Blockchain", 
-                "Renewable Energy", "Space Tech", "CleanTech", "EdTech", 
-                "FinTech", "MedTech", "Cybersecurity", "AR/VR", "Gaming"
-              ].map((industry) => (
-                <div key={industry} className="relative flex items-start">
-                  <div className="flex items-center h-5">
-                    <input
-                      id={`secondary-industry-${industry}`}
-                      type="checkbox"
-                      className="focus:ring-primary-500 h-4 w-4 text-primary-600 border-gray-300 rounded"
-                      value={industry.toLowerCase().replace(/\s+/g, '_')}
-                      {...register("investorDetails.focus.secondaryIndustries")}
-                    />
-                  </div>
-                  <div className="ml-2 text-sm">
-                    <label htmlFor={`secondary-industry-${industry}`} className="font-medium text-gray-700">
-                      {industry}
-                    </label>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-gray-500">
-              Additional industries you're interested in but are not your primary focus
-            </p>
-          </div>
+          {/* International Investments */}
+          <Switch
+            name="investorDetails.investment.openToInternational"
+            label="Open to International Investments"
+            description="Indicate your willingness to invest in companies outside India"
+          />
 
           {/* Business Stage Preference - Multi-select */}
           <div className="space-y-2">
@@ -1392,6 +1182,13 @@ const InvestorForm = ({ submitAttempted = false, editMode = false }) => {
               Level of governance participation you typically seek
             </p>
           </div>
+
+          {/* Board Involvement Required */}
+          <Switch
+            name="investorDetails.portfolio.boardInvolvementRequired"
+            label="Board Involvement Required"
+            description="Indicate if you require a board seat as part of your investment"
+          />
         </div>
       </div>
     </div>

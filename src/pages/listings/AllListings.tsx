@@ -66,7 +66,7 @@ export default function AllListings() {
 
     // Tab labels, including counts
     const tabLabels = [
-        { name: "All Listings", count: statusCounts[ListingStatus.PUBLISHED] || 0 },
+        { name: "All Listings", count: listings.length },
         { name: "Pending", count: statusCounts[ListingStatus.PENDING] || 0 },
         { name: "Featured", count: 0 }, // Will be calculated separately
         { name: "Drafts", count: statusCounts[ListingStatus.DRAFT] || 0 }
@@ -98,14 +98,17 @@ export default function AllListings() {
 
     // Load data when switching tabs or when tab is first viewed
     useEffect(() => {
-        if (isAuthenticated && !authLoading && auth.currentUser && !initializedTabs[selectedTab]) {
-            loadListingsByTab(true);
-
-            // Mark this tab as initialized
-            setInitializedTabs(prev => ({
-                ...prev,
-                [selectedTab]: true
-            }));
+        if (isAuthenticated && !authLoading && auth.currentUser && !isLoading) {
+            // Only load if this tab hasn't been initialized yet
+            if (!initializedTabs[selectedTab]) {
+                loadListingsByTab(true);
+                
+                // Mark this tab as initialized
+                setInitializedTabs(prev => ({
+                    ...prev,
+                    [selectedTab]: true
+                }));
+            }
         }
     }, [selectedTab, isAuthenticated, authLoading, user]);
 
@@ -160,7 +163,7 @@ export default function AllListings() {
 
     const loadListingsByTab = async (reset = true) => {
         try {
-            startLoading('Loading listings...');
+            // Use local loading state only, not the global one
             setIsLoading(true);
     
             let result;
@@ -168,8 +171,12 @@ export default function AllListings() {
             // Apply tab-specific filters
             const tabFilters = { ...filters };
     
+            console.log('Loading listings for tab:', selectedTab);
+            console.log('Current user ID:', user?.id);
+    
             if (selectedTab === 1) {
                 // Pending tab
+                console.log('Loading PENDING listings');
                 result = await getListingsByStatus(
                     ListingStatus.PENDING,
                     10,
@@ -178,6 +185,7 @@ export default function AllListings() {
                 );
             } else if (selectedTab === 2) {
                 // Featured tab
+                console.log('Loading FEATURED listings');
                 tabFilters.isFeatured = true;
                 result = await getListings(
                     10,
@@ -187,6 +195,7 @@ export default function AllListings() {
                 );
             } else if (selectedTab === 3) {
                 // Drafts tab
+                console.log('Loading DRAFT listings');
                 result = await getListingsByStatus(
                     ListingStatus.DRAFT,
                     10,
@@ -195,12 +204,18 @@ export default function AllListings() {
                 );
             } else {
                 // All listings tab (default)
+                console.log('Loading ALL listings');
                 // Add all status types to ensure we get everything
                 tabFilters.status = [
                     ListingStatus.PUBLISHED,
                     ListingStatus.PENDING,
                     ListingStatus.DRAFT
                 ];
+                
+                // Add ownerId filter to get only the user's listings
+                tabFilters.ownerId = user?.id;
+                
+                console.log('All tab filters:', tabFilters);
                 
                 result = await getListings(
                     10,
@@ -210,9 +225,17 @@ export default function AllListings() {
                 );
             }
     
+            console.log('Listings loaded:', result.listings.length);
+            
             setListings(prev => reset ? result.listings : [...prev, ...result.listings]);
             setLastDoc(result.lastDoc);
             setHasMoreListings(result.listings.length === 10);
+            
+            // Update tab counts after loading listings
+            if (reset) {
+                // Update the "All" tab count with the total number of listings
+                tabLabels[0].count = result.listings.length;
+            }
         } catch (error) {
             console.error('Error loading listings:', error);
             toast.error('Failed to load listings');
@@ -225,13 +248,12 @@ export default function AllListings() {
             }
         } finally {
             setIsLoading(false);
-            stopLoading();
         }
     };
 
     // Effect to reload when filters change
     useEffect(() => {
-        if (isAuthenticated && !authLoading && auth.currentUser && initializedTabs[selectedTab]) {
+        if (isAuthenticated && !authLoading && auth.currentUser && initializedTabs[selectedTab] && !isLoading) {
             loadListingsByTab(true);
         }
     }, [filters, isAuthenticated, authLoading]);
@@ -264,7 +286,8 @@ export default function AllListings() {
     // Handle status change
     const handleStatusChange = async (listingId: string, status: ListingStatus) => {
         try {
-            startLoading(`Updating listing status to ${status}...`);
+            // Use local loading state only
+            setIsLoading(true);
 
             await updateListingStatus(listingId, status);
 
@@ -276,14 +299,11 @@ export default function AllListings() {
             );
 
             toast.success(`Listing status updated to ${status}`);
-
-            // Refresh counts
-            loadCounts();
         } catch (error) {
             console.error('Error updating listing status:', error);
-            toast.error(`Failed to update listing status: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            toast.error('Failed to update listing status');
         } finally {
-            stopLoading();
+            setIsLoading(false);
         }
     };
 
@@ -291,13 +311,14 @@ export default function AllListings() {
     const handleEdit = (listing: Listing) => {
         // Navigate to edit page or open edit modal
         console.log('Edit listing:', listing);
-        toast.info('Listing edit functionality coming soon');
+        toast.success('Listing edit functionality coming soon');
     };
 
     // Handle feature toggle
     const handleFeatureToggle = async (listingId: string, isFeatured: boolean) => {
         try {
-            startLoading(isFeatured ? 'Featuring listing...' : 'Unfeaturing listing...');
+            // Use local loading state only
+            setIsLoading(true);
 
             await toggleListingFeature(listingId, isFeatured);
 
@@ -308,19 +329,20 @@ export default function AllListings() {
                 )
             );
 
-            toast.success(isFeatured ? 'Listing is now featured' : 'Listing is no longer featured');
+            toast.success(`Listing ${isFeatured ? 'featured' : 'unfeatured'} successfully`);
         } catch (error) {
-            console.error('Error toggling feature status:', error);
-            toast.error(`Failed to ${isFeatured ? 'feature' : 'unfeature'} listing: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            console.error('Error toggling listing feature:', error);
+            toast.error('Failed to update listing feature status');
         } finally {
-            stopLoading();
+            setIsLoading(false);
         }
     };
 
-    // Handle verification
+    // Handle verify
     const handleVerify = async (listingId: string) => {
         try {
-            startLoading('Verifying listing...');
+            // Use local loading state only
+            setIsLoading(true);
 
             await verifyListing(listingId);
 
@@ -331,54 +353,52 @@ export default function AllListings() {
                 )
             );
 
-            toast.success('Listing has been verified');
+            toast.success('Listing verified successfully');
         } catch (error) {
             console.error('Error verifying listing:', error);
-            toast.error(`Failed to verify listing: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            toast.error('Failed to verify listing');
         } finally {
-            stopLoading();
+            setIsLoading(false);
         }
     };
 
-    // Handle deletion
+    // Handle delete
     const handleDelete = async (listingId: string) => {
-        if (!window.confirm('Are you sure you want to delete this listing? This action cannot be undone.')) {
-            return;
-        }
-
         try {
-            startLoading('Deleting listing...');
+            // Use local loading state only
+            setIsLoading(true);
 
             await deleteListing(listingId);
 
             // Update local state
             setListings(prev => prev.filter(listing => listing.id !== listingId));
 
-            toast.success('Listing has been deleted');
-
-            // Refresh counts
-            loadCounts();
+            toast.success('Listing deleted successfully');
         } catch (error) {
             console.error('Error deleting listing:', error);
-            toast.error(`Failed to delete listing: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            toast.error('Failed to delete listing');
         } finally {
-            stopLoading();
+            setIsLoading(false);
         }
     };
 
     // Bulk actions
     const handleBulkStatusChange = async (status: ListingStatus) => {
+        if (selectedListings.length === 0) {
+            toast.error('No listings selected');
+            return;
+        }
+
         try {
-            if (!window.confirm(`Are you sure you want to change the status of ${selectedListings.length} listings to ${status}?`)) {
-                return;
-            }
+            // Use local loading state only
+            setIsLoading(true);
 
-            startLoading(`Updating ${selectedListings.length} listings to ${status}...`);
+            // Update each listing status
+            const updatePromises = selectedListings.map(listingId =>
+                updateListingStatus(listingId, status)
+            );
 
-            // Process each listing one by one
-            for (const listingId of selectedListings) {
-                await updateListingStatus(listingId, status);
-            }
+            await Promise.all(updatePromises);
 
             // Update local state
             setListings(prev =>
@@ -390,30 +410,31 @@ export default function AllListings() {
             // Clear selection
             setSelectedListings([]);
 
-            toast.success(`${selectedListings.length} listings updated to ${status}`);
-
-            // Refresh counts
-            loadCounts();
+            toast.success(`Updated ${selectedListings.length} listings to ${status}`);
         } catch (error) {
-            console.error('Error bulk updating listings:', error);
-            toast.error(`Failed to update listings: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            console.error('Error updating bulk listing status:', error);
+            toast.error('Failed to update some listings');
         } finally {
-            stopLoading();
+            setIsLoading(false);
         }
     };
 
     const handleBulkDelete = async () => {
-        if (!window.confirm(`Are you sure you want to delete ${selectedListings.length} listings? This action cannot be undone.`)) {
+        if (selectedListings.length === 0) {
+            toast.error('No listings selected');
             return;
         }
 
         try {
-            startLoading(`Deleting ${selectedListings.length} listings...`);
+            // Use local loading state only
+            setIsLoading(true);
 
-            // Process each listing one by one
-            for (const listingId of selectedListings) {
-                await deleteListing(listingId);
-            }
+            // Delete each listing
+            const deletePromises = selectedListings.map(listingId =>
+                deleteListing(listingId)
+            );
+
+            await Promise.all(deletePromises);
 
             // Update local state
             setListings(prev => prev.filter(listing => !selectedListings.includes(listing.id)));
@@ -421,26 +442,31 @@ export default function AllListings() {
             // Clear selection
             setSelectedListings([]);
 
-            toast.success(`${selectedListings.length} listings deleted`);
-
-            // Refresh counts
-            loadCounts();
+            toast.success(`Deleted ${selectedListings.length} listings`);
         } catch (error) {
-            console.error('Error bulk deleting listings:', error);
-            toast.error(`Failed to delete listings: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            console.error('Error deleting bulk listings:', error);
+            toast.error('Failed to delete some listings');
         } finally {
-            stopLoading();
+            setIsLoading(false);
         }
     };
 
     const handleBulkFeature = async () => {
-        try {
-            startLoading(`Featuring ${selectedListings.length} listings...`);
+        if (selectedListings.length === 0) {
+            toast.error('No listings selected');
+            return;
+        }
 
-            // Process each listing one by one
-            for (const listingId of selectedListings) {
-                await toggleListingFeature(listingId, true);
-            }
+        try {
+            // Use local loading state only
+            setIsLoading(true);
+
+            // Feature each listing
+            const featurePromises = selectedListings.map(listingId =>
+                toggleListingFeature(listingId, true)
+            );
+
+            await Promise.all(featurePromises);
 
             // Update local state
             setListings(prev =>
@@ -452,23 +478,31 @@ export default function AllListings() {
             // Clear selection
             setSelectedListings([]);
 
-            toast.success(`${selectedListings.length} listings featured`);
+            toast.success(`Featured ${selectedListings.length} listings`);
         } catch (error) {
-            console.error('Error bulk featuring listings:', error);
-            toast.error(`Failed to feature listings: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            console.error('Error featuring bulk listings:', error);
+            toast.error('Failed to feature some listings');
         } finally {
-            stopLoading();
+            setIsLoading(false);
         }
     };
 
     const handleBulkUnfeature = async () => {
-        try {
-            startLoading(`Unfeaturing ${selectedListings.length} listings...`);
+        if (selectedListings.length === 0) {
+            toast.error('No listings selected');
+            return;
+        }
 
-            // Process each listing one by one
-            for (const listingId of selectedListings) {
-                await toggleListingFeature(listingId, false);
-            }
+        try {
+            // Use local loading state only
+            setIsLoading(true);
+
+            // Unfeature each listing
+            const unfeaturePromises = selectedListings.map(listingId =>
+                toggleListingFeature(listingId, false)
+            );
+
+            await Promise.all(unfeaturePromises);
 
             // Update local state
             setListings(prev =>
@@ -480,23 +514,31 @@ export default function AllListings() {
             // Clear selection
             setSelectedListings([]);
 
-            toast.success(`${selectedListings.length} listings unfeatured`);
+            toast.success(`Unfeatured ${selectedListings.length} listings`);
         } catch (error) {
-            console.error('Error bulk unfeaturing listings:', error);
-            toast.error(`Failed to unfeature listings: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            console.error('Error unfeaturing bulk listings:', error);
+            toast.error('Failed to unfeature some listings');
         } finally {
-            stopLoading();
+            setIsLoading(false);
         }
     };
 
     const handleBulkVerify = async () => {
-        try {
-            startLoading(`Verifying ${selectedListings.length} listings...`);
+        if (selectedListings.length === 0) {
+            toast.error('No listings selected');
+            return;
+        }
 
-            // Process each listing one by one
-            for (const listingId of selectedListings) {
-                await verifyListing(listingId);
-            }
+        try {
+            // Use local loading state only
+            setIsLoading(true);
+
+            // Verify each listing
+            const verifyPromises = selectedListings.map(listingId =>
+                verifyListing(listingId)
+            );
+
+            await Promise.all(verifyPromises);
 
             // Update local state
             setListings(prev =>
@@ -508,39 +550,23 @@ export default function AllListings() {
             // Clear selection
             setSelectedListings([]);
 
-            toast.success(`${selectedListings.length} listings verified`);
+            toast.success(`Verified ${selectedListings.length} listings`);
         } catch (error) {
-            console.error('Error bulk verifying listings:', error);
-            toast.error(`Failed to verify listings: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            console.error('Error verifying bulk listings:', error);
+            toast.error('Failed to verify some listings');
         } finally {
-            stopLoading();
+            setIsLoading(false);
         }
     };
 
-    
-
     // Display loading state during auth
     if (authLoading) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-[400px]">
-                <LoadingSpinner size="lg" color="primary" />
-                <p className="mt-4 text-sm text-gray-500">
-                    Establishing secure connection...
-                </p>
-            </div>
-        );
+        return null; // Let the root component handle loading
     }
 
     // Add check for auth.currentUser to display waiting state
     if (isAuthenticated && !auth.currentUser) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-[400px]">
-                <LoadingSpinner size="lg" color="primary" />
-                <p className="mt-4 text-sm text-gray-500">
-                    Initializing authentication...
-                </p>
-            </div>
-        );
+        return null; // Let the root component handle loading
     }
 
     return (

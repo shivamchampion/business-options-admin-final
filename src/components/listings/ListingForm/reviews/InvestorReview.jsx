@@ -1,29 +1,35 @@
 import React from 'react';
 import { useFormContext } from 'react-hook-form';
 import { 
-  Users, 
+  User, 
+  Building, 
   DollarSign, 
-  Globe, 
-  TrendingUp,
-  Briefcase,
-  MapPin
+  Briefcase, 
+  Target,
+  Phone
 } from 'lucide-react';
 
 const InvestorReview = ({ ReviewSection, ReviewField }) => {
   const { watch } = useFormContext();
-  const investorDetails = watch('investorDetails');
+  const investorDetails = watch();
   const basicInfo = watch();
 
-  // Helper function to truncate long text
-  const truncate = (text, length = 100) => 
-    text && text.length > length ? text.substring(0, length) + '...' : text;
+  // Helper function to format currency
+  const formatCurrency = (value) => {
+    if (!value) return '';
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0
+    }).format(value);
+  };
 
   return (
     <>
-      {/* Basic Information Section */}
+      {/* Investor Profile Section */}
       <ReviewSection 
         title="Investor Profile" 
-        icon={Users}
+        icon={User}
         onEdit={() => {/* Navigate to appropriate step */}}
       >
         <ReviewField 
@@ -33,192 +39,140 @@ const InvestorReview = ({ ReviewSection, ReviewField }) => {
         />
         <ReviewField 
           label="Investor Type" 
-          value={investorDetails?.investorType} 
+          value={investorDetails.investorType} 
         />
         <ReviewField 
           label="Years of Experience" 
-          value={`${investorDetails?.yearsOfExperience} years`} 
+          value={investorDetails.yearsOfExperience} 
         />
-        {investorDetails?.investmentTeamSize && (
-          <ReviewField 
-            label="Investment Team Size" 
-            value={investorDetails?.investmentTeamSize} 
-          />
-        )}
+        <ReviewField 
+          label="Investment Style" 
+          value={investorDetails.investmentStyle} 
+        />
       </ReviewSection>
 
-      {/* Investment Philosophy Section */}
+      {/* Portfolio Information Section */}
       <ReviewSection 
-        title="Investment Philosophy" 
-        icon={Globe}
+        title="Portfolio Information" 
+        icon={Building}
         onEdit={() => {/* Navigate to appropriate step */}}
       >
         <ReviewField 
-          label="Investment Philosophy" 
-          value={truncate(investorDetails?.investmentPhilosophy, 200)} 
+          label="Portfolio Size" 
+          value={formatCurrency(investorDetails.portfolioSize?.value)} 
         />
         <ReviewField 
-          label="Background Summary" 
-          value={truncate(investorDetails?.backgroundSummary, 200)} 
+          label="Number of Companies" 
+          value={investorDetails.numberOfCompanies} 
         />
-        {investorDetails?.keyAchievements && (
-          <ReviewField 
-            label="Key Achievements" 
-            value={truncate(investorDetails?.keyAchievements, 200)} 
-            optional 
-          />
-        )}
+        <ReviewField 
+          label="Notable Investments" 
+          value={investorDetails.notableInvestments?.join(', ')} 
+          optional 
+        />
+        <ReviewField 
+          label="Successful Exits" 
+          value={investorDetails.successfulExits} 
+          optional 
+        />
       </ReviewSection>
 
-      {/* Investment Capacity Section */}
+      {/* Investment Criteria Section */}
       <ReviewSection 
-        title="Investment Capacity" 
-        icon={DollarSign}
-        onEdit={() => {/* Navigate to appropriate step */}}
-      >
-        {investorDetails?.investment?.annualInvestmentTarget && (
-          <ReviewField 
-            label="Annual Investment Target" 
-            value={`₹ ${investorDetails?.investment?.annualInvestmentTarget?.value?.toLocaleString() || ''}`} 
-            optional 
-          />
-        )}
-        <ReviewField 
-          label="Decision Timeline" 
-          value={investorDetails?.investment?.decisionTimeline} 
-        />
-        <ReviewField 
-          label="Preferred Investment Rounds" 
-          value={investorDetails?.investment?.preferredRounds?.join(', ')} 
-        />
-        <ReviewField 
-          label="Lead Investor" 
-          value={investorDetails?.investment?.isLeadInvestor ? 'Yes' : 'No'} 
-        />
-        {investorDetails?.investment?.preferredEquityStake && (
-          <ReviewField 
-            label="Preferred Equity Stake" 
-            value={`${investorDetails?.investment?.preferredEquityStake?.min || 0}% - ${investorDetails?.investment?.preferredEquityStake?.max || 0}%`} 
-            optional 
-          />
-        )}
-      </ReviewSection>
-
-      {/* Investment Focus Section */}
-      <ReviewSection 
-        title="Investment Focus" 
-        icon={TrendingUp}
+        title="Investment Criteria" 
+        icon={Target}
         onEdit={() => {/* Navigate to appropriate step */}}
       >
         <ReviewField 
-          label="Primary Industries" 
-          value={investorDetails?.focus?.primaryIndustries?.join(', ')} 
+          label="Investment Range" 
+          value={`${formatCurrency(investorDetails.investmentRangeMin?.value)} - ${formatCurrency(investorDetails.investmentRangeMax?.value)}`} 
+          highlight 
         />
-        {investorDetails?.focus?.secondaryIndustries && (
-          <ReviewField 
-            label="Secondary Industries" 
-            value={investorDetails?.focus?.secondaryIndustries?.join(', ')} 
-            optional 
-          />
-        )}
         <ReviewField 
-          label="Business Stage Preference" 
-          value={investorDetails?.focus?.businessStagePreference?.join(', ')} 
+          label="Preferred Industries" 
+          value={investorDetails.preferredIndustries?.join(', ')} 
+        />
+        <ReviewField 
+          label="Preferred Stages" 
+          value={investorDetails.preferredStages?.join(', ')} 
         />
         <ReviewField 
           label="Geographic Focus" 
-          value={investorDetails?.focus?.geographicFocus?.join(', ')} 
+          value={investorDetails.geographicFocus?.join(', ')} 
         />
-        <ReviewField 
-          label="Investment Criteria" 
-          value={truncate(investorDetails?.focus?.investmentCriteria, 200)} 
-        />
-        {investorDetails?.focus?.minimumRevenue && (
-          <ReviewField 
-            label="Minimum Revenue" 
-            value={`₹ ${investorDetails?.focus?.minimumRevenue?.value?.toLocaleString() || ''}`} 
-            optional 
-          />
-        )}
-        {investorDetails?.focus?.minimumTraction && (
-          <ReviewField 
-            label="Minimum Traction" 
-            value={truncate(investorDetails?.focus?.minimumTraction, 200)} 
-            optional 
-          />
-        )}
       </ReviewSection>
 
-      {/* Portfolio & Process Section */}
+      {/* Investment Process Section */}
       <ReviewSection 
-        title="Portfolio & Process" 
+        title="Investment Process" 
         icon={Briefcase}
         onEdit={() => {/* Navigate to appropriate step */}}
       >
-        {investorDetails?.portfolio?.portfolioSize && (
-          <ReviewField 
-            label="Portfolio Size" 
-            value={investorDetails?.portfolio?.portfolioSize} 
-            optional 
-          />
-        )}
-        {investorDetails?.portfolio?.activeInvestments && (
-          <ReviewField 
-            label="Active Investments" 
-            value={investorDetails?.portfolio?.activeInvestments} 
-            optional 
-          />
-        )}
-        {investorDetails?.portfolio?.successStories && (
-          <ReviewField 
-            label="Success Stories" 
-            value={truncate(investorDetails?.portfolio?.successStories, 200)} 
-            optional 
-          />
-        )}
         <ReviewField 
-          label="Investment Process" 
-          value={truncate(investorDetails?.portfolio?.investmentProcess, 200)} 
+          label="Due Diligence Process" 
+          value={investorDetails.dueDiligenceProcess} 
+        />
+        <ReviewField 
+          label="Decision Timeline" 
+          value={investorDetails.decisionTimeline} 
         />
         <ReviewField 
           label="Post-Investment Support" 
-          value={truncate(investorDetails?.portfolio?.postInvestmentSupport, 200)} 
+          value={investorDetails.postInvestmentSupport} 
+          optional 
         />
-        {investorDetails?.portfolio?.reportingRequirements && (
-          <ReviewField 
-            label="Reporting Requirements" 
-            value={truncate(investorDetails?.portfolio?.reportingRequirements, 200)} 
-            optional 
-          />
-        )}
-        {investorDetails?.portfolio?.boardInvolvement && (
-          <ReviewField 
-            label="Board Involvement" 
-            value={investorDetails?.portfolio?.boardInvolvement} 
-            optional 
-          />
-        )}
+        <ReviewField 
+          label="Board Seat Requirements" 
+          value={investorDetails.boardSeatRequirements ? 'Yes' : 'No'} 
+        />
       </ReviewSection>
 
-      {/* Contact Information */}
+      {/* Financial Details Section */}
       <ReviewSection 
-        title="Contact Information" 
-        icon={MapPin}
+        title="Financial Details" 
+        icon={DollarSign}
         onEdit={() => {/* Navigate to appropriate step */}}
       >
         <ReviewField 
+          label="Typical Investment Size" 
+          value={formatCurrency(investorDetails.typicalInvestmentSize?.value)} 
+        />
+        <ReviewField 
+          label="Equity Range" 
+          value={`${investorDetails.equityRangeMin}% - ${investorDetails.equityRangeMax}%`} 
+        />
+        <ReviewField 
+          label="Expected ROI" 
+          value={`${investorDetails.expectedROI}%`} 
+          optional 
+        />
+        <ReviewField 
+          label="Investment Horizon" 
+          value={`${investorDetails.investmentHorizon} years`} 
+        />
+      </ReviewSection>
+
+      {/* Contact Information Section */}
+      <ReviewSection 
+        title="Contact Information" 
+        icon={Phone}
+        onEdit={() => {/* Navigate to appropriate step */}}
+      >
+        <ReviewField 
+          label="Contact Name" 
+          value={investorDetails.contactName} 
+        />
+        <ReviewField 
           label="Contact Email" 
-          value={basicInfo.contactInfo?.email} 
+          value={investorDetails.contactEmail} 
         />
         <ReviewField 
           label="Contact Phone" 
-          value={basicInfo.contactInfo?.phone} 
-          optional 
+          value={investorDetails.contactPhone} 
         />
         <ReviewField 
-          label="Website" 
-          value={basicInfo.contactInfo?.website} 
-          optional 
+          label="Preferred Contact Method" 
+          value={investorDetails.preferredContactMethod} 
         />
       </ReviewSection>
     </>

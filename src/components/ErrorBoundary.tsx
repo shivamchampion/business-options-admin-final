@@ -1,9 +1,30 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 
+// Helper function to check if a value is a function
+export function isFunction(value: any): boolean {
+  return typeof value === 'function';
+}
+
+// Helper to safely call cleanup functions with error handling
+export function safelyCallCleanup(cleanup: any): void {
+  if (!cleanup) return;
+  
+  try {
+    if (isFunction(cleanup)) {
+      cleanup();
+    } else {
+      console.warn('Cleanup is not a function:', cleanup);
+    }
+  } catch (error) {
+    console.error('Error calling cleanup function:', error);
+  }
+}
+
 interface ErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode;
+  onError?: (error: Error, errorInfo: ErrorInfo) => void;
 }
 
 interface ErrorBoundaryState {
@@ -32,11 +53,23 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    // You can log the error to an error reporting service here
+    // Log the error to console
     console.error('Error caught by ErrorBoundary:', error, errorInfo);
+    
+    // Update state with error info
     this.setState({
       errorInfo
     });
+    
+    // Call onError callback if provided
+    if (this.props.onError) {
+      this.props.onError(error, errorInfo);
+    }
+    
+    // If there are any global loading indicators active, clear them
+    if (window.__clearGlobalLoadingStates) {
+      window.__clearGlobalLoadingStates();
+    }
   }
 
   handleReset = (): void => {
@@ -45,6 +78,9 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
       error: null,
       errorInfo: null
     });
+    
+    // Force reload the current page to get a fresh state
+    window.location.reload();
   };
 
   render(): ReactNode {
@@ -70,7 +106,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
                 className="inline-flex items-center justify-center px-4 py-2 bg-[#0031ac] text-white rounded-md hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
                 <RefreshCw className="h-4 w-4 mr-2" />
-                Try Again
+                Refresh Page
               </button>
             </div>
             
@@ -90,6 +126,13 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     }
 
     return this.props.children;
+  }
+}
+
+// Add global utility for clearing loading states
+declare global {
+  interface Window {
+    __clearGlobalLoadingStates?: () => void;
   }
 }
 

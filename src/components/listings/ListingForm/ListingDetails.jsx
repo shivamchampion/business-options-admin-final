@@ -3,10 +3,10 @@ import { useFormContext, useWatch } from 'react-hook-form';
 import { motion } from 'framer-motion';
 import { 
   AlertTriangle, 
-  Info, 
   HelpCircle
 } from 'lucide-react';
 import { ListingType } from '@/types/listings';
+import { FormSection } from '@/components/ui/FormField';
 
 // Import type-specific forms
 import BusinessForm from '../business/BusinessForm';
@@ -37,7 +37,7 @@ const Tooltip = ({ content, children }) => {
   );
 };
 
-const ListingDetails = ({ submitAttempted = false, isLoading: formLoading = false }) => {
+const ListingDetails = ({ submitAttempted = false, shouldShowErrors = false, isLoading: formLoading = false }) => {
   const { control } = useFormContext();
   const [isLoading, setIsLoading] = useState(formLoading);
   const [prevType, setPrevType] = useState(null);
@@ -48,7 +48,7 @@ const ListingDetails = ({ submitAttempted = false, isLoading: formLoading = fals
     name: 'type',
     defaultValue: ListingType.BUSINESS
   });
-
+  
   // Show loading state when switching between types
   useEffect(() => {
     if (prevType && prevType !== listingType) {
@@ -61,24 +61,6 @@ const ListingDetails = ({ submitAttempted = false, isLoading: formLoading = fals
     }
     setPrevType(listingType);
   }, [listingType, prevType]);
-
-  // Type-specific instructions
-  const getTypeInstructions = () => {
-    switch (listingType) {
-      case ListingType.BUSINESS:
-        return "Please provide details about your business, including operations, financials, and sale information.";
-      case ListingType.FRANCHISE:
-        return "Please provide details about your franchise opportunity, including investment requirements, support, and performance metrics.";
-      case ListingType.STARTUP:
-        return "Please provide details about your startup, including team information, market traction, and funding requirements.";
-      case ListingType.INVESTOR:
-        return "Please provide details about your investment profile, including your investment focus, capacity, and process.";
-      case ListingType.DIGITAL_ASSET:
-        return "Please provide details about your digital asset, including technical information, traffic data, and sale requirements.";
-      default:
-        return "Please select a listing type and provide the required details.";
-    }
-  };
 
   // Function to get type-specific form title
   const getTypeTitle = () => {
@@ -110,15 +92,15 @@ const ListingDetails = ({ submitAttempted = false, isLoading: formLoading = fals
 
     switch (listingType) {
       case ListingType.BUSINESS:
-        return <BusinessForm submitAttempted={submitAttempted} />;
+        return <BusinessForm submitAttempted={submitAttempted} shouldShowErrors={shouldShowErrors} />;
       case ListingType.FRANCHISE:
-        return <FranchiseForm submitAttempted={submitAttempted} />;
+        return <FranchiseForm submitAttempted={submitAttempted} shouldShowErrors={shouldShowErrors} />;
       case ListingType.STARTUP:
-        return <StartupForm submitAttempted={submitAttempted} />;
+        return <StartupForm submitAttempted={submitAttempted} shouldShowErrors={shouldShowErrors} />;
       case ListingType.INVESTOR:
-        return <InvestorForm submitAttempted={submitAttempted} />;
+        return <InvestorForm submitAttempted={submitAttempted} shouldShowErrors={shouldShowErrors} />;
       case ListingType.DIGITAL_ASSET:
-        return <DigitalAssetForm submitAttempted={submitAttempted} />;
+        return <DigitalAssetForm submitAttempted={submitAttempted} shouldShowErrors={shouldShowErrors} />;
       default:
         return (
           <div className="flex justify-center items-center min-h-[300px]">
@@ -133,37 +115,21 @@ const ListingDetails = ({ submitAttempted = false, isLoading: formLoading = fals
 
   return (
     <div className="space-y-6">
-      {/* Step Header */}
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold text-gray-900">
-          {getTypeTitle()}
-        </h2>
-        <p className="text-sm text-gray-500 mt-1">
-          Step 3 of 5: Provide specific details about your {listingType} listing
-        </p>
-      </div>
-
-      {/* Instructions */}
-      <div className="p-4 border border-blue-200 bg-blue-50 rounded-lg flex items-start">
-        <Info className="h-5 w-5 text-blue-500 mr-3 mt-0.5 flex-shrink-0" />
-        <div className="text-sm text-blue-700">
-          <p className="font-medium mb-1">Detailed Information</p>
-          <p>{getTypeInstructions()}</p>
-          <p className="mt-2">All fields marked with an asterisk (*) are required.</p>
-        </div>
-      </div>
-
       {/* Dynamic Form Content */}
-      <motion.div
-        key={listingType}
-        initial="hidden"
-        animate="visible"
-        exit="exit"
-        variants={fadeVariants}
-        className="space-y-8 bg-white rounded-lg"
+      <FormSection
+        title={getTypeTitle()}
+        description={`Provide specific details about your ${listingType || 'listing'}`}
       >
-        {renderForm()}
-      </motion.div>
+        <motion.div
+          key={listingType}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          variants={fadeVariants}
+        >
+          {renderForm()}
+        </motion.div>
+      </FormSection>
     </div>
   );
 };

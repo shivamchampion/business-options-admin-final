@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormContext } from 'react-hook-form';
 import {
   Upload,
@@ -10,13 +10,68 @@ import {
   HelpCircle,
   ImageOff,
   Check,
-  RefreshCw
+  RefreshCw,
+  UploadCloud,
+  Loader,
+  Trash
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toast } from 'react-hot-toast';
-import listingStorage from '@/lib/ListingStorageService';
+import { enhancedStorage } from '@/lib';
+import ToastManager, { TOAST_IDS } from "@/utils/ToastManager";
 
-// Tooltip component
+/**
+ * Simple circular progress indicator
+ * @param {Object} props Component props
+ * @param {number} props.value Current progress value (0-100)
+ * @returns {JSX.Element} CircularProgress component
+ */
+const CircularProgress = ({ value = 0 }) => {
+  const normalizedValue = Math.min(100, Math.max(0, value));
+  const circumference = 2 * Math.PI * 10; // r = 10, circumference = 2πr
+  const strokeDashoffset = circumference - (normalizedValue / 100) * circumference;
+  
+  return (
+    <div className="relative inline-flex items-center justify-center">
+      <svg className="w-10 h-10" viewBox="0 0 24 24">
+        {/* Background circle */}
+        <circle
+          className="text-gray-300"
+          strokeWidth="2"
+          stroke="currentColor"
+          fill="transparent"
+          r="10"
+          cx="12"
+          cy="12"
+        />
+        {/* Progress circle */}
+        <circle
+          className="text-blue-600"
+          strokeWidth="2"
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          stroke="currentColor"
+          fill="transparent"
+          r="10"
+          cx="12"
+          cy="12"
+          style={{ transformOrigin: 'center', transform: 'rotate(-90deg)' }}
+        />
+      </svg>
+      <span className="absolute text-xs font-semibold text-blue-700">
+        {Math.round(normalizedValue)}%
+      </span>
+    </div>
+  );
+};
+
+/**
+ * Tooltip component for UI help elements
+ * @param {Object} props Component props
+ * @param {React.ReactNode} props.children Child elements
+ * @param {string} props.content Tooltip content
+ * @returns {JSX.Element} Tooltip component
+ */
 const Tooltip = ({ content, children }) => {
   return (
     <div className="group relative inline-block">
@@ -32,12 +87,32 @@ const Tooltip = ({ content, children }) => {
   );
 };
 
-// Function to generate fallback image
+/**
+ * Function to generate a fallback image URL for broken images
+ * @returns {string} Data URL for fallback image
+ */
 const getImageFallbackUrl = () => {
   return 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-image-off"%3E%3Cline x1="2" y1="2" x2="22" y2="22"%3E%3C/line%3E%3Cpath d="M10.41 10.41a2 2 0 1 1-2.83-2.83"%3E%3C/path%3E%3Cline x1="13.5" y1="13.5" x2="6" y2="21"%3E%3C/line%3E%3Cpath d="M18 12l-7 9"%3E%3C/path%3E%3Cpath d="M3.59 3.59A1.99 1.99 0 0 0 3 5v14a2 2 0 0 0 2 2h14c.55 0 1.052-.22 1.41-.59"%3E%3C/path%3E%3Cpath d="M21 15V5a2 2 0 0 0-2-2H9"%3E%3C/path%3E%3C/svg%3E';
 };
 
-// Create a placeholder image function
+/**
+ * Format file size in human-readable format
+ * @param {number} bytes - Size in bytes
+ * @returns {string} Formatted size
+ */
+const formatFileSize = (bytes) => {
+  if (!bytes) return '';
+  if (bytes < 1024) return bytes + ' bytes';
+  else if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  else return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+};
+
+/**
+ * Creates a placeholder image object
+ * @param {number} index Index number for the placeholder
+ * @param {Object} metadata Optional metadata to include
+ * @returns {Object} Placeholder image object
+ */
 const createPlaceholderImage = (index, metadata = {}) => {
   return {
     id: metadata.id || `placeholder-${index}`,
@@ -50,6 +125,55 @@ const createPlaceholderImage = (index, metadata = {}) => {
   };
 };
 
+/**
+ * Error boundary for image rendering errors
+ * @param {Object} props Component props
+ * @param {React.ReactNode} props.children Child elements
+ * @param {React.ReactNode} props.fallback Fallback UI when error occurs
+ * @returns {JSX.Element} Error boundary component
+ */
+const ImageErrorBoundary = ({ children, fallback }) => {
+  const [hasError, setHasError] = useState(false);
+  
+  useEffect(() => {
+    const handleError = (event) => {
+      // Only handle image errors
+      if (event.target.tagName === 'IMG') {
+        setHasError(true);
+        event.preventDefault();
+      }
+    };
+    
+    // Add global error handler
+    window.addEventListener('error', handleError, true);
+    
+    return () => {
+      window.removeEventListener('error', handleError, true);
+    };
+  }, []);
+  
+  if (hasError) {
+    return fallback;
+  }
+  
+  return children;
+};
+
+/**
+ * Media Upload Component
+ * Handles image upload, validation, and management for listings
+ * 
+ * @param {Object} props Component props
+ * @param {Array} props.uploadedImages Images passed from parent
+ * @param {Function} props.onImageUpload Callback when images are uploaded
+ * @param {Function} props.onImageDelete Callback when images are deleted
+ * @param {Function} props.onSetFeatured Callback when featured image is set
+ * @param {number} props.featuredImageIndex Index of featured image
+ * @param {boolean} props.submitAttempted Whether form submission was attempted
+ * @param {boolean} props.isLoading Loading state
+ * @param {string} props.formId Form/listing ID
+ * @returns {JSX.Element} MediaUpload component
+ */
 const MediaUpload = ({
   uploadedImages = [],
   onImageUpload,
@@ -58,31 +182,50 @@ const MediaUpload = ({
   featuredImageIndex = 0,
   submitAttempted = false,
   isLoading = false,
-  formId = 'default' // Form ID (can be listing ID when in edit mode)
+  formId = 'default'
 }) => {
+  // Form context for validation
   const { setValue, register, formState: { errors }, trigger } = useFormContext();
 
-  // State for tracking images
+  // Component state
   const [images, setImages] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [validationErrors, setValidationErrors] = useState([]);
   const [validated, setValidated] = useState(false);
   const [needsReupload, setNeedsReupload] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({});
+  const [failedImageLoads, setFailedImageLoads] = useState({});
 
   // Refs
   const imageInputRef = useRef(null);
   const isMounted = useRef(true);
   const uploadPromisesRef = useRef([]);
+  const loadingToastIdsRef = useRef([]);
 
-  // Clean up on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       isMounted.current = false;
+      
+      // Dismiss any loading toasts to prevent them from getting stuck
+      ToastManager.dismissAllLoading();
+      
+      // Also explicitly dismiss any tracked loading toasts
+      if (loadingToastIdsRef.current.length > 0) {
+        loadingToastIdsRef.current.forEach(id => {
+          ToastManager.dismiss(id);
+        });
+        loadingToastIdsRef.current = [];
+      }
+      
+      // Cleanup any file uploads still in progress
+      if (uploadPromisesRef.current.length > 0) {
+        console.log('Cleaning up incomplete uploads on unmount');
+      }
     };
   }, []);
 
-  // Register validation field once on mount
+  // Register validation field on mount
   useEffect(() => {
     register('mediaValidation', {
       required: 'You must upload at least 3 images'
@@ -94,11 +237,12 @@ const MediaUpload = ({
     if (!isMounted.current) return;
 
     const initializeImages = async () => {
-      // If we have images from props, use those
-      if (uploadedImages && uploadedImages.length > 0) {
-        console.log("Using uploaded images from props:", uploadedImages.length);
+      // Track initial load to prevent duplicate success messages
+      window._isInitialLoad = true;
 
-        // Process images to ensure they have all needed properties
+      // Case 1: Use images passed from parent component
+      if (uploadedImages && uploadedImages.length > 0) {
+        // Process images to ensure consistent format
         const processedImages = uploadedImages.map((img, idx) => ({
           ...img,
           id: img.id || `img-${Date.now()}-${idx}`,
@@ -108,24 +252,26 @@ const MediaUpload = ({
           type: img.type || 'image/jpeg'
         }));
 
+        // Update state
         setImages(processedImages);
         setValue('mediaValidation', processedImages.length >= 3);
 
-        // Save metadata for potential restore after reload
-        listingStorage.saveImageMetadata(processedImages, formId);
+        // Save for persistence
+        await enhancedStorage.saveImageMetadata(processedImages, formId);
 
-        // Set featured image if not already set
-        const savedFeaturedIndex = listingStorage.getFeaturedImageIndex(formId);
+        // Set featured image if available from storage
+        const savedFeaturedIndex = enhancedStorage.getFeaturedImageIndex(formId);
         if (savedFeaturedIndex !== featuredImageIndex && onSetFeatured) {
-          onSetFeatured(savedFeaturedIndex);
+          onSetFeatured(savedFeaturedIndex, true);
         }
-      } else {
-        // Try to restore from storage
-        const savedMeta = listingStorage.getImageMetadata(formId);
+      } 
+      // Case 2: Restore from local storage with Firestore fallback
+      else {
+        try {
+          // Use the fallback version that tries both localStorage and Firestore
+          const savedMeta = await enhancedStorage.getImageMetadata(formId);
 
         if (savedMeta && savedMeta.length > 0) {
-          console.log("Found saved image metadata:", savedMeta);
-
           const restoredImages = [];
           let needReupload = false;
 
@@ -133,14 +279,14 @@ const MediaUpload = ({
           for (let i = 0; i < savedMeta.length; i++) {
             const meta = savedMeta[i];
 
-            // If this is already a placeholder or has no path/url, create a placeholder
+              // Check if placeholder or missing data
             if (meta.isPlaceholder || (!meta.path && !meta.url)) {
               restoredImages.push(createPlaceholderImage(i, meta));
               needReupload = true;
               continue;
             }
 
-            // Otherwise, it's a valid image
+              // Otherwise it's a valid image
             restoredImages.push({
               id: meta.id,
               name: meta.name,
@@ -152,53 +298,75 @@ const MediaUpload = ({
             });
           }
 
+            // Show reupload warning if needed
           if (needReupload) {
             setNeedsReupload(true);
-            toast.error(`Please re-upload ${restoredImages.filter(img => img.isPlaceholder).length} image(s) that were lost during page refresh`, {
-              duration: 5000
-            });
-          }
-
-          // Update state with restored images
+              const count = restoredImages.filter(img => img.isPlaceholder).length;
+              ToastManager.error(
+                `Please re-upload ${count} image(s) that need to be restored`, 
+                TOAST_IDS.REUPLOAD_ERROR
+              );
+            }
+            
+            // Update state
           setImages(restoredImages);
 
-          // Set validation state based on usable (non-placeholder) images
+            // Update validation state
           const usableCount = restoredImages.filter(img => !img.isPlaceholder).length;
           setValue('mediaValidation', usableCount >= 3);
 
-          // Tell parent component about the restored images
+            // Tell parent about restored images
           const validImages = restoredImages.filter(img => !img.isPlaceholder);
           if (validImages.length > 0 && onImageUpload) {
-            onImageUpload(validImages);
+              onImageUpload(validImages, true);
           }
 
-          // Restore featured image index if available
-          const savedFeaturedIndex = listingStorage.getFeaturedImageIndex(formId);
+            // Restore featured image if available
+          const savedFeaturedIndex = enhancedStorage.getFeaturedImageIndex(formId);
           if (savedFeaturedIndex !== featuredImageIndex && onSetFeatured) {
-            onSetFeatured(savedFeaturedIndex);
+              onSetFeatured(savedFeaturedIndex, true);
+            }
           }
+        } catch (error) {
+          console.error("Failed to retrieve image metadata:", error);
+          ToastManager.error(
+            "Failed to load saved images. Please try uploading them again.", 
+            TOAST_IDS.GENERIC_ERROR
+          );
         }
       }
+      
+      // Reset initial load flag
+      window._isInitialLoad = false;
     };
 
     initializeImages();
   }, [uploadedImages, setValue, formId, onImageUpload, onSetFeatured, featuredImageIndex]);
 
-  // Validate when submit is attempted
+  // Form validation on submit attempt
   useEffect(() => {
     if (submitAttempted && !validated) {
       validateImages();
       setValidated(true);
+      
+      // Clear any failed loads when validating
+      if (validationErrors.length > 0) {
+        setFailedImageLoads({});
+      }
     }
-  }, [submitAttempted]);
-
-  // Validate images
-  const validateImages = () => {
+  }, [submitAttempted, validationErrors.length, validated]);
+  
+  /**
+   * Validates that enough images have been uploaded
+   * @returns {boolean} Validation result
+   */
+  const validateImages = useCallback(() => {
     const errors = [];
 
-    // Count actual usable images (non-placeholders)
+    // Count usable (non-placeholder) images
     const usableImages = images.filter(img => !img.isPlaceholder);
 
+    // Check minimum image count
     if (usableImages.length < 3) {
       errors.push('You must upload at least 3 images to continue.');
 
@@ -207,492 +375,416 @@ const MediaUpload = ({
       }
     }
 
+    // Update state
     setValidationErrors(errors);
     setValue('mediaValidation', usableImages.length >= 3);
     return errors.length === 0;
-  };
+  }, [images, needsReupload, setValue]);
 
-  // Validate file dimensions (min 800x600)
-  const validateDimensions = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const image = new Image();
-        image.src = event.target.result;
-        image.onload = () => {
-          const { width, height } = image;
-          if (width < 800 || height < 600) {
-            reject(new Error(`Image dimensions must be at least 800x600 pixels. This image is ${width}x${height}.`));
-          } else {
-            resolve(file);
-          }
-        };
-        image.onerror = () => reject(new Error('Failed to load image for validation'));
-      };
-      reader.onerror = () => reject(new Error('Failed to read file'));
-    });
-  };
+  /**
+   * Set featured image
+   * @param {number} index Index of image to set as featured
+   */
+  const handleSetFeatured = useCallback((index) => {
+    if (index < 0 || index >= images.length) {
+      console.warn(`Invalid featured image index: ${index}`);
+      return;
+    }
+    
+    // Call parent handler
+    if (onSetFeatured) {
+      onSetFeatured(index);
+    }
+    
+    // Save to storage
+    enhancedStorage.saveFeaturedImageIndex(index, formId);
+    
+    // Show success message
+    if (!window._isInitialLoad) {
+      ToastManager.success('Featured image updated', TOAST_IDS.FEATURED_SUCCESS);
+    }
+  }, [images.length, onSetFeatured, formId]);
 
-  const simulateProgress = (fileName, uploadPromise) => {
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 10;
-  
-      if (!isMounted.current) {
-        clearInterval(interval);
-        return;
-      }
-  
-      setUploadProgress(prev => ({
-        ...prev,
-        [fileName]: progress
-      }));
-  
-      if (progress >= 100) {
-        clearInterval(interval);
-  
-        // Wait for actual upload to complete
-        uploadPromise
-          .then(() => {
-            if (!isMounted.current) return;
-  
-            setUploadProgress(prev => {
-              const newProgress = { ...prev };
-              delete newProgress[fileName];
-  
-              // If no more uploads in progress, set isUploading to false
-              if (Object.keys(newProgress).length === 0) {
-                // Add a timeout to ensure UI updates
-                setTimeout(() => {
-                  setIsUploading(false);
-                }, 100);
-              }
-  
-              return newProgress;
-            });
-          })
-          .catch(error => {
-            console.error(`Upload failed for ${fileName}:`, error);
-            toast.error(`Upload failed for ${fileName}`);
-  
-            // Remove from progress tracking
-            setUploadProgress(prev => {
-              const newProgress = { ...prev };
-              delete newProgress[fileName];
-  
-              // If no more uploads in progress, set isUploading to false
-              if (Object.keys(newProgress).length === 0) {
-                // Add a timeout to ensure UI updates
-                setTimeout(() => {
-                  setIsUploading(false);
-                }, 100);
-              }
-  
-              return newProgress;
-            });
-          });
-      }
-    }, 200);
-  };
-
-  // Replace placeholders with actual images when needed
-  const replacePlaceholder = async (newImage) => {
-    // Find a placeholder to replace
+  /**
+   * Replace placeholders with actual images
+   * @param {Object} newImage New image to replace a placeholder
+   * @returns {Promise<boolean>} Whether a placeholder was replaced
+   */
+  const replacePlaceholder = useCallback(async (newImage) => {
+    // Find first placeholder
     const placeholderIndex = images.findIndex(img => img.isPlaceholder);
     if (placeholderIndex === -1) return false;
 
-    // Create new array with the placeholder replaced
+    // Create new array with placeholder replaced
     const newImages = [...images];
     newImages[placeholderIndex] = newImage;
 
     // Update state
     setImages(newImages);
 
-    // Update featured image if this was the featured one
+    // Handle if this was featured image
     if (placeholderIndex === featuredImageIndex) {
       handleSetFeatured(placeholderIndex);
     }
 
-    // Save updated metadata
-    listingStorage.saveImageMetadata(newImages, formId);
+    // Save metadata
+    await enhancedStorage.saveImageMetadata(newImages, formId);
 
     return true;
-  };
-  const handleFileSelect = async (event) => {
-    // Dismiss any existing toasts
-    toast.dismiss();
-  
-    const selectedFiles = Array.from(event.target.files || []);
-    console.log("Files selected:", selectedFiles.length);
-    
-    if (selectedFiles.length === 0) {
-      setIsUploading(false);
-      return;
-    }
-    
-    // Get actual usable images (non-placeholders)
-    const usableImages = images.filter(img => !img.isPlaceholder);
-    
-    // Check if adding these files would exceed the maximum (accounting for placeholders)
-    if (usableImages.length + selectedFiles.length > 10) {
-      setValidationErrors([`You can upload a maximum of 10 images. ${10 - usableImages.length} more can be added.`]);
-      toast.error(`You can upload a maximum of 10 images. ${10 - usableImages.length} more can be added.`);
-      setIsUploading(false);
-      return;
-    }
-    
-    setIsUploading(true);
-    const newErrors = [];
-    const validFiles = [];
-    
-    // Reset upload promises
-    uploadPromisesRef.current = [];
-    
-    try {
-      // Process each file
-      for (const file of selectedFiles) {
-        try {
-          // Check file type
-          if (!file.type.includes('image/jpeg') && !file.type.includes('image/png')) {
-            newErrors.push(`${file.name}: Only JPEG and PNG images are allowed`);
-            continue;
-          }
-          
-          // Check file size (5MB limit)
-          if (file.size > 5 * 1024 * 1024) {
-            newErrors.push(`${file.name}: File size must be less than 5MB`);
-            continue;
-          }
-          
-          // Check image dimensions
-          await validateDimensions(file);
-          
-          // Add to valid files
-          validFiles.push(file);
-        } catch (error) {
-          newErrors.push(`${file.name}: ${error.message}`);
-        }
-      }
-      
-      // Set errors if any
-      if (newErrors.length > 0) {
-        setValidationErrors(newErrors);
-        toast.error(newErrors.join(', '), {
-          duration: 4000
-        });
-      }
-      
-      // Process valid files
-      if (validFiles.length > 0) {
-        const newUploadedImages = [];
-        
-        // Process each file
-        for (let i = 0; i < validFiles.length; i++) {
-          const file = validFiles[i];
-          
-          // Update progress state
-          setUploadProgress(prev => ({
-            ...prev,
-            [file.name]: 0
-          }));
-          
-          try {
-            // Temporary image with local URL for immediate display
-            const tempId = listingStorage.generateUniqueId();
-            const tempUrl = listingStorage.createTempUrl(file, tempId);
-            
-            // Create temp image object
-            const tempImage = {
-              id: tempId,
-              name: file.name,
-              size: file.size,
-              type: file.type,
-              preview: tempUrl,
-              url: tempUrl,
-              file: file,
-              tempUrl: true,
-              uploading: true
-            };
-            
-            // If we're replacing placeholders, do that first
-            let replacementMade = false;
-            
-            if (needsReupload) {
-              replacementMade = await replacePlaceholder(tempImage);
-              
-              if (replacementMade) {
-                // Upload to Firebase and track the promise
-                const uploadPromise = listingStorage.uploadFile(file, 'images', formId)
-                  .then(uploadedImage => {
-                    // Update the replaced image with the uploaded URL
-                    setImages(prevImages => {
-                      const newImages = [...prevImages];
-                      const index = newImages.findIndex(img => img.id === tempId);
-                      
-                      if (index !== -1) {
-                        // Keep the same ID but update with Firebase data
-                        newImages[index] = {
-                          ...uploadedImage,
-                          id: tempId,
-                          tempUrl: false,
-                          uploading: false
-                        };
-                        
-                        // Revoke temp URL
-                        listingStorage.revokeTempUrl(tempId);
-                      }
-                      
-                      return newImages;
-                    });
-                    
-                    // Save updated metadata
-                    listingStorage.saveImageMetadata(images, formId);
-                    
-                    // Add to newly uploaded images
-                    newUploadedImages.push(uploadedImage);
-                    
-                    // Check if we've replaced all placeholders
-                    const remainingPlaceholders = images.filter(img => img.isPlaceholder).length;
-                    if (remainingPlaceholders === 0) {
-                      setNeedsReupload(false);
-                      toast.success("All images have been successfully restored!");
-                    } else {
-                      toast.success(`Image restored! ${remainingPlaceholders} more need to be re-uploaded.`);
-                    }
-                    
-                    return uploadedImage;
-                  })
-                  .catch(error => {
-                    console.error("Error uploading to Firebase:", error);
-                    toast.error(`Error uploading ${file.name}`);
-                    throw error;
-                  });
-                
-                // Track the upload promise
-                uploadPromisesRef.current.push(uploadPromise);
-                
-                // Simulate progress
-                simulateProgress(file.name, uploadPromise);
-              }
-            }
-            
-            // If not replacing or replacement didn't happen, add as new
-            if (!replacementMade) {
-              // Add temp image to state first for immediate feedback
-              setImages(prev => [...prev, tempImage]);
-              
-              // Upload to Firebase and track the promise
-              const uploadPromise = listingStorage.uploadFile(file, 'images', formId)
-                .then(uploadedImage => {
-                  // Replace temp image with actual uploaded one
-                  setImages(prevImages => {
-                    const newImages = prevImages.map(img => 
-                      img.id === tempId 
-                        ? { 
-                            ...uploadedImage,
-                            tempUrl: false,
-                            uploading: false
-                          }
-                        : img
-                    );
-                    
-                    // Update metadata
-                    listingStorage.saveImageMetadata(newImages, formId);
-                    
-                    return newImages;
-                  });
-                  
-                  // Revoke temp URL
-                  listingStorage.revokeTempUrl(tempId);
-                  
-                  // Add to newly uploaded images for parent component
-                  newUploadedImages.push(uploadedImage);
-                  
-                  return uploadedImage;
-                })
-                .catch(error => {
-                  console.error("Error uploading to Firebase:", error);
-                  toast.error(`Error uploading ${file.name}`);
-                  throw error;
-                });
-              
-              // Track the upload promise
-              uploadPromisesRef.current.push(uploadPromise);
-              
-              // Simulate progress
-              simulateProgress(file.name, uploadPromise);
-              
-              // If this is our first image, set featured automatically
-              if (usableImages.length === 0 && i === 0) {
-                handleSetFeatured(images.length); // Index of the newly added image
-              }
-            }
-          } catch (error) {
-            console.error("Error processing file:", error);
-            newErrors.push(`${file.name}: ${error.message}`);
-          }
-        }
-        
-        // Wait for all uploads to complete before final processing
-        try {
-          const uploadResults = await Promise.allSettled(uploadPromisesRef.current);
-          
-          console.log('Upload results:', uploadResults);
-          
-          // Ensure this part is processed after all uploads
-          if (newUploadedImages.length > 0 && onImageUpload) {
-            onImageUpload(newUploadedImages);
-          }
-          
-          // Update validation after all uploads
-          validateImages();
-          trigger('mediaValidation');
-          
-          // Final reset with slight delay
-          setTimeout(() => {
-            setUploadProgress({});
-            setIsUploading(false);
-          }, 200);
-        } catch (error) {
-          console.error('Error in upload settlement:', error);
-          
-          // Ensure uploading is set to false even if there's an error
-          setUploadProgress({});
-          setIsUploading(false);
-        }
-        
-        // Success toast for uploads
-        toast.success(`${validFiles.length} image${validFiles.length > 1 ? 's' : ''} uploading`, {
-          duration: 3000
-        });
-      }
-    } catch (err) {
-      console.error("Error processing files:", err);
-      setValidationErrors([...newErrors, "An unexpected error occurred while processing your images."]);
-      toast.error("An unexpected error occurred while processing your images.", {
-        duration: 4000
-      });
-      
-      // Ensure uploading state is reset in case of unexpected error
-      setUploadProgress({});
-      setIsUploading(false);
-    } finally {
-      // Reset the file input
-      if (event.target) {
-        event.target.value = '';
-      }
-      
-      // Final fallback to ensure isUploading is set to false
-      if (validFiles.length === 0) {
-        setUploadProgress({});
-        setIsUploading(false);
-      }
-    }
-  };
-  // Handle opening the file dialog programmatically
-  const handleOpenFileDialog = () => {
-    if (imageInputRef.current) {
-      imageInputRef.current.click();
-    }
-  };
+  }, [images, featuredImageIndex, formId, handleSetFeatured]);
 
-  // Handle image deletion
-  const handleDeleteImage = async (index) => {
-    // Dismiss any existing toasts
-    toast.dismiss();
+  /**
+   * Delete an image
+   * @param {number} index Index of image to delete
+   */
+  const handleDeleteImage = useCallback(async (index) => {
+    // Dismiss existing toasts
+    ToastManager.dismissAll();
+    
+    // Set flag to prevent duplicate toasts
+    window._lastDeleteOperation = Date.now();
+    
+    // Show loading toast
+    ToastManager.loading('Deleting image...', TOAST_IDS.DELETE_SUCCESS);
 
     // Get the image to delete
     const imageToDelete = images[index];
-
     if (!imageToDelete) {
       console.warn("No image at index:", index);
+      ToastManager.dismiss(TOAST_IDS.DELETE_SUCCESS);
       return;
     }
 
-    // If it's just a placeholder, no need to delete from Firebase
-    if (!imageToDelete.isPlaceholder && imageToDelete.path) {
-      try {
-        // Delete from Firebase Storage
-        await listingStorage.deleteFile(imageToDelete.path);
-      } catch (e) {
-        console.error("Error deleting from Firebase:", e);
+    try {
+      // Delete from Firebase if not a placeholder
+      if (!imageToDelete.isPlaceholder && imageToDelete.path) {
+        try {
+          await enhancedStorage.deleteFile(imageToDelete.path);
+        } catch (e) {
+          console.error("Error deleting from Firebase:", e);
+          // Continue with local deletion even if Firebase fails
+        }
       }
-    }
 
-    // If it has a temp URL, revoke it
-    if (imageToDelete.tempUrl) {
-      listingStorage.revokeTempUrl(imageToDelete.id);
-    }
-
-    // Create new array without the deleted image
-    const newImages = [...images];
-    newImages.splice(index, 1);
-
-    // Update state
-    setImages(newImages);
-
-    // Call parent handler
-    if (onImageDelete) {
-      onImageDelete(imageToDelete);
-    }
-
-    // Handle featured image adjustment
-    let newFeaturedIndex = featuredImageIndex;
-
-    if (index === featuredImageIndex) {
-      // If deleting the featured image, set the first remaining as featured
-      if (newImages.length > 0) {
-        newFeaturedIndex = 0;
-      } else {
-        newFeaturedIndex = -1;
+      // Revoke temp URL if present
+      if (imageToDelete.tempUrl) {
+        URL.revokeObjectURL(imageToDelete.tempUrl);
       }
-      handleSetFeatured(newFeaturedIndex);
-    } else if (index < featuredImageIndex) {
-      // If deleting before the featured image, decrement index
-      newFeaturedIndex = featuredImageIndex - 1;
-      handleSetFeatured(newFeaturedIndex);
-    }
 
-    // Save updated metadata
-    listingStorage.saveImageMetadata(newImages, formId);
+      // Create new array without deleted image
+      const newImages = [...images];
+      newImages.splice(index, 1);
 
-    // Validate form after deletion
-    setTimeout(() => {
+      // Update state
+      setImages(newImages);
+
+      // Notify parent
+      if (onImageDelete) {
+        onImageDelete(imageToDelete, true);
+      }
+
+      // Handle featured image changes
+      let newFeaturedIndex = featuredImageIndex;
+
+      if (index === featuredImageIndex) {
+        // If deleting featured image, set first remaining as featured
+        if (newImages.length > 0) {
+          newFeaturedIndex = 0;
+        } else {
+          newFeaturedIndex = -1;
+        }
+        handleSetFeatured(newFeaturedIndex);
+      } else if (index < featuredImageIndex) {
+        // If deleting before featured image, decrement index
+        newFeaturedIndex = featuredImageIndex - 1;
+        handleSetFeatured(newFeaturedIndex);
+      }
+
+      // Update validation
+      await enhancedStorage.saveImageMetadata(newImages, formId);
+      
+      // Update validation
+      const usableCount = newImages.filter(img => !img.isPlaceholder).length;
+      setValue('mediaValidation', usableCount >= 3);
       validateImages();
-      trigger('mediaValidation');
-    }, 100);
 
-    // Success toast
-    toast.success("Image deleted", {
-      duration: 2000
-    });
-  };
-
-  // Handle setting featured image
-  const handleSetFeatured = (index) => {
-    // Dismiss any existing toasts
-    toast.dismiss();
-
-    if (onSetFeatured) {
-      onSetFeatured(index);
-
-      // Save to storage
-      listingStorage.saveFeaturedImageIndex(index, formId);
-
-      toast.success(`Image ${index + 1} set as main image`, {
-        duration: 2000
-      });
+      // Show success toast
+      ToastManager.success('Image deleted successfully', TOAST_IDS.DELETE_SUCCESS);
+    } catch (error) {
+      console.error("Error deleting image:", error);
+      ToastManager.error(
+        `Failed to delete image: ${error.message}`,
+        TOAST_IDS.GENERIC_ERROR
+      );
     }
-  };
+  }, [images, featuredImageIndex, handleSetFeatured, setValue, 
+      validateImages, formId, onImageDelete]);
 
-  // Get usable images count (non-placeholders)
-  const getUsableImagesCount = () => {
+  /**
+   * Enhanced error messaging based on filename patterns
+   * @param {string} filename Filename to analyze
+   * @param {string} defaultMessage Default error message
+   * @returns {string} Enhanced error message
+   */
+  const getEnhancedErrorMessage = useCallback((filename, defaultMessage) => {
+    const lowerName = filename.toLowerCase();
+    
+    // Handle loading or corruption errors specially
+    if (defaultMessage.includes('Unable to load') || 
+        defaultMessage.includes('Unable to read')) {
+      
+      // Check for screenshots with standard extensions
+      if ((lowerName.includes('screenshot') || 
+           lowerName.includes('screen') || 
+           lowerName.includes('capture') || 
+           lowerName.match(/scr(ee)?n_?shot/)) && 
+          (lowerName.endsWith('.png') || 
+           lowerName.endsWith('.jpg') || 
+           lowerName.endsWith('.jpeg'))) {
+        return 'This image appears to be corrupted or in an invalid format. Try re-saving it as a standard PNG or JPEG file.';
+      }
+      
+      // Check for screenshots with unsupported extensions
+      if (lowerName.includes('screenshot') || 
+          lowerName.includes('screen') || 
+          lowerName.includes('capture') || 
+          lowerName.match(/scr(ee)?n_?shot/)) {
+        return 'This screenshot format is not supported. Please save it as a JPEG or PNG file first.';
+      }
+      
+      // Check for unsupported file extensions
+      if (lowerName.endsWith('.webp') || 
+          lowerName.endsWith('.gif') || 
+          lowerName.endsWith('.bmp') || 
+          lowerName.endsWith('.tiff') || 
+          lowerName.endsWith('.tif') || 
+          lowerName.endsWith('.svg')) {
+        return `File format not supported. Only JPEG and PNG are accepted. This appears to be a ${lowerName.split('.').pop().toUpperCase()} file.`;
+      }
+    }
+    
+    return defaultMessage;
+  }, []);
+  
+  /**
+   * Check if a file has the same name as an existing image
+   * @param {File} file File to check
+   * @returns {boolean} True if a duplicate exists
+   */
+  const checkForDuplicateFilename = useCallback((file) => {
+    // Find existing image with same name
+    return images.some(img => 
+      img.name === file.name && 
+      !img.isPlaceholder
+    );
+  }, [images]);
+  
+  /**
+   * Validate image dimensions
+   * @param {File} file File to validate
+   * @returns {Promise<boolean>} Validation result
+   */
+  const validateDimensions = useCallback((file) => {
+    return new Promise((resolve, reject) => {
+      try {
+        // Create URL for image
+        const url = URL.createObjectURL(file);
+        
+        // Create image element
+        const img = new Image();
+        
+        // Set timeout for loading
+        const timeout = setTimeout(() => {
+          URL.revokeObjectURL(url);
+          
+          // Store this in failed loads
+          setFailedImageLoads(prev => ({
+            ...prev,
+            [file.name]: {
+              error: 'timeout',
+              message: 'Image took too long to load. The file may be corrupted.'
+            }
+          }));
+          
+          // Fail validation
+          reject(new Error('Unable to load this image. The file may be corrupted.'));
+        }, 20000);
+        
+        // Handle load event
+        img.onload = () => {
+          // Clear timeout
+          clearTimeout(timeout);
+          
+          // Check dimensions
+          const minWidth = 800;
+          const minHeight = 600;
+          
+          if (img.width < minWidth || img.height < minHeight) {
+            // Cleanup
+            URL.revokeObjectURL(url);
+            
+            // Store failure
+            setFailedImageLoads(prev => ({
+              ...prev,
+              [file.name]: {
+                error: 'dimensions',
+                message: `Image dimensions must be at least ${minWidth}x${minHeight} pixels.`,
+                width: img.width,
+                height: img.height
+              }
+            }));
+            
+            // Fail validation
+            reject(new Error(`Image dimensions must be at least ${minWidth}x${minHeight} pixels. This image is ${img.width}x${img.height}.`));
+          } else {
+            // Check if alpha channel - warn but don't block
+            // This is a heuristic check and not perfect
+            if (file.type === 'image/png') {
+              // For PNGs, we can't reliably detect transparency here
+              // But we can warn about potential issues with this format
+              console.log('PNG format detected. Checking file integrity.');
+            }
+            
+            // All checks passed
+            URL.revokeObjectURL(url);
+            resolve(true);
+          }
+        };
+        
+        // Handle error event
+        img.onerror = () => {
+          clearTimeout(timeout);
+          URL.revokeObjectURL(url);
+          
+          // Store failure
+          setFailedImageLoads(prev => ({
+            ...prev,
+            [file.name]: {
+              error: 'load',
+              message: 'Unable to load this image. The file may be corrupted.'
+            }
+          }));
+          
+          // Check PNG errors specifically for better guidance
+          if (file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')) {
+            reject(new Error('Unable to read this PNG file. It may be corrupted or in screenshot format not supported.'));
+          } else {
+            reject(new Error('Unable to read this file. It may be corrupted or in a format not supported.'));
+          }
+        };
+        
+        // Start loading
+        img.src = url;
+      } catch (error) {
+        // Handle unexpected errors
+        setFailedImageLoads(prev => ({
+          ...prev,
+          [file.name]: {
+            error: 'unknown',
+            message: error.message || 'Unknown error validating image.'
+          }
+        }));
+        
+        reject(error);
+      }
+    });
+  }, []);
+
+  /**
+   * Simulates and tracks upload progress
+   * @param {string} uniqueId Unique identifier for the upload
+   * @param {string} fileName Name of the file being uploaded
+   * @param {Promise} uploadPromise Promise from the upload operation
+   */
+  const simulateProgress = useCallback((uniqueId, fileName, uploadPromise) => {
+    // Use uniqueId instead of filename to track progress
+    const progressKey = uniqueId;
+    
+    // Initialize progress at 0
+      setUploadProgress(prev => ({
+        ...prev,
+      [progressKey]: { 
+        progress: 0,
+        fileName
+      } 
+    }));
+    
+    // Create interval to simulate gradual progress
+    const interval = setInterval(() => {
+      setUploadProgress(prev => {
+        const current = prev[progressKey]?.progress || 0;
+        
+        // Gradually increase but never reach 100% until complete
+        if (current < 90) {
+          return { 
+            ...prev, 
+            [progressKey]: {
+              ...prev[progressKey],
+              progress: current + Math.random() * 10
+            }
+          };
+        }
+        
+        return prev;
+      });
+    }, 500);
+    
+    // Handle upload completion
+    uploadPromise
+      .then(() => {
+        // Set progress to 100%
+        setUploadProgress(prev => ({ 
+          ...prev, 
+          [progressKey]: {
+            ...prev[progressKey],
+            progress: 100
+          }
+        }));
+        
+        // Clear progress after delay
+        setTimeout(() => {
+          setUploadProgress(prev => {
+            const { [progressKey]: _, ...rest } = prev;
+            return rest;
+          });
+        }, 1000);
+          })
+          .catch(error => {
+        console.error(`Error uploading ${fileName}:`, error);
+  
+        // Clear progress
+            setUploadProgress(prev => {
+          const { [progressKey]: _, ...rest } = prev;
+          return rest;
+        });
+      })
+      .finally(() => {
+        clearInterval(interval);
+      });
+  }, []);
+  
+  /**
+   * Open file dialog programmatically
+   */
+  const handleOpenFileDialog = useCallback(() => {
+    if (imageInputRef.current) {
+      imageInputRef.current.click();
+    }
+  }, []);
+  
+  /**
+   * Get usable (non-placeholder) images count
+   * @returns {number} Number of usable images
+   */
+  const getUsableImagesCount = useCallback(() => {
     return images.filter(img => !img.isPlaceholder).length;
-  };
-
-  // Render a form completion indicator
-  const renderCompletionIndicator = () => {
+  }, [images]);
+  
+  /**
+   * Render form completion indicator
+   * @returns {JSX.Element} Completion indicator component
+   */
+  const renderCompletionIndicator = useCallback(() => {
     const usableCount = getUsableImagesCount();
     const isComplete = usableCount >= 3;
 
@@ -709,8 +801,295 @@ const MediaUpload = ({
         {isComplete ? "Complete" : `Need ${3 - usableCount} more`}
       </div>
     );
-  };
+  }, [getUsableImagesCount]);
 
+  /**
+   * Handle file selection from input
+   * @param {Event} event - Change event from file input
+   */
+  const handleFileSelect = useCallback(async (event) => {
+    if (!event.target.files || event.target.files.length === 0) return;
+    
+    // Dismiss existing toasts
+    ToastManager.dismissAll();
+    
+    try {
+      const files = Array.from(event.target.files);
+      
+      // Enforce max files limit (10 total including existing)
+      const availableSlots = 10 - images.filter(img => !img.isPlaceholder).length;
+      const filesToProcess = files.slice(0, availableSlots);
+      
+      if (filesToProcess.length === 0) {
+        ToastManager.info('Maximum number of images already uploaded (10)', TOAST_IDS.UPLOAD_LIMIT);
+        return;
+      }
+      
+      if (filesToProcess.length < files.length) {
+        ToastManager.info(
+          `Only processing ${filesToProcess.length} images - max 10 allowed total`, 
+          TOAST_IDS.UPLOAD_LIMIT
+        );
+      }
+      
+      // Set uploading state
+      setIsUploading(true);
+      
+      // Show loading toast
+      const toastId = ToastManager.loading(
+        `Uploading ${filesToProcess.length} image${filesToProcess.length > 1 ? 's' : ''}...`,
+        TOAST_IDS.UPLOAD_SUCCESS
+      );
+      loadingToastIdsRef.current.push(toastId);
+      
+      // Validate and upload files
+      const validationPromises = [];
+      const uploadPromises = [];
+      const newImages = [];
+      const validationErrors = [];
+      const duplicates = [];
+      
+      // First pass - check for basic errors and duplicates
+      for (const file of filesToProcess) {
+        // Check file type
+        if (!file.type.match(/image\/(jpeg|jpg|png)/i)) {
+          validationErrors.push(`${file.name}: Only JPG and PNG images are supported.`);
+          continue;
+        }
+        
+        // Check file size
+        if (file.size > 5 * 1024 * 1024) { // 5MB limit
+          validationErrors.push(`${file.name}: File size exceeds 5MB limit.`);
+          continue;
+        }
+        
+        // Check for duplicates
+        if (checkForDuplicateFilename(file)) {
+          duplicates.push(file.name);
+          continue;
+        }
+        
+        // Add to validation queue
+        validationPromises.push(
+          validateDimensions(file)
+            .then(() => ({ file, valid: true }))
+            .catch(error => ({ 
+              file, 
+              valid: false,
+              error: getEnhancedErrorMessage(file.name, error.message) 
+            }))
+        );
+      }
+      
+      // Wait for all validation to complete
+      const validationResults = await Promise.all(validationPromises);
+      
+      // Process results - upload valid files
+      for (const result of validationResults) {
+        if (result.valid) {
+          // Create unique ID for tracking this upload
+          const uniqueId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          // Prepare upload path
+          const timestamp = Date.now();
+          const userId = auth?.currentUser?.uid || 'anonymous';
+          const sanitizedName = result.file.name
+            .replace(/[^a-z0-9]/gi, '_')
+            .toLowerCase();
+          
+          const uploadPath = `listings/${formId}/images/${timestamp}_${sanitizedName}`;
+          
+          // Create upload promise
+          const uploadPromise = enhancedStorage.uploadFile(
+            result.file, 
+            uploadPath,
+            { contentType: result.file.type }
+          );
+          
+          // Track progress
+          simulateProgress(uniqueId, result.file.name, uploadPromise);
+          
+          // Store promise for tracking
+          uploadPromises.push(
+            uploadPromise
+              .then(metadata => {
+                // Create image object
+                const newImage = {
+                  id: `img_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
+                  file: result.file,
+                  name: result.file.name,
+                  size: result.file.size,
+                  type: result.file.type,
+                  path: metadata.path,
+                  url: metadata.url,
+                  preview: metadata.url,
+                  uploaded: new Date().toISOString()
+                };
+                
+                // Add to new images array
+                newImages.push(newImage);
+                
+                return newImage;
+              })
+              .catch(error => {
+                console.error(`Error uploading ${result.file.name}:`, error);
+                validationErrors.push(`Failed to upload ${result.file.name}: ${error.message}`);
+                return null;
+              })
+          );
+        } else {
+          // Store validation error
+          validationErrors.push(`${result.file.name}: ${result.error}`);
+        }
+      }
+      
+      // Wait for all uploads to complete
+      const uploadResults = await Promise.all(uploadPromises);
+      const successfulUploads = uploadResults.filter(Boolean);
+      
+      // Update state with new images
+      if (successfulUploads.length > 0) {
+        // If we have placeholders, replace them first
+        let remainingImages = [...successfulUploads];
+        const placeholders = images.filter(img => img.isPlaceholder);
+        
+        if (placeholders.length > 0 && remainingImages.length > 0) {
+          // Create a new array with placeholders replaced
+          const updatedImages = [...images];
+          
+          for (let i = 0; i < placeholders.length && remainingImages.length > 0; i++) {
+            const placeholderIndex = images.findIndex(img => img.isPlaceholder);
+            if (placeholderIndex !== -1) {
+              updatedImages[placeholderIndex] = remainingImages.shift();
+            }
+          }
+          
+          // Add any remaining new images
+          const finalImages = [...updatedImages, ...remainingImages];
+          
+          // Update state
+          setImages(finalImages);
+          
+          // Update validation
+          const usableCount = finalImages.filter(img => !img.isPlaceholder).length;
+          setValue('mediaValidation', usableCount >= 3);
+          
+          // Notify parent
+          if (onImageUpload) {
+            onImageUpload(finalImages.filter(img => !img.isPlaceholder));
+          }
+          
+          // Save to storage
+          await enhancedStorage.saveImageMetadata(finalImages, formId);
+        } else {
+          // Just append new images
+          const updatedImages = [...images, ...successfulUploads];
+          
+          // Update state
+          setImages(updatedImages);
+          
+          // Update validation
+          const usableCount = updatedImages.filter(img => !img.isPlaceholder).length;
+          setValue('mediaValidation', usableCount >= 3);
+          
+          // Notify parent
+          if (onImageUpload) {
+            onImageUpload(updatedImages.filter(img => !img.isPlaceholder));
+          }
+          
+          // Save to storage
+          await enhancedStorage.saveImageMetadata(updatedImages, formId);
+        }
+        
+        // Set featured image if none set yet
+        if (featuredImageIndex === -1 && successfulUploads.length > 0) {
+          handleSetFeatured(images.length); // Index of first new image
+        }
+      }
+      
+      // Reset the file input
+      if (imageInputRef.current) {
+        imageInputRef.current.value = '';
+      }
+      
+      // Show results
+      if (successfulUploads.length > 0) {
+        ToastManager.success(
+          `Successfully uploaded ${successfulUploads.length} image${successfulUploads.length !== 1 ? 's' : ''}`,
+          TOAST_IDS.UPLOAD_SUCCESS
+        );
+        
+        // Run validation
+        validateImages();
+      } else {
+        ToastManager.dismiss(TOAST_IDS.UPLOAD_SUCCESS);
+      }
+      
+      // Show errors if any
+      if (validationErrors.length > 0) {
+        // Group similar errors for cleaner display
+        const errorGroups = {};
+        
+        validationErrors.forEach(error => {
+          const match = error.match(/^(.*?):\s*(.*?)$/);
+          if (match) {
+            const [, filename, message] = match;
+            if (!errorGroups[message]) {
+              errorGroups[message] = [filename];
+            } else {
+              errorGroups[message].push(filename);
+            }
+          } else {
+            if (!errorGroups['Other errors']) {
+              errorGroups['Other errors'] = [error];
+            } else {
+              errorGroups['Other errors'].push(error);
+            }
+          }
+        });
+        
+        // Format error message
+        let errorMsg = 'Some images couldn\'t be uploaded:\n';
+        
+        Object.entries(errorGroups).forEach(([message, filenames]) => {
+          if (filenames.length <= 2) {
+            errorMsg += `• ${filenames.join(', ')}: ${message}\n`;
+          } else {
+            errorMsg += `• ${filenames.length} files: ${message}\n`;
+          }
+        });
+        
+        ToastManager.error(errorMsg, TOAST_IDS.UPLOAD_ERROR);
+      }
+      
+      // Show duplicates warning if any
+      if (duplicates.length > 0) {
+        ToastManager.warn(
+          `Skipped ${duplicates.length} duplicate file${duplicates.length !== 1 ? 's' : ''}`,
+          TOAST_IDS.DUPLICATE_WARNING
+        );
+      }
+    } catch (error) {
+      console.error('Error handling file upload:', error);
+      ToastManager.error(
+        `Upload failed: ${error.message}`,
+        TOAST_IDS.GENERIC_ERROR
+      );
+    } finally {
+      // Reset uploading state
+      setIsUploading(false);
+      
+      // Clear loading toast IDs
+      loadingToastIdsRef.current = [];
+    }
+  }, [
+    images, formId, checkForDuplicateFilename, validateDimensions, 
+    enhancedStorage, onImageUpload, setValue, validateImages,
+    getEnhancedErrorMessage, simulateProgress, featuredImageIndex,
+    handleSetFeatured
+  ]);
+
+  // Main render function
   return (
     <div className="space-y-6">
       {/* Step Header */}
@@ -752,7 +1131,7 @@ const MediaUpload = ({
         </div>
       )}
 
-      {/* Form validation error */}
+      {/* Required Field Error */}
       {(submitAttempted || validated) && getUsableImagesCount() < 3 && (
         <div className="p-4 border border-red-200 bg-red-50 rounded-lg">
           <div className="flex items-start">
@@ -768,13 +1147,13 @@ const MediaUpload = ({
         </div>
       )}
 
-      {/* Display validation errors if any */}
+      {/* Validation Errors */}
       {validationErrors.length > 0 && validationErrors.some(error => !error.includes('upload at least 3 images')) && (
         <div className="p-4 border border-red-200 bg-red-50 rounded-lg">
           <div className="flex items-start">
             <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
             <div className="text-sm text-red-700">
-              <p className="font-medium mb-1">Please fix the following issues:</p>
+              <p className="font-medium mb-1">Please fix these format or size issues:</p>
               <ul className="list-disc pl-5 space-y-1">
                 {validationErrors.filter(error => !error.includes('upload at least 3 images')).map((error, index) => (
                   <li key={index}>{error}</li>
@@ -784,35 +1163,65 @@ const MediaUpload = ({
           </div>
         </div>
       )}
+
+      {/* Image Loading Errors */}
+      {Object.keys(failedImageLoads).length > 0 && (
+        <div className="p-4 border border-amber-200 bg-amber-50 rounded-lg mt-3">
+          <div className="flex items-start">
+            <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 mr-3 flex-shrink-0" />
+            <div className="text-sm text-amber-700">
+              <p className="font-medium mb-1">Image issues detected:</p>
+              <ul className="list-disc pl-5 space-y-1">
+                {Object.entries(failedImageLoads).map(([filename, error], index) => {
+                  // Determine error category
+                  let errorType = "format issue";
+                  
+                  if (error.error === 'dimensions') {
+                    errorType = "size issue";
+                  } else if (error.error === 'load') {
+                    errorType = "loading issue";
+                  }
+                  
+                  return (
+                    <li key={index}>
+                      <strong>{filename}</strong> 
+                      <span className="mx-1">-</span>
+                      <span className="font-medium">{errorType}:</span> {error.message}
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="mt-2 text-sm font-medium">Troubleshooting tips:</p>
+              <ul className="list-disc pl-5 space-y-0.5 mt-1 text-xs">
+                <li>Make sure the file is a valid JPEG or PNG image</li>
+                <li>Images must be at least 800×600 pixels in size</li>
+                <li>For PNG files with issues, try opening in an image editor and saving as a new file</li>
+                <li>Try converting between formats (PNG to JPEG or vice versa)</li>
+                <li>Some screenshot tools create non-standard formats - use standard image editors</li>
+                <li>Check if the file is complete and not partially downloaded</li>
+                <li>Avoid images with transparency if possible</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
 {(isUploading || Object.keys(uploadProgress).length > 0) && (
   <div className="p-4 border border-blue-200 bg-blue-50 rounded-lg">
     <div className="flex items-center">
       <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-700 mr-3"></div>
       <p className="text-sm font-medium text-blue-800">
-        Uploading images... Please wait.
+              Uploading {Object.keys(uploadProgress).length} file(s)...
+              {uploadProgress && Object.entries(uploadProgress).map(([key, data]) => (
+                <span key={key} className="block mt-1 text-xs">
+                  {data.fileName}: {Math.round(data.progress)}%
+                </span>
+              ))}
       </p>
     </div>
-
-    {Object.keys(uploadProgress).length > 0 && (
-      <div className="mt-2 space-y-2">
-        {Object.entries(uploadProgress).map(([fileName, progress]) => (
-          <div key={fileName} className="text-xs">
-            <div className="flex justify-between text-gray-700 mb-1">
-              <span className="truncate max-w-xs">{fileName}</span>
-              <span>{Math.round(progress)}%</span>
-            </div>
-            <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className={progress < 70 ? "bg-blue-500 h-full" : "bg-green-500 h-full"}
-                style={{ width: `${progress}%` }}
-              ></div>
-            </div>
-          </div>
-        ))}
       </div>
     )}
-  </div>
-)}
+
       {/* Image count badge */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
@@ -830,247 +1239,180 @@ const MediaUpload = ({
         </Tooltip>
       </div>
 
-      {/* File upload area */}
-      <div className="mb-6">
-        <div className="flex flex-col items-center gap-4">
-          {/* Hidden file input */}
-          <input
-            ref={imageInputRef}
-            id="image-upload"
-            type="file"
-            multiple
-            accept="image/jpeg, image/png"
-            className="hidden"
-            onChange={handleFileSelect}
-            disabled={isLoading || getUsableImagesCount() >= 10 || isUploading}
-          />
-
-          {/* Styled drop zone */}
-          <label
-            htmlFor="image-upload"
-            className={cn(
-              "block w-full border-2 border-dashed rounded-lg p-6 text-center",
-              "transition-colors duration-200 ease-in-out",
-              "hover:bg-gray-50 hover:border-gray-400",
-              "border-gray-300 bg-white",
-              isLoading || getUsableImagesCount() >= 10 || isUploading
-                ? "opacity-50 cursor-not-allowed"
-                : needsReupload ? "border-amber-300 bg-amber-50 hover:bg-amber-100 hover:border-amber-400" : "cursor-pointer"
-            )}
-          >
-            <div className="flex flex-col items-center justify-center">
-              <div className={cn(
-                "p-2 rounded-full mb-3",
-                needsReupload ? "bg-amber-100" : "bg-blue-50"
-              )}>
-                <Upload className={cn(
-                  "h-8 w-8",
-                  needsReupload ? "text-amber-500" : "text-blue-500"
-                )} />
-              </div>
-              <span className="font-medium text-gray-900 mb-1">
-                {needsReupload ? "Re-upload images" : "Click to add images"}
-              </span>
-              <span className="text-sm text-gray-500 mb-4">
-                {needsReupload
-                  ? `${images.filter(img => img.isPlaceholder).length} image(s) need to be restored`
-                  : "Or drag and drop files here"
-                }
-              </span>
-
-              <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
-                <div className="flex items-center">
-                  <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1"></span>
-                  <span>JPEG, PNG</span>
-                </div>
-                <div>•</div>
-                <div className="flex items-center">
-                  <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1"></span>
-                  <span>Max 5MB</span>
-                </div>
-                <div>•</div>
-                <div className="flex items-center">
-                  <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1"></span>
-                  <span>Min 800×600px</span>
-                </div>
-              </div>
-            </div>
-          </label>
-
-          {/* Explicit upload button */}
-          <button
-            type="button"
-            onClick={handleOpenFileDialog}
-            disabled={isLoading || getUsableImagesCount() >= 10 || isUploading}
-            className={cn(
-              "px-4 py-2 rounded-md transition-colors",
-              "flex items-center justify-center",
-              "border shadow-sm",
-              isLoading || getUsableImagesCount() >= 10 || isUploading
-                ? "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-300"
-                : needsReupload
-                  ? "bg-amber-50 text-amber-600 hover:bg-amber-100 hover:text-amber-700 hover:border-amber-300 border-amber-200"
-                  : "bg-white text-blue-600 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 border-gray-300"
-            )}
-          >
-            <Upload className="h-4 w-4 mr-2" />
-            {needsReupload ? "Re-upload Images" : "Select Images"}
-          </button>
-        </div>
-      </div>
-
-      {/* Image preview grid */}
-      {images.length > 0 && (
-        <div className="mt-8">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-gray-700">
-              Uploaded Images ({getUsableImagesCount()}/10)
-              {images.some(img => img.isPlaceholder) && (
-                <span className="text-amber-600 text-xs ml-2">
-                  ({images.filter(img => img.isPlaceholder).length} need re-upload)
-                </span>
-              )}
-            </h3>
-
-            {featuredImageIndex >= 0 && featuredImageIndex < images.length && (
-              <p className="text-xs text-gray-500">
-                <Star className="h-3 w-3 inline-block text-blue-500 mr-1" />
-                Image {featuredImageIndex + 1} is set as the main image
-              </p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+      {/* Image Grid and Upload Controls */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        {/* Existing Images */}
             {images.map((image, index) => (
-              <div
+              <div 
                 key={image.id || index}
                 className={cn(
-                  "relative rounded-lg border overflow-hidden group",
-                  featuredImageIndex === index ? "ring-2 ring-blue-500 border-blue-400" : "border-gray-200",
-                  image.isPlaceholder ? "opacity-50 bg-amber-50 border-amber-200" : "",
-                  image.uploading ? "border-blue-200 bg-blue-50" : "",
-                  "transition-all duration-200 hover:shadow-md"
+                  "relative group cursor-default overflow-hidden transform transition-all p-0.5 rounded-lg",
+                  "border border-gray-200 shadow-sm hover:shadow-md mb-2",
+                  index === featuredImageIndex && "ring-2 ring-blue-500 border-blue-500",
+                  image.isPlaceholder && "opacity-75 bg-gray-50 border-dashed border-2",
+                  failedImageLoads[image.name] && "border-red-300 border-dashed"
                 )}
               >
-                {/* Featured badge */}
-                {featuredImageIndex === index && (
-                  <div className="absolute top-2 left-2 z-10 bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full flex items-center">
-                    <Star className="h-3 w-3 mr-0.5" />
-                    <span>Main</span>
-                  </div>
-                )}
-
-                {/* Placeholder indicator */}
-                {image.isPlaceholder && (
-                  <div className="absolute top-2 right-2 z-10 bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full flex items-center">
-                    <RefreshCw className="h-3 w-3 mr-0.5 animate-spin" />
-                    <span>Re-upload</span>
-                  </div>
-                )}
-
-                {/* Uploading indicator */}
-                {image.uploading && (
-                  <div className="absolute top-2 right-2 z-10 bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full flex items-center">
-                    <RefreshCw className="h-3 w-3 mr-0.5 animate-spin" />
-                    <span>Uploading</span>
-                  </div>
-                )}
-
-                {/* Image preview */}
-                <div className="relative bg-gray-100 aspect-video overflow-hidden">
-                  {image.isPlaceholder ? (
-                    <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-                      <ImageOff className="h-8 w-8 text-amber-400 mb-2" />
-                      <p className="text-xs text-amber-600 font-medium">Image needs to be re-uploaded</p>
+                {/* Featured badge - make it more visible */}
+                {index === featuredImageIndex && (
+                  <div className="absolute top-0.5 right-0.5 z-20 bg-blue-500 text-white px-2 py-0.5 text-xs rounded-bl-md rounded-tr-md font-medium shadow-sm">
+                    <div className="flex items-center">
+                      <Star className="h-3 w-3 mr-1 text-yellow-200 fill-yellow-200" />
+                      <span>Featured</span>
                     </div>
-                  ) : image && (image.preview || image.url) ? (
-                    <img
-                      src={image.preview || image.url || getImageFallbackUrl()}
-                      alt={`Listing image ${index + 1}`}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.target.onerror = null; // Prevent infinite loop
-                        e.target.src = getImageFallbackUrl();
-                        e.target.classList.add('p-4');
-                      }}
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full p-4">
-                      <ImageOff className="h-8 w-8 text-gray-400" />
-                    </div>
-                  )}
-
-                  {/* Upload progress overlay */}
-                  {image.uploading && (
-                    <div className="absolute inset-0 bg-blue-900 bg-opacity-30 flex items-center justify-center">
-                      <div className="bg-white p-2 rounded-full">
-                        <RefreshCw className="h-6 w-6 text-blue-500 animate-spin" />
+                  </div>
+                )}
+                
+                {/* Image container */}
+                <div className="relative">
+                  {/* Image preview */}
+                  <div className="relative h-32 bg-gray-100 rounded overflow-hidden">
+                    {!image.isPlaceholder && !failedImageLoads[image.name] ? (
+                      <ImageErrorBoundary fallback={(<div className="flex items-center justify-center h-full bg-gray-200">
+                        <ImageOff className="h-6 w-6 text-gray-400" />
+                      </div>)}>
+                        <img
+                          src={image.preview || image.url || getImageFallbackUrl()}
+                          alt={image.name || `Image ${index + 1}`}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.target.src = getImageFallbackUrl();
+                          }}
+                        />
+                      </ImageErrorBoundary>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full">
+                        {image.isPlaceholder ? (
+                          <>
+                            <Upload className="h-8 w-8 text-gray-400 mb-1" />
+                            <span className="text-xs text-gray-500">Replacement needed</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle className="h-8 w-8 text-red-400 mb-1" />
+                            <span className="text-xs text-red-500">Error loading image</span>
+                          </>
+                        )}
                       </div>
+                    )}
+                    
+                    {/* Upload progress overlay */}
+                    {index === featuredImageIndex && uploadProgress[index] && uploadProgress[index].progress < 100 && (
+                      <div className="absolute inset-0 bg-black bg-opacity-50 flex flex-col items-center justify-center">
+                        <CircularProgress value={uploadProgress[index].progress} />
+                        <span className="text-white text-xs mt-1">Uploading... {Math.round(uploadProgress[index].progress)}%</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Image info panel */}
+                  <div className="p-2 bg-white">
+                    <div className="flex justify-between items-center">
+                      <p className="text-xs font-medium text-gray-700 truncate w-full">
+                        {image.name || `Image ${index + 1}`}
+                      </p>
                     </div>
-                  )}
-                </div>
-
-                {/* Image controls */}
-                <div className="p-2 flex items-center justify-between bg-gray-50 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => handleSetFeatured(index)}
-                    disabled={featuredImageIndex === index || image.isPlaceholder || image.uploading}
-                    className={cn(
-                      "px-2 py-1 rounded text-xs flex items-center transition-colors",
-                      featuredImageIndex === index
-                        ? "bg-blue-100 text-blue-700 cursor-default"
-                        : image.isPlaceholder || image.uploading
-                          ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-300"
-                          : "bg-white text-gray-600 border border-gray-300 hover:bg-gray-100 hover:text-blue-600"
+                    
+                    {!image.isPlaceholder && !failedImageLoads[image.name] && (
+                      <div className="flex justify-between items-center mt-1 text-2xs text-gray-500">
+                        <span>{formatFileSize(image.size)}</span>
+                        {index === featuredImageIndex ? (
+                          <span className="text-blue-600 flex items-center">
+                            <Star className="h-3 w-3 mr-0.5 fill-blue-600" />
+                            Main Image
+                          </span>
+                        ) : (
+                          <span></span>
+                        )}
+                      </div>
                     )}
-                  >
-                    <Star className="h-3 w-3 mr-1" />
-                    <span>{featuredImageIndex === index ? 'Main' : 'Set Main'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteImage(index)}
-                    disabled={image.uploading}
-                    className={cn(
-                      "p-1 rounded-full border",
-                      image.uploading
-                        ? "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-300"
-                        : "bg-white text-red-600 border-gray-300 hover:bg-red-50 transition-colors"
+                    
+                    {/* Error message */}
+                    {failedImageLoads[image.name] && (
+                      <div className="mt-1 text-2xs text-red-500 truncate">
+                        {failedImageLoads[image.name].message || 'Error loading image'}
+                      </div>
                     )}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  </div>
+                  
+                  {/* Actions toolbar */}
+                  <div className="absolute top-1 left-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity 
+                                flex justify-between items-center">
+                    {/* Delete button */}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteImage(index)}
+                      className="rounded-full p-1 bg-red-500 text-white hover:bg-red-600 focus:outline-none 
+                                focus:ring-2 focus:ring-offset-2 focus:ring-red-400 transition-colors"
+                      aria-label="Delete image"
+                    >
+                      <Trash className="h-3 w-3" />
+                    </button>
+                    
+                    {/* Feature button - only show if not already featured */}
+                    {index !== featuredImageIndex && (
+                      <button
+                        type="button"
+                        onClick={() => handleSetFeatured(index)}
+                        className="rounded-full p-1 bg-blue-500 text-white hover:bg-blue-600 focus:outline-none 
+                                  focus:ring-2 focus:ring-offset-2 focus:ring-blue-400 transition-colors"
+                        aria-label="Set as featured image"
+                      >
+                        <Star className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      )}
+      
+        {/* Upload Button */}
+        {images.length < 10 && (
+          <button
+            type="button"
+            onClick={handleOpenFileDialog}
+            disabled={isUploading || isLoading}
+            className={`
+              flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6
+              transition duration-150 aspect-[4/3] h-auto
+              ${isUploading || isLoading
+                ? 'border-gray-300 bg-gray-50 cursor-not-allowed'
+                : 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400'
+              }
+            `}
+          >
+            {isUploading ? (
+              <>
+                <RefreshCw className="h-8 w-8 text-gray-400 animate-spin mb-2" />
+                <span className="text-sm font-medium text-gray-500">Uploading...</span>
+              </>
+            ) : isLoading ? (
+              <>
+                <Loader className="h-8 w-8 text-gray-400 animate-spin mb-2" />
+                <span className="text-sm font-medium text-gray-500">Processing...</span>
+              </>
+            ) : (
+              <>
+                <UploadCloud className="h-8 w-8 text-gray-400 mb-2" />
+                <span className="text-sm font-medium text-gray-500">Upload Images</span>
+                <p className="text-xs text-gray-400 mt-1 text-center">
+                  {needsReupload ? 'Replace missing images' : `${10 - images.length} slots remaining`}
+                </p>
+              </>
+            )}
+          </button>
+        )}
+      </div>
 
-      {/* Image count warning */}
-      {getUsableImagesCount() < 3 && !submitAttempted && !validated && (
-        <div className="p-4 border border-amber-200 bg-amber-50 rounded-lg mt-4">
-          <div className="flex items-start">
-            <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 mr-3 flex-shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-amber-800">
-                You need to upload at least 3 images ({getUsableImagesCount()}/3)
-              </p>
-              <p className="text-sm text-amber-700 mt-1">
-                High-quality images improve your listing's appeal and increase chances of getting inquiries.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Hidden input for form validation */}
+      {/* Hidden file input */}
       <input
-        type="hidden"
-        name="mediaValidation"
-        value={getUsableImagesCount() >= 3 ? 'true' : 'false'}
+        ref={imageInputRef}
+        type="file"
+        accept="image/jpeg,image/png"
+        multiple
+        onChange={handleFileSelect}
+        className="hidden"
+        disabled={isUploading || isLoading}
       />
     </div>
   );

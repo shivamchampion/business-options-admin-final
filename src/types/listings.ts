@@ -607,6 +607,7 @@ export interface Listing {
     featuredImage?: ImageObject;
     galleryImages: ImageObject[];
     totalImages: number;
+    documents?: DocumentObject[]; // Add documents under media
   };
 
   // Location Information
@@ -674,6 +675,9 @@ export interface Listing {
   startupDetails?: StartupDetails;
   investorDetails?: InvestorDetails;
   digitalAssetDetails?: DigitalAssetDetails;
+  
+  // Cache metadata
+  _cacheTimestamp?: string;
 }
 
 /**

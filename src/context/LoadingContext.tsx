@@ -3,6 +3,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 interface LoadingContextType {
   isLoading: boolean;
+  loadingMessage?: string;
   startLoading: (message?: string) => void;
   stopLoading: () => void;
   setLoadingMessage: (message: string) => void;
@@ -94,6 +95,7 @@ export const LoadingProvider: React.FC<LoadingProviderProps> = ({ children }) =>
   return (
     <LoadingContext.Provider value={{ 
       isLoading, 
+      loadingMessage,
       startLoading, 
       stopLoading,
       setLoadingMessage: (message: string) => setLoadingMessage(message)

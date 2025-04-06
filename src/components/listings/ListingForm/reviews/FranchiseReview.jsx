@@ -2,77 +2,64 @@ import React from 'react';
 import { useFormContext } from 'react-hook-form';
 import { 
   Store, 
+  MapPin, 
   DollarSign, 
-  Users, 
-  MapPin,
-  Clock,
-  BookOpen,
-  TrendingUp
+  GraduationCap, 
+  BarChart, 
+  Phone 
 } from 'lucide-react';
 
 const FranchiseReview = ({ ReviewSection, ReviewField }) => {
   const { watch } = useFormContext();
-  const franchiseDetails = watch('franchiseDetails');
+  const franchiseDetails = watch('franchiseDetails') || {};
   const basicInfo = watch();
+  const location = watch('location') || {};
+  const contactInfo = watch('contactInfo') || {};
+
+  // Helper function to format currency
+  const formatCurrency = (value, currency = '₹') => {
+    if (!value) return '';
+    const numValue = typeof value === 'string' ? parseFloat(value) : value;
+    if (isNaN(numValue)) return '';
+    return `${currency} ${numValue.toLocaleString()}`;
+  };
 
   return (
     <>
-      {/* Basic Information Section */}
+      {/* Franchise Information */}
       <ReviewSection 
         title="Franchise Information" 
         icon={Store}
         onEdit={() => {/* Navigate to appropriate step */}}
       >
-        <ReviewField 
-          label="Franchise Brand" 
-          value={franchiseDetails?.franchiseBrand} 
-          highlight 
-        />
-        <ReviewField 
-          label="Franchise Type" 
-          value={franchiseDetails?.franchiseType} 
-        />
-        <ReviewField 
-          label="Franchising Since" 
-          value={franchiseDetails?.franchiseSince} 
-        />
-        <ReviewField 
-          label="Brand Established" 
-          value={franchiseDetails?.brandEstablished} 
-        />
-        <ReviewField 
-          label="Total Units" 
-          value={franchiseDetails?.totalUnits} 
-        />
-        <ReviewField 
-          label="Franchisee Count" 
-          value={franchiseDetails?.franchiseeCount} 
-        />
-        <ReviewField 
-          label="Company-Owned Units" 
-          value={franchiseDetails?.companyOwnedUnits} 
-        />
+        <ReviewField label="Franchise Name" value={basicInfo.name} highlight />
+        <ReviewField label="Franchise Type" value={franchiseDetails?.franchiseType} />
+        <ReviewField label="Parent Company" value={franchiseDetails?.parentCompany} />
+        <ReviewField label="Established Year" value={franchiseDetails?.establishedYear} />
+        <ReviewField label="Brand Started" value={franchiseDetails?.brandStarted} />
       </ReviewSection>
 
-      {/* Location & Territories Section */}
+      {/* Territories */}
       <ReviewSection 
         title="Available Territories" 
         icon={MapPin}
         onEdit={() => {/* Navigate to appropriate step */}}
       >
-        <div className="flex flex-wrap gap-2">
-          {franchiseDetails?.availableTerritories?.map((territory, index) => (
-            <span 
-              key={index} 
-              className="px-2 py-1 bg-blue-50 text-blue-800 rounded-full text-xs"
-            >
-              {territory}
-            </span>
-          ))}
-        </div>
+        <ReviewField 
+          label="Available Territories" 
+          value={franchiseDetails?.availableTerritories?.join(', ')} 
+        />
+        <ReviewField 
+          label="Territory Exclusivity" 
+          value={franchiseDetails?.territoryExclusivity ? 'Yes' : 'No'} 
+        />
+        <ReviewField 
+          label="Location" 
+          value={`${location.cityName}, ${location.stateName}, ${location.countryName}`} 
+        />
       </ReviewSection>
 
-      {/* Investment Details Section */}
+      {/* Investment */}
       <ReviewSection 
         title="Investment Details" 
         icon={DollarSign}
@@ -80,32 +67,36 @@ const FranchiseReview = ({ ReviewSection, ReviewField }) => {
       >
         <ReviewField 
           label="Franchise Fee" 
-          value={`₹ ${franchiseDetails?.investment?.franchiseFee?.value?.toLocaleString() || ''}`} 
-          highlight
+          value={formatCurrency(franchiseDetails?.investment?.franchiseFee?.value)} 
+          highlight 
         />
         <ReviewField 
           label="Total Initial Investment" 
-          value={`₹ ${franchiseDetails?.investment?.totalInitialInvestment?.value?.toLocaleString() || ''}`} 
+          value={formatCurrency(franchiseDetails?.investment?.totalInitialInvestment?.value)} 
         />
         <ReviewField 
           label="Royalty Fee" 
-          value={`${franchiseDetails?.investment?.royaltyFee}%`} 
+          value={franchiseDetails?.investment?.royaltyFee ? `${franchiseDetails.investment.royaltyFee}%` : ''} 
         />
         <ReviewField 
           label="Marketing Fee" 
-          value={`${franchiseDetails?.investment?.marketingFee}%`} 
+          value={franchiseDetails?.investment?.marketingFee ? `${franchiseDetails.investment.marketingFee}%` : ''} 
+        />
+        <ReviewField 
+          label="Term Length" 
+          value={franchiseDetails?.investment?.termLength ? `${franchiseDetails.investment.termLength} years` : ''} 
         />
       </ReviewSection>
 
-      {/* Support & Training Section */}
+      {/* Support & Training */}
       <ReviewSection 
         title="Support & Training" 
-        icon={BookOpen}
+        icon={GraduationCap}
         onEdit={() => {/* Navigate to appropriate step */}}
       >
         <ReviewField 
           label="Initial Training" 
-          value={franchiseDetails?.support?.initialTraining?.substring(0, 100) + '...'} 
+          value={franchiseDetails?.support?.initialTraining} 
         />
         <ReviewField 
           label="Training Duration" 
@@ -116,20 +107,24 @@ const FranchiseReview = ({ ReviewSection, ReviewField }) => {
           value={franchiseDetails?.support?.trainingLocation} 
         />
         <ReviewField 
-          label="Site Selection Assistance" 
+          label="Ongoing Support" 
+          value={franchiseDetails?.support?.ongoingSupport} 
+        />
+        <ReviewField 
+          label="Site Selection" 
           value={franchiseDetails?.support?.siteSelection ? 'Yes' : 'No'} 
         />
       </ReviewSection>
 
-      {/* Performance Metrics Section */}
+      {/* Performance */}
       <ReviewSection 
         title="Performance Metrics" 
-        icon={TrendingUp}
+        icon={BarChart}
         onEdit={() => {/* Navigate to appropriate step */}}
       >
         <ReviewField 
           label="Average Unit Sales" 
-          value={`₹ ${franchiseDetails?.performance?.averageUnitSales?.value?.toLocaleString() || ''}`} 
+          value={formatCurrency(franchiseDetails?.performance?.averageUnitSales?.value)} 
         />
         <ReviewField 
           label="Sales Growth" 
@@ -141,8 +136,7 @@ const FranchiseReview = ({ ReviewSection, ReviewField }) => {
         />
         <ReviewField 
           label="Success Rate" 
-          value={franchiseDetails?.performance?.successRate ? 
-            `${franchiseDetails.performance.successRate}%` : 'Not Provided'} 
+          value={franchiseDetails?.performance?.successRate ? `${franchiseDetails.performance.successRate}%` : ''} 
           optional 
         />
       </ReviewSection>
@@ -150,23 +144,15 @@ const FranchiseReview = ({ ReviewSection, ReviewField }) => {
       {/* Contact Information */}
       <ReviewSection 
         title="Contact Information" 
-        icon={Users}
+        icon={Phone}
         onEdit={() => {/* Navigate to appropriate step */}}
       >
-        <ReviewField 
-          label="Contact Email" 
-          value={basicInfo.contactInfo?.email} 
-        />
-        <ReviewField 
-          label="Contact Phone" 
-          value={basicInfo.contactInfo?.phone} 
-          optional 
-        />
-        <ReviewField 
-          label="Website" 
-          value={basicInfo.contactInfo?.website} 
-          optional 
-        />
+        <ReviewField label="Contact Name" value={contactInfo?.contactName} />
+        <ReviewField label="Contact Email" value={contactInfo?.email} />
+        <ReviewField label="Contact Phone" value={contactInfo?.phone} />
+        <ReviewField label="Alternate Phone" value={contactInfo?.alternatePhone} optional />
+        <ReviewField label="Website" value={contactInfo?.website} optional />
+        <ReviewField label="Preferred Contact" value={contactInfo?.preferredContactMethod} optional />
       </ReviewSection>
     </>
   );

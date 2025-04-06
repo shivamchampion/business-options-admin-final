@@ -94,7 +94,7 @@
   }
   
   .card {
-    @apply bg-white rounded-lg shadow border border-gray-100 p-6;
+    @apply bg-white rounded-lg border border-gray-200 shadow-sm p-6;
   }
   
   .form-input {
@@ -102,7 +102,7 @@
   }
   
   .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center text-xs px-2.5 py-0.5 rounded-full font-medium;
   }
   
   .badge-primary {
@@ -110,15 +110,15 @@
   }
   
   .badge-success {
-    @apply badge bg-green-100 text-green-800;
+    @apply bg-green-100 text-green-800;
   }
   
   .badge-warning {
-    @apply badge bg-amber-100 text-amber-700;
+    @apply bg-yellow-100 text-yellow-800;
   }
   
   .badge-danger {
-    @apply badge bg-red-100 text-red-800;
+    @apply bg-red-100 text-red-800;
   }
   
   .table-row-hover {
@@ -136,6 +136,37 @@
   
   .animate-pulse {
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* Tab styles */
+  .tab-button {
+    @apply px-4 py-2 text-sm font-medium focus:outline-none whitespace-nowrap rounded-md transition-colors;
+  }
+  
+  .tab-active {
+    @apply bg-blue-50 text-blue-700 border border-blue-200;
+  }
+  
+  .tab-inactive {
+    @apply text-gray-600 hover:text-gray-800 hover:bg-gray-50 border border-transparent;
+  }
+
+  /* Offline indicator styles */
+  .offline-indicator {
+    @apply bg-yellow-100 text-yellow-800 px-4 py-2 flex items-center justify-center text-sm;
+  }
+  
+  .offline-badge {
+    @apply inline-flex items-center text-xs px-2 py-1 rounded-full;
+  }
+
+  /* Highlight card styles */
+  .highlight-card {
+    @apply p-4 rounded-lg border flex items-start;
+  }
+  
+  .highlight-icon-container {
+    @apply rounded-full p-2 mr-3 flex-shrink-0;
   }
 }
 
@@ -185,6 +216,31 @@
   
   .pointer-events-auto {
     pointer-events: auto;
+  }
+
+  /* Animation for retry button */
+  .animate-spin {
+    animation: spin 1s linear infinite;
+  }
+
+  /* Animation for fade in */
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+
+  /* Responsive utilities */
+  @media (max-width: 640px) {
+    .tab-button {
+      @apply px-3 py-1.5 text-xs;
+    }
+    
+    .highlight-card {
+      @apply flex-col;
+    }
+    
+    .highlight-icon-container {
+      @apply mb-2;
+    }
   }
 }
 

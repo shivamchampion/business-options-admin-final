@@ -14,7 +14,8 @@ import {
   Loader
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import toast from 'react-hot-toast';
+import ToastManager, { TOAST_IDS } from '@/utils/ToastManager';
+import ToastTest from '@/components/ToastTest';
 
 // Import Firebase services
 import { getRecentListings, updateListingStatus, deleteListing } from '@/services/listingService';
@@ -105,7 +106,7 @@ export default function Dashboard() {
         setStats(statsData);
       } catch (error) {
         console.error("Error fetching stats:", error);
-        toast.error("Failed to load dashboard statistics");
+        ToastManager.error("Failed to load dashboard statistics", TOAST_IDS.GENERIC_ERROR);
       } finally {
         setLoadingStats(false);
       }
@@ -128,7 +129,7 @@ export default function Dashboard() {
         setRecentUsers(users);
       } catch (error) {
         console.error("Error fetching recent users:", error);
-        toast.error("Failed to load recent users");
+        ToastManager.error("Failed to load recent users", TOAST_IDS.GENERIC_ERROR);
       } finally {
         setLoadingUsers(false);
       }
@@ -149,7 +150,7 @@ export default function Dashboard() {
         setRecentListings(listings);
       } catch (error) {
         console.error("Error fetching recent listings:", error);
-        toast.error("Failed to load recent listings");
+        ToastManager.error("Failed to load recent listings", TOAST_IDS.GENERIC_ERROR);
       } finally {
         setLoadingListings(false);
       }
@@ -212,325 +213,336 @@ export default function Dashboard() {
     if (window.confirm('Are you sure you want to delete this listing? This action cannot be undone.')) {
       try {
         await deleteListing(listingId);
-        toast.success('Listing deleted successfully');
+        ToastManager.success('Listing deleted successfully');
         
         // Remove the deleted listing from state
         setRecentListings(prev => prev.filter(listing => listing.id !== listingId));
       } catch (error) {
         console.error('Error deleting listing:', error);
-        toast.error('Failed to delete listing');
+        ToastManager.error('Failed to delete listing');
       }
     }
   };
 
   return (
-    <div className={`space-y-6 ${isLoaded ? 'animate-fade-in' : 'opacity-0'}`}>
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="mt-1 text-sm text-gray-500">Welcome to the Business Options Platform admin panel.</p>
-        </div>
-        <div className="mt-4 sm:mt-0">
-          <button 
-            className="btn-primary flex items-center"
-            onClick={handleCreateListing}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Create New Listing
-          </button>
-        </div>
+    <div className={cn(
+      "p-2 md:p-8 transition-opacity duration-500",
+      isLoaded ? "opacity-100" : "opacity-0"
+    )}>
+      {/* Add ToastTest component at the top for testing */}
+      <div className="mb-8 border rounded-lg bg-white shadow-sm">
+        <ToastTest />
       </div>
       
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        {loadingStats ? (
-          // Show skeleton loaders when loading
-          Array(4).fill(0).map((_, index) => (
-            <div 
-              key={`skeleton-${index}`} 
-              className="card border border-gray-100 animate-pulse"
-            >
-              <div className="flex justify-between items-center mb-2">
-                <div className="h-4 w-24 bg-gray-200 rounded"></div>
-                <div className="h-4 w-16 bg-gray-200 rounded-full"></div>
-              </div>
-              <div className="flex items-center mt-2">
-                <div className="rounded-md p-3 mr-4 bg-gray-200 h-10 w-10"></div>
-                <div>
-                  <div className="h-6 w-20 bg-gray-200 rounded"></div>
-                  <div className="h-3 w-32 bg-gray-200 rounded mt-1"></div>
-                </div>
-              </div>
-            </div>
-          ))
-        ) : (
-          stats.map((stat, index) => (
-            <div 
-              key={stat.title} 
-              className="card border border-gray-100 hover:border-gray-200"
-              style={{ animationDelay: `${index * 100}ms` }}
-            >
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="text-sm font-medium text-gray-500 uppercase">{stat.title}</h3>
-                <span className={cn(
-                  "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
-                  stat.increasing ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-                )}>
-                  {stat.increasing ? <ArrowUp className="w-3 h-3 mr-1" /> : <ArrowDown className="w-3 h-3 mr-1" />}
-                  {stat.change}
-                </span>
-              </div>
-              <div className="flex items-center mt-2">
-                <div className={`rounded-md p-3 mr-4 ${stat.color}`}>
-                  {stat.icon}
-                </div>
-                <div>
-                  <div className="text-2xl font-bold">{stat.value}</div>
-                  <div className="text-xs text-gray-500 mt-1">Compared to previous month</div>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-      
-      {/* Recent Users Table */}
-      <div className="card border border-gray-100 animate-slide-in" style={{ animationDelay: '200ms' }}>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6">
+      {/* Regular dashboard content */}
+      <div className={`space-y-6 ${isLoaded ? 'animate-fade-in' : 'opacity-0'}`}>
+        {/* Page Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
           <div>
-            <h3 className="text-lg font-medium text-gray-900">Recent User Registrations</h3>
-            <p className="text-sm text-gray-500">Latest user sign-ups on the platform</p>
+            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+            <p className="mt-1 text-sm text-gray-500">Welcome to the Business Options Platform admin panel.</p>
           </div>
-          <button 
-            className="btn-secondary flex items-center text-sm mt-4 sm:mt-0"
-            onClick={handleAddUser}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add User
-          </button>
-        </div>
-        
-        <div className="overflow-x-auto -mx-4 sm:mx-0">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {loadingUsers ? (
-                // Show skeleton loaders for users
-                Array(3).fill(0).map((_, index) => (
-                  <tr key={`user-skeleton-${index}`} className="animate-pulse">
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-10 w-10 bg-gray-200 rounded-full"></div>
-                        <div className="ml-4">
-                          <div className="h-4 w-32 bg-gray-200 rounded"></div>
-                          <div className="h-3 w-40 bg-gray-200 rounded mt-1"></div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                      <div className="h-4 w-20 bg-gray-200 rounded"></div>
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                      <div className="h-5 w-16 bg-gray-200 rounded-full"></div>
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-right">
-                      <div className="flex justify-end space-x-2">
-                        <div className="h-4 w-4 bg-gray-200 rounded"></div>
-                        <div className="h-4 w-4 bg-gray-200 rounded"></div>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : recentUsers.length > 0 ? (
-                recentUsers.map((user, index) => (
-                  <tr key={user.id} className="table-row-hover" style={{ animationDelay: `${index * 100 + 300}ms` }}>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-10 w-10 bg-primary-700 text-white flex items-center justify-center rounded-full">
-                          {user.name.charAt(0)}
-                        </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">{user.name}</div>
-                          <div className="text-sm text-gray-500">{user.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDate(user.createdAt)}
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                      <span className={cn(
-                        "badge",
-                        user.status === 'active' ? "badge-success" : "badge-warning"
-                      )}>
-                        {user.status}
-                      </span>
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex space-x-2 justify-end">
-                        <button 
-                          className="text-gray-500 hover:text-gray-700 transition-colors duration-200"
-                          onClick={() => handleViewUser(user.id)}
-                        >
-                          <EyeIcon className="h-4 w-4" />
-                        </button>
-                        <button 
-                          className="text-primary-700 hover:text-primary-900 transition-colors duration-200"
-                          onClick={() => handleEditUser(user.id)}
-                        >
-                          <PencilIcon className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={4} className="px-4 sm:px-6 py-4 text-center text-sm text-gray-500">
-                    No recent users found
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        
-        <div className="mt-6">
-          <Link 
-            to="/users"
-            className="text-sm font-medium text-primary-700 hover:text-primary-600 transition-colors duration-200 flex items-center"
-          >
-            View All Users 
-            <svg className="ml-1 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </Link>
-        </div>
-      </div>
-      
-      {/* Recent Listings Table */}
-      <div className="card border border-gray-100 animate-slide-in" style={{ animationDelay: '400ms' }}>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6">
-          <div>
-            <h3 className="text-lg font-medium text-gray-900">Recent Listings</h3>
-            <p className="text-sm text-gray-500">Latest business listings added to the platform</p>
+          <div className="mt-4 sm:mt-0">
+            <button 
+              className="btn-primary flex items-center"
+              onClick={handleCreateListing}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Create New Listing
+            </button>
           </div>
-          <button 
-            className="btn-secondary flex items-center text-sm mt-4 sm:mt-0"
-            onClick={handleCreateListing}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Listing
-          </button>
         </div>
         
-        <div className="overflow-x-auto -mx-4 sm:mx-0">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Listing</th>
-                <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {loadingListings ? (
-                // Show skeleton loaders for listings
-                Array(3).fill(0).map((_, index) => (
-                  <tr key={`listing-skeleton-${index}`} className="animate-pulse">
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                      <div className="h-4 w-40 bg-gray-200 rounded"></div>
-                      <div className="h-3 w-32 bg-gray-200 rounded mt-1"></div>
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                      <div className="h-5 w-16 bg-gray-200 rounded-full"></div>
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                      <div className="h-5 w-16 bg-gray-200 rounded-full"></div>
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-right">
-                      <div className="flex justify-end space-x-2">
-                        <div className="h-4 w-4 bg-gray-200 rounded"></div>
-                        <div className="h-4 w-4 bg-gray-200 rounded"></div>
-                        <div className="h-4 w-4 bg-gray-200 rounded"></div>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : recentListings.length > 0 ? (
-                recentListings.map((listing, index) => (
-                  <tr key={listing.id} className="table-row-hover" style={{ animationDelay: `${index * 100 + 500}ms` }}>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{listing.name}</div>
-                      <div className="text-sm text-gray-500">{listing.ownerName}</div>
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                      <span className="badge badge-primary">
-                        {listing.type.charAt(0).toUpperCase() + listing.type.slice(1).replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                      <span className={cn(
-                        "badge",
-                        listing.status === ListingStatus.PUBLISHED ? "badge-success" : "badge-warning"
-                      )}>
-                        {listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}
-                      </span>
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex space-x-2 justify-end">
-                        <button 
-                          className="text-gray-500 hover:text-gray-700 transition-colors duration-200"
-                          onClick={() => handleViewListing(listing.id)}
-                        >
-                          <EyeIcon className="h-4 w-4" />
-                        </button>
-                        <button 
-                          className="text-primary-700 hover:text-primary-900 transition-colors duration-200"
-                          onClick={() => handleEditListing(listing.id)}
-                        >
-                          <PencilIcon className="h-4 w-4" />
-                        </button>
-                        <button 
-                          className="text-red-500 hover:text-red-700 transition-colors duration-200"
-                          onClick={() => handleDeleteListing(listing.id)}
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-6">
+          {loadingStats ? (
+            // Show skeleton loaders when loading
+            Array(4).fill(0).map((_, index) => (
+              <div 
+                key={`skeleton-${index}`} 
+                className="card border border-gray-100 animate-pulse"
+              >
+                <div className="flex justify-between items-center mb-2">
+                  <div className="h-4 w-24 bg-gray-200 rounded"></div>
+                  <div className="h-4 w-16 bg-gray-200 rounded-full"></div>
+                </div>
+                <div className="flex items-center mt-2">
+                  <div className="rounded-md p-3 mr-4 bg-gray-200 h-10 w-10"></div>
+                  <div>
+                    <div className="h-6 w-20 bg-gray-200 rounded"></div>
+                    <div className="h-3 w-32 bg-gray-200 rounded mt-1"></div>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            stats.map((stat, index) => (
+              <div 
+                key={stat.title} 
+                className="card border border-gray-100 hover:border-gray-200"
+                style={{ animationDelay: `${index * 100}ms` }}
+              >
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-sm font-medium text-gray-500 uppercase">{stat.title}</h3>
+                  <span className={cn(
+                    "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                    stat.increasing ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                  )}>
+                    {stat.increasing ? <ArrowUp className="w-3 h-3 mr-1" /> : <ArrowDown className="w-3 h-3 mr-1" />}
+                    {stat.change}
+                  </span>
+                </div>
+                <div className="flex items-center mt-2">
+                  <div className={`rounded-md p-3 mr-4 ${stat.color}`}>
+                    {stat.icon}
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold">{stat.value}</div>
+                    <div className="text-xs text-gray-500 mt-1">Compared to previous month</div>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        
+        {/* Recent Users Table */}
+        <div className="card border border-gray-100 animate-slide-in" style={{ animationDelay: '200ms' }}>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6">
+            <div>
+              <h3 className="text-lg font-medium text-gray-900">Recent User Registrations</h3>
+              <p className="text-sm text-gray-500">Latest user sign-ups on the platform</p>
+            </div>
+            <button 
+              className="btn-secondary flex items-center text-sm mt-4 sm:mt-0"
+              onClick={handleAddUser}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add User
+            </button>
+          </div>
+          
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
                 <tr>
-                  <td colSpan={4} className="px-4 sm:px-6 py-4 text-center text-sm text-gray-500">
-                    No recent listings found
-                  </td>
+                  <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                  <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                  <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {loadingUsers ? (
+                  // Show skeleton loaders for users
+                  Array(3).fill(0).map((_, index) => (
+                    <tr key={`user-skeleton-${index}`} className="animate-pulse">
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-10 w-10 bg-gray-200 rounded-full"></div>
+                          <div className="ml-4">
+                            <div className="h-4 w-32 bg-gray-200 rounded"></div>
+                            <div className="h-3 w-40 bg-gray-200 rounded mt-1"></div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <div className="h-4 w-20 bg-gray-200 rounded"></div>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <div className="h-5 w-16 bg-gray-200 rounded-full"></div>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-right">
+                        <div className="flex justify-end space-x-2">
+                          <div className="h-4 w-4 bg-gray-200 rounded"></div>
+                          <div className="h-4 w-4 bg-gray-200 rounded"></div>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : recentUsers.length > 0 ? (
+                  recentUsers.map((user, index) => (
+                    <tr key={user.id} className="table-row-hover" style={{ animationDelay: `${index * 100 + 300}ms` }}>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-10 w-10 bg-primary-700 text-white flex items-center justify-center rounded-full">
+                            {user.name.charAt(0)}
+                          </div>
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900">{user.name}</div>
+                            <div className="text-sm text-gray-500">{user.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatDate(user.createdAt)}
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <span className={cn(
+                          "badge",
+                          user.status === 'active' ? "badge-success" : "badge-warning"
+                        )}>
+                          {user.status}
+                        </span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div className="flex space-x-2 justify-end">
+                          <button 
+                            className="text-gray-500 hover:text-gray-700 transition-colors duration-200"
+                            onClick={() => handleViewUser(user.id)}
+                          >
+                            <EyeIcon className="h-4 w-4" />
+                          </button>
+                          <button 
+                            className="text-primary-700 hover:text-primary-900 transition-colors duration-200"
+                            onClick={() => handleEditUser(user.id)}
+                          >
+                            <PencilIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="px-4 sm:px-6 py-4 text-center text-sm text-gray-500">
+                      No recent users found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          
+          <div className="mt-6">
+            <Link 
+              to="/users"
+              className="text-sm font-medium text-primary-700 hover:text-primary-600 transition-colors duration-200 flex items-center"
+            >
+              View All Users 
+              <svg className="ml-1 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          </div>
         </div>
         
-        <div className="mt-6">
-          <Link 
-            to="/listings" 
-            className="text-sm font-medium text-primary-700 hover:text-primary-600 transition-colors duration-200 flex items-center group"
-          >
-            View All Listings
-            <svg className="ml-1 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </Link>
+        {/* Recent Listings Table */}
+        <div className="card border border-gray-100 animate-slide-in" style={{ animationDelay: '400ms' }}>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6">
+            <div>
+              <h3 className="text-lg font-medium text-gray-900">Recent Listings</h3>
+              <p className="text-sm text-gray-500">Latest business listings added to the platform</p>
+            </div>
+            <button 
+              className="btn-secondary flex items-center text-sm mt-4 sm:mt-0"
+              onClick={handleCreateListing}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Listing
+            </button>
+          </div>
+          
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Listing</th>
+                  <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                  <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th scope="col" className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {loadingListings ? (
+                  // Show skeleton loaders for listings
+                  Array(3).fill(0).map((_, index) => (
+                    <tr key={`listing-skeleton-${index}`} className="animate-pulse">
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <div className="h-4 w-40 bg-gray-200 rounded"></div>
+                        <div className="h-3 w-32 bg-gray-200 rounded mt-1"></div>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <div className="h-5 w-16 bg-gray-200 rounded-full"></div>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <div className="h-5 w-16 bg-gray-200 rounded-full"></div>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-right">
+                        <div className="flex justify-end space-x-2">
+                          <div className="h-4 w-4 bg-gray-200 rounded"></div>
+                          <div className="h-4 w-4 bg-gray-200 rounded"></div>
+                          <div className="h-4 w-4 bg-gray-200 rounded"></div>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : recentListings.length > 0 ? (
+                  recentListings.map((listing, index) => (
+                    <tr key={listing.id} className="table-row-hover" style={{ animationDelay: `${index * 100 + 500}ms` }}>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">{listing.name}</div>
+                        <div className="text-sm text-gray-500">{listing.ownerName}</div>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <span className="badge badge-primary">
+                          {listing.type.charAt(0).toUpperCase() + listing.type.slice(1).replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                        <span className={cn(
+                          "badge",
+                          listing.status === ListingStatus.PUBLISHED ? "badge-success" : "badge-warning"
+                        )}>
+                          {listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}
+                        </span>
+                      </td>
+                      <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div className="flex space-x-2 justify-end">
+                          <button 
+                            className="text-gray-500 hover:text-gray-700 transition-colors duration-200"
+                            onClick={() => handleViewListing(listing.id)}
+                          >
+                            <EyeIcon className="h-4 w-4" />
+                          </button>
+                          <button 
+                            className="text-primary-700 hover:text-primary-900 transition-colors duration-200"
+                            onClick={() => handleEditListing(listing.id)}
+                          >
+                            <PencilIcon className="h-4 w-4" />
+                          </button>
+                          <button 
+                            className="text-red-500 hover:text-red-700 transition-colors duration-200"
+                            onClick={() => handleDeleteListing(listing.id)}
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="px-4 sm:px-6 py-4 text-center text-sm text-gray-500">
+                      No recent listings found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          
+          <div className="mt-6">
+            <Link 
+              to="/listings" 
+              className="text-sm font-medium text-primary-700 hover:text-primary-600 transition-colors duration-200 flex items-center group"
+            >
+              View All Listings
+              <svg className="ml-1 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          </div>
         </div>
       </div>
     </div>

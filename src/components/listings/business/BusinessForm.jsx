@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { BusinessType, EntityType, LocationType, RevenueTrend } from '@/types/listings';
 import { cn } from '@/lib/utils';
+import { FormSection, Switch } from '@/components/ui/FormField';
+import { toast } from 'react-hot-toast';
 
 // Options for dropdowns
 const businessTypeOptions = [
@@ -62,30 +64,65 @@ const Tooltip = ({ content, children }) => {
   );
 };
 
-// Switch component (Toggle)
-const Switch = ({ checked, onChange, label }) => {
-  return (
-    <div className="flex items-center space-x-2">
-      <button
-        type="button"
-        onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 transition-colors duration-200 ease-in-out focus:outline-none ${
-          checked ? 'bg-[#0031ac] border-[#0031ac]' : 'bg-gray-200 border-gray-200'
-        }`}
-      >
-        <span
-          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-            checked ? 'translate-x-5' : 'translate-x-0'
-          }`}
-        />
-      </button>
-      <span className="text-sm text-gray-700">{label}</span>
-    </div>
-  );
+// Helper function to format error messages for better user experience
+const getImprovedErrorMessage = (errors, fieldPath) => {
+  if (!errors || !fieldPath) return null;
+  
+  // Navigate through the error object to find the field
+  const parts = fieldPath.split('.');
+  let current = errors;
+  
+  for (const part of parts) {
+    if (!current || !current[part]) return null;
+    current = current[part];
+  }
+  
+  if (!current || !current.message) return null;
+  
+  // Format the field name for display
+  const getFieldDisplayName = (path) => {
+    const lastPart = path.split('.').pop();
+    // Convert camelCase to spaces and capitalize first letter
+    const formatted = lastPart
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, str => str.toUpperCase())
+      .trim();
+    
+    // Replace common fields with more user-friendly names
+    const replacements = {
+      'Business Type': 'Business type',
+      'Entity Type': 'Entity type',
+      'Established Year': 'Year business was established',
+      'Registration Number': 'Business registration number',
+      'Operations Location Type': 'Business location type',
+      'Operations Employees Count': 'Total number of employees',
+      'Operations Employees Full Time': 'Number of full-time employees',
+      'Operations Operation Description': 'Business operations description',
+      'Financials Annual Revenue Value': 'Annual revenue',
+      'Financials Monthly Revenue Value': 'Monthly revenue',
+      'Financials Profit Margin Percentage': 'Profit margin percentage',
+      'Financials Revenue Trend': 'Revenue trend',
+      'Financials Customer Concentration': 'Customer concentration',
+      'Sale Asking Price Value': 'Asking price',
+      'Sale Reason For Selling': 'Reason for selling',
+      'Sale Transition Period': 'Transition period',
+      'Sale Training Included': 'Training details',
+      'Sale Assets Included': 'Assets included in sale'
+    };
+    
+    return replacements[formatted] || formatted;
+  };
+  
+  // Make "required" messages more descriptive
+  if (current.message === "Required" || current.message === "required") {
+    return `Please provide ${getFieldDisplayName(fieldPath)}`;
+  }
+  
+  return current.message;
 };
 
 // Main Business Form Component
-export default function BusinessForm({ submitAttempted = false }) {
+export default function BusinessForm({ submitAttempted = false, shouldShowErrors = false }) {
   // Use parent form context
   const { 
     control, 
@@ -94,43 +131,165 @@ export default function BusinessForm({ submitAttempted = false }) {
     setValue, 
     getValues, 
     trigger,
-    formState: { errors } 
+    formState: { errors },
+    setError: setCustomError,
+    clearErrors
   } = useFormContext();
 
   // Watch for values that affect conditional rendering
   const locationType = watch("businessDetails.operations.locationType");
   const sellerFinancingAvailable = watch("businessDetails.sale.sellerFinancing.isAvailable");
   const inventoryIncluded = watch("businessDetails.financials.inventory.isIncluded");
+  const equipmentIncluded = watch("businessDetails.financials.equipment.isIncluded");
 
-  // Effect to update part-time employees based on total and full-time
+  // Validate all fields when form submission is attempted or shouldShowErrors is true
   useEffect(() => {
-    const total = parseInt(getValues("businessDetails.operations.employees.count") || '0');
-    const fullTime = parseInt(getValues("businessDetails.operations.employees.fullTime") || '0');
-    
-    if (!isNaN(total) && !isNaN(fullTime)) {
-      const partTime = Math.max(0, total - fullTime);
-      setValue("businessDetails.operations.employees.partTime", partTime.toString());
+    if (submitAttempted || shouldShowErrors) {
+      // Create a comprehensive list of fields to validate
+      const basicFields = [
+        'businessDetails.businessType',
+        'businessDetails.entityType',
+        'businessDetails.establishedYear',
+        'businessDetails.registrationNumber',
+        'businessDetails.operations.locationType',
+        'businessDetails.operations.operationDescription',
+        'businessDetails.financials.annualRevenue.value',
+        'businessDetails.financials.monthlyRevenue.value',
+        'businessDetails.financials.profitMargin.percentage',
+        'businessDetails.financials.revenueTrend',
+        'businessDetails.financials.customerConcentration',
+        'businessDetails.sale.askingPrice.value',
+        'businessDetails.sale.reasonForSelling',
+        'businessDetails.sale.transitionPeriod',
+        'businessDetails.sale.trainingIncluded',
+        'businessDetails.sale.assetsIncluded'
+      ];
       
-      // Validate employees fields if form has been submitted
-      if (submitAttempted) {
-        trigger("businessDetails.operations.employees");
+      // Add conditional fields based on current form state
+      const conditionalFields = [];
+      
+      // 1. Lease information (when location type is leased_commercial)
+      if (locationType === 'leased_commercial') {
+        conditionalFields.push(
+          'businessDetails.operations.leaseInformation.expiryDate',
+          'businessDetails.operations.leaseInformation.monthlyCost.value'
+        );
       }
+      
+      // 2. Inventory fields (when inventory is included)
+      if (inventoryIncluded) {
+        conditionalFields.push(
+          'businessDetails.financials.inventory.value.value',
+          'businessDetails.financials.inventory.description'
+        );
+      }
+      
+      // 3. Equipment fields (when equipment is included)
+      if (equipmentIncluded) {
+        conditionalFields.push(
+          'businessDetails.financials.equipment.value.value',
+          'businessDetails.financials.equipment.description'
+        );
+      }
+      
+      // 4. Seller financing fields (when financing is available)
+      if (sellerFinancingAvailable) {
+        conditionalFields.push(
+          'businessDetails.sale.sellerFinancing.details',
+          'businessDetails.sale.sellerFinancing.downPaymentPercentage'
+        );
+      }
+      
+      // Combine all fields and trigger validation
+      const allFields = [...basicFields, ...conditionalFields];
+      console.log("Validating business fields:", allFields);
+      
+      // Trigger validation for each field to gather all errors
+      Promise.all(allFields.map(field => trigger(field)))
+        .then(() => {
+          // Log business form validation errors for debugging
+          const businessErrors = Object.keys(errors).filter(key => 
+            key.startsWith('businessDetails')
+          );
+          
+          if (businessErrors.length > 0) {
+            console.log("Business form validation errors:", businessErrors);
+            
+            // Create a human-readable message mapping for each field
+            const errorFieldMap = businessErrors.map(field => {
+              const displayName = getImprovedErrorMessage(errors, field) || `Error in ${field.split('.').pop()}`;
+              return { field, displayName };
+            });
+            
+            console.log("Validation errors with display names:", errorFieldMap);
+            
+            // Find the first error field element in the DOM
+            for (const fieldError of errorFieldMap) {
+              // Try to find by exact match first
+              let errorField = document.querySelector(`[name="${fieldError.field}"]`);
+              
+              // If not found, try partial match (for nested fields)
+              if (!errorField) {
+                errorField = document.querySelector(`[name$="${fieldError.field.split('.').pop()}"]`);
+              }
+              
+              // Try select components which might have different naming
+              if (!errorField) {
+                const fieldId = fieldError.field.split('.').pop();
+                errorField = document.getElementById(fieldId) || document.getElementById(fieldError.field);
+              }
+              
+              if (errorField) {
+                // Highlight the error field
+                errorField.classList.add('error-highlight');
+                
+                // Scroll to the error field with some context
+                errorField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                errorField.focus();
+                
+                // Add a visual effect to draw attention
+                errorField.style.border = '2px solid #EF4444';
+                setTimeout(() => {
+                  errorField.style.border = '';
+                }, 5000);
+                
+                // Show a specific error toast for this field
+                toast.error(`Please fix: ${fieldError.displayName}`, {
+                  duration: 5000,
+                  position: 'bottom-center'
+                });
+                
+                break; // Only handle the first error
+              }
+            }
+          }
+          
+          // Ensure employee fields are never validated
+          setTimeout(() => {
+            // Remove any validation errors from employee fields
+            clearErrors([
+              "businessDetails.operations.employees.count",
+              "businessDetails.operations.employees.fullTime",
+              "businessDetails.operations.employees.partTime",
+              "businessDetails.operations.employees"
+            ]);
+          }, 100);
+        })
+        .catch(error => {
+          console.error("Error during validation:", error);
+        });
     }
   }, [
-    watch("businessDetails.operations.employees.count"), 
-    watch("businessDetails.operations.employees.fullTime"), 
-    getValues, 
-    setValue, 
+    submitAttempted, 
+    shouldShowErrors, 
     trigger, 
-    submitAttempted
+    clearErrors, 
+    locationType, 
+    inventoryIncluded, 
+    equipmentIncluded, 
+    sellerFinancingAvailable,
+    errors
   ]);
-
-  // Validate all fields when form submission is attempted
-  useEffect(() => {
-    if (submitAttempted) {
-      trigger("businessDetails");
-    }
-  }, [submitAttempted, trigger]);
 
   // Custom styles for react-select - match exactly with BasicInfo form
   const selectStyles = {
@@ -190,9 +349,10 @@ export default function BusinessForm({ submitAttempted = false }) {
       </div>
 
       {/* Business Information Section */}
-      <div className="space-y-6">
-        <h3 className="text-base font-semibold text-gray-800">Business Information</h3>
-
+      <FormSection 
+        title="Business Information" 
+        description="Basic details about your business entity and structure"
+      >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Business Type */}
           <div className="space-y-2">
@@ -224,7 +384,7 @@ export default function BusinessForm({ submitAttempted = false }) {
             {errors.businessDetails?.businessType && (
               <p className="text-sm text-red-600 flex items-center mt-1">
                 <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.businessDetails.businessType.message}
+                {getImprovedErrorMessage(errors, "businessDetails.businessType")}
               </p>
             )}
           </div>
@@ -259,7 +419,7 @@ export default function BusinessForm({ submitAttempted = false }) {
             {errors.businessDetails?.entityType && (
               <p className="text-sm text-red-600 flex items-center mt-1">
                 <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.businessDetails.entityType.message}
+                {getImprovedErrorMessage(errors, "businessDetails.entityType")}
               </p>
             )}
           </div>
@@ -283,7 +443,8 @@ export default function BusinessForm({ submitAttempted = false }) {
                 type="number"
                 placeholder={`1900-${new Date().getFullYear()}`}
                 className={cn(
-                  "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
+                  "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors pr-10",
+                  "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                   errors.businessDetails?.establishedYear ? "border-red-300" : "border-gray-300"
                 )}
                 {...register("businessDetails.establishedYear", {
@@ -298,7 +459,7 @@ export default function BusinessForm({ submitAttempted = false }) {
             {errors.businessDetails?.establishedYear ? (
               <p className="text-sm text-red-600 flex items-center mt-1">
                 <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.businessDetails.establishedYear.message}
+                {getImprovedErrorMessage(errors, "businessDetails.establishedYear")}
               </p>
             ) : (
               <p className="text-xs text-gray-500 mt-1">
@@ -334,7 +495,7 @@ export default function BusinessForm({ submitAttempted = false }) {
             {errors.businessDetails?.registrationNumber ? (
               <p className="text-sm text-red-600 flex items-center mt-1">
                 <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.businessDetails.registrationNumber.message}
+                {getImprovedErrorMessage(errors, "businessDetails.registrationNumber")}
               </p>
             ) : (
               <p className="text-xs text-gray-500 mt-1">
@@ -393,17 +554,18 @@ export default function BusinessForm({ submitAttempted = false }) {
             </p>
           </div>
         </div>
-      </div>
+      </FormSection>
 
       {/* Operations Section */}
-      <div className="space-y-6">
-        <h3 className="text-base font-semibold text-gray-800">Operations</h3>
-
+      <FormSection 
+        title="Operations" 
+        description="Details about how your business operates day-to-day"
+      >
         {/* Employee Information */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="space-y-2">
             <div className="flex items-center">
-              <label htmlFor="businessDetails.operations.employees.count" className="block text-sm font-semibold text-gray-800 mr-2">
+              <label htmlFor="total-employees" className="block text-sm font-semibold text-gray-800 mr-2">
                 Total Employees <span className="text-red-500">*</span>
               </label>
               <Tooltip content="Number of people currently employed by your business">
@@ -412,34 +574,63 @@ export default function BusinessForm({ submitAttempted = false }) {
             </div>
 
             <input
-              id="businessDetails.operations.employees.count"
+              id="total-employees"
               type="number"
               min="0"
               placeholder="e.g. 10"
-              className={cn(
-                "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
-                errors.businessDetails?.operations?.employees?.count ? "border-red-300" : "border-gray-300"
-              )}
-              {...register("businessDetails.operations.employees.count", {
-                onBlur: () => trigger("businessDetails.operations.employees.count")
-              })}
+              defaultValue={getValues("businessDetails.operations.employees.count") || ""}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              onChange={(e) => {
+                const value = e.target.value;
+                
+                // Update React Hook Form value (but don't trigger validation)
+                setValue("businessDetails.operations.employees.count", value, { 
+                  shouldValidate: false,
+                  shouldDirty: true,
+                  shouldTouch: true
+                });
+                
+                // Clear any existing errors
+                clearErrors("businessDetails.operations.employees.count");
+                
+                // Get the current fullTime value
+                const fullTimeInput = document.getElementById("full-time-employees");
+                const fullTime = parseInt(fullTimeInput?.value || "0");
+                const total = parseInt(value || "0");
+                
+                // Calculate partTime
+                const partTime = Math.max(0, total - fullTime);
+                const partTimeInput = document.getElementById("part-time-employees");
+                if (partTimeInput) partTimeInput.value = partTime;
+                
+                // Update React Hook Form (silently)
+                setValue("businessDetails.operations.employees.partTime", partTime.toString(), { 
+                  shouldValidate: false 
+                });
+                
+                // If fullTime > total, adjust fullTime
+                if (fullTime > total && !isNaN(total)) {
+                  if (fullTimeInput) fullTimeInput.value = total;
+                  setValue("businessDetails.operations.employees.fullTime", total.toString(), { 
+                    shouldValidate: false 
+                  });
+                  
+                  toast("Full-time employees adjusted to match total employee count", {
+                    icon: 'ℹ️',
+                    style: { background: '#E3F2FD', color: '#0D47A1' }
+                  });
+                }
+              }}
             />
 
-            {errors.businessDetails?.operations?.employees?.count ? (
-              <p className="text-sm text-red-600 flex items-center mt-1">
-                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.businessDetails.operations.employees.count.message}
-              </p>
-            ) : (
               <p className="text-xs text-gray-500 mt-1">
                 Total number of employees in your business
               </p>
-            )}
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center">
-              <label htmlFor="businessDetails.operations.employees.fullTime" className="block text-sm font-semibold text-gray-800 mr-2">
+              <label htmlFor="full-time-employees" className="block text-sm font-semibold text-gray-800 mr-2">
                 Full-time Employees <span className="text-red-500">*</span>
               </label>
               <Tooltip content="Number of full-time employees (40+ hours per week)">
@@ -448,34 +639,68 @@ export default function BusinessForm({ submitAttempted = false }) {
             </div>
 
             <input
-              id="businessDetails.operations.employees.fullTime"
+              id="full-time-employees"
               type="number"
               min="0"
               placeholder="e.g. 8"
-              className={cn(
-                "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
-                errors.businessDetails?.operations?.employees?.fullTime ? "border-red-300" : "border-gray-300"
-              )}
-              {...register("businessDetails.operations.employees.fullTime", {
-                onBlur: () => trigger("businessDetails.operations.employees.fullTime")
-              })}
+              defaultValue={getValues("businessDetails.operations.employees.fullTime") || ""}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              onChange={(e) => {
+                const value = e.target.value;
+                
+                // Update React Hook Form value (but don't trigger validation)
+                setValue("businessDetails.operations.employees.fullTime", value, { 
+                  shouldValidate: false,
+                  shouldDirty: true,
+                  shouldTouch: true
+                });
+                
+                // Clear any existing errors
+                clearErrors("businessDetails.operations.employees.fullTime");
+                
+                // Get the current total value
+                const totalInput = document.getElementById("total-employees");
+                const total = parseInt(totalInput?.value || "0");
+                const fullTime = parseInt(value || "0");
+                
+                // If fullTime > total, show warning
+                if (fullTime > total && !isNaN(total) && !isNaN(fullTime)) {
+                  e.target.value = total;
+                  setValue("businessDetails.operations.employees.fullTime", total.toString(), { 
+                    shouldValidate: false 
+                  });
+                  
+                  toast("Full-time employees cannot exceed total employees", {
+                    icon: '⚠️',
+                    style: { background: '#FFF9C4', color: '#5D4037' }
+                  });
+                  
+                  // Set part-time to 0
+                  const partTimeInput = document.getElementById("part-time-employees");
+                  if (partTimeInput) partTimeInput.value = "0";
+                  setValue("businessDetails.operations.employees.partTime", "0", { 
+                    shouldValidate: false 
+                  });
+                } else {
+                  // Calculate partTime
+                  const partTime = Math.max(0, total - fullTime);
+                  const partTimeInput = document.getElementById("part-time-employees");
+                  if (partTimeInput) partTimeInput.value = partTime;
+                  setValue("businessDetails.operations.employees.partTime", partTime.toString(), { 
+                    shouldValidate: false 
+                  });
+                }
+              }}
             />
 
-            {errors.businessDetails?.operations?.employees?.fullTime ? (
-              <p className="text-sm text-red-600 flex items-center mt-1">
-                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.businessDetails.operations.employees.fullTime.message}
-              </p>
-            ) : (
               <p className="text-xs text-gray-500 mt-1">
                 Number of employees working full-time
               </p>
-            )}
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center">
-              <label htmlFor="businessDetails.operations.employees.partTime" className="block text-sm font-semibold text-gray-800 mr-2">
+              <label htmlFor="part-time-employees" className="block text-sm font-semibold text-gray-800 mr-2">
                 Part-time Employees
               </label>
               <Tooltip content="This field is calculated automatically (Total - Full-time)">
@@ -484,11 +709,11 @@ export default function BusinessForm({ submitAttempted = false }) {
             </div>
 
             <input
-              id="businessDetails.operations.employees.partTime"
+              id="part-time-employees"
               type="number"
-              readOnly
-              className="w-full px-3 py-2 text-sm border bg-gray-50 border-gray-300 rounded-md focus:outline-none"
-              {...register("businessDetails.operations.employees.partTime")}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors bg-gray-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              disabled
+              defaultValue={getValues("businessDetails.operations.employees.partTime") || "0"}
             />
 
             <p className="text-xs text-gray-500 mt-1">
@@ -527,7 +752,7 @@ export default function BusinessForm({ submitAttempted = false }) {
           {errors.businessDetails?.operations?.locationType ? (
             <p className="text-sm text-red-600 flex items-center mt-1">
               <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-              {errors.businessDetails.operations.locationType.message}
+              {getImprovedErrorMessage(errors, "businessDetails.operations.locationType")}
             </p>
           ) : (
             <p className="text-xs text-gray-500 mt-1">
@@ -567,7 +792,7 @@ export default function BusinessForm({ submitAttempted = false }) {
                 {errors.businessDetails?.operations?.leaseInformation?.expiryDate && (
                   <p className="text-sm text-red-600 flex items-center mt-1">
                     <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                    {errors.businessDetails.operations.leaseInformation.expiryDate.message}
+                    {getImprovedErrorMessage(errors, "businessDetails.operations.leaseInformation.expiryDate")}
                   </p>
                 )}
               </div>
@@ -605,31 +830,18 @@ export default function BusinessForm({ submitAttempted = false }) {
                 {errors.businessDetails?.operations?.leaseInformation?.monthlyCost?.value && (
                   <p className="text-sm text-red-600 flex items-center mt-1">
                     <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                    {errors.businessDetails.operations.leaseInformation.monthlyCost.value.message}
+                    {getImprovedErrorMessage(errors, "businessDetails.operations.leaseInformation.monthlyCost.value")}
                   </p>
                 )}
               </div>
             </div>
 
             {/* Lease Transferable */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <label className="text-sm font-semibold text-gray-800 mr-2">
-                    Lease Transferable
-                  </label>
-                  <Tooltip content="Whether the lease can be transferred to the new owner">
-                    <HelpCircle className="h-4 w-4 text-gray-500" />
-                  </Tooltip>
-                </div>
-
-                <Switch
-                  checked={watch("businessDetails.operations.leaseInformation.isTransferable") || false}
-                  onChange={(value) => setValue("businessDetails.operations.leaseInformation.isTransferable", value)}
-                  label={watch("businessDetails.operations.leaseInformation.isTransferable") ? "Yes" : "No"}
-                />
-              </div>
-            </div>
+            <Switch
+              name="businessDetails.operations.leaseInformation.isTransferable"
+              label="Lease Transferable"
+              description="Whether the lease can be transferred to the new owner"
+            />
           </div>
         )}
 
@@ -660,7 +872,7 @@ export default function BusinessForm({ submitAttempted = false }) {
           {errors.businessDetails?.operations?.operationDescription ? (
             <p className="text-sm text-red-600 flex items-center mt-1">
               <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-              {errors.businessDetails.operations.operationDescription.message}
+              {getImprovedErrorMessage(errors, "businessDetails.operations.operationDescription")}
             </p>
           ) : (
             <p className="text-xs text-gray-500 mt-1">
@@ -668,12 +880,13 @@ export default function BusinessForm({ submitAttempted = false }) {
             </p>
           )}
         </div>
-      </div>
+      </FormSection>
 
       {/* Financial Section */}
-      <div className="space-y-6">
-        <h3 className="text-base font-semibold text-gray-800">Financial Information</h3>
-
+      <FormSection 
+        title="Financial Information" 
+        description="Revenue, profits, and other financial metrics"
+      >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Annual Revenue */}
           <div className="space-y-2">
@@ -708,7 +921,7 @@ export default function BusinessForm({ submitAttempted = false }) {
             {errors.businessDetails?.financials?.annualRevenue?.value ? (
               <p className="text-sm text-red-600 flex items-center mt-1">
                 <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.businessDetails.financials.annualRevenue.value.message}
+                {getImprovedErrorMessage(errors, "businessDetails.financials.annualRevenue.value")}
               </p>
             ) : (
               <p className="text-xs text-gray-500 mt-1">
@@ -750,7 +963,7 @@ export default function BusinessForm({ submitAttempted = false }) {
             {errors.businessDetails?.financials?.monthlyRevenue?.value ? (
               <p className="text-sm text-red-600 flex items-center mt-1">
                 <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.businessDetails.financials.monthlyRevenue.value.message}
+                {getImprovedErrorMessage(errors, "businessDetails.financials.monthlyRevenue.value")}
               </p>
             ) : (
               <p className="text-xs text-gray-500 mt-1">
@@ -795,7 +1008,7 @@ export default function BusinessForm({ submitAttempted = false }) {
             {errors.businessDetails?.financials?.profitMargin?.percentage ? (
               <p className="text-sm text-red-600 flex items-center mt-1">
                 <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.businessDetails.financials.profitMargin.percentage.message}
+                {getImprovedErrorMessage(errors, "businessDetails.financials.profitMargin.percentage")}
               </p>
             ) : (
               <p className="text-xs text-gray-500 mt-1">
@@ -834,7 +1047,7 @@ export default function BusinessForm({ submitAttempted = false }) {
             {errors.businessDetails?.financials?.revenueTrend ? (
               <p className="text-sm text-red-600 flex items-center mt-1">
                 <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.businessDetails.financials.revenueTrend.message}
+                {getImprovedErrorMessage(errors, "businessDetails.financials.revenueTrend")}
               </p>
             ) : (
               <p className="text-xs text-gray-500 mt-1">
@@ -845,7 +1058,7 @@ export default function BusinessForm({ submitAttempted = false }) {
         </div>
 
         {/* Inventory */}
-        <div className="space-y-3 p-4 border border-gray-200 rounded-md">
+        <div className="space-y-3 p-4 border border-gray-200 rounded-md mb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <h4 className="text-sm font-semibold text-gray-800 mr-2">Inventory</h4>
@@ -855,9 +1068,9 @@ export default function BusinessForm({ submitAttempted = false }) {
             </div>
 
             <Switch
-              checked={inventoryIncluded || false}
-              onChange={(value) => setValue("businessDetails.financials.inventory.isIncluded", value)}
-              label={inventoryIncluded ? "Included in sale" : "Not included"}
+              name="businessDetails.financials.inventory.isIncluded"
+              label="Inventory Included in Sale"
+              description="Whether current inventory is included in the asking price"
             />
           </div>
 
@@ -894,7 +1107,7 @@ export default function BusinessForm({ submitAttempted = false }) {
                   {errors.businessDetails?.financials?.inventory?.value?.value && (
                     <p className="text-sm text-red-600 flex items-center mt-1">
                       <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                      {errors.businessDetails.financials.inventory.value.value.message}
+                      {getImprovedErrorMessage(errors, "businessDetails.financials.inventory.value.value")}
                     </p>
                   )}
                 </div>
@@ -960,7 +1173,7 @@ export default function BusinessForm({ submitAttempted = false }) {
             {errors.businessDetails?.financials?.customerConcentration ? (
               <p className="text-sm text-red-600 flex items-center mt-1">
                 <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.businessDetails.financials.customerConcentration.message}
+                {getImprovedErrorMessage(errors, "businessDetails.financials.customerConcentration")}
               </p>
             ) : (
               <p className="text-xs text-gray-500 mt-1">
@@ -969,12 +1182,13 @@ export default function BusinessForm({ submitAttempted = false }) {
             )}
           </div>
         </div>
-      </div>
+      </FormSection>
 
-      {/* Sale Section */}
-      <div className="space-y-6">
-        <h3 className="text-base font-semibold text-gray-800">Sale Details</h3>
-
+      {/* Sale Details Section */}
+      <FormSection 
+        title="Sale Information" 
+        description="Asking price, terms of sale, and transition details"
+      >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Asking Price */}
           <div className="space-y-2">
@@ -1009,7 +1223,7 @@ export default function BusinessForm({ submitAttempted = false }) {
             {errors.businessDetails?.sale?.askingPrice?.value ? (
               <p className="text-sm text-red-600 flex items-center mt-1">
                 <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.businessDetails.sale.askingPrice.value.message}
+                {getImprovedErrorMessage(errors, "businessDetails.sale.askingPrice.value")}
               </p>
             ) : (
               <p className="text-xs text-gray-500 mt-1">
@@ -1042,7 +1256,7 @@ export default function BusinessForm({ submitAttempted = false }) {
             {errors.businessDetails?.sale?.askingPrice?.priceMultiple ? (
               <p className="text-sm text-red-600 flex items-center mt-1">
                 <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.businessDetails.sale.askingPrice.priceMultiple.message}
+                {getImprovedErrorMessage(errors, "businessDetails.sale.askingPrice.priceMultiple")}
               </p>
             ) : (
               <p className="text-xs text-gray-500 mt-1">
@@ -1053,24 +1267,11 @@ export default function BusinessForm({ submitAttempted = false }) {
         </div>
 
         {/* Price Negotiable */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <label className="text-sm font-semibold text-gray-800 mr-2">
-                Price Negotiable
-              </label>
-              <Tooltip content="Whether you're open to negotiating the asking price">
-                <HelpCircle className="h-4 w-4 text-gray-500" />
-              </Tooltip>
-            </div>
-
-            <Switch
-              checked={watch("businessDetails.sale.askingPrice.isNegotiable") || false}
-              onChange={(value) => setValue("businessDetails.sale.askingPrice.isNegotiable", value)}
-              label={watch("businessDetails.sale.askingPrice.isNegotiable") ? "Yes" : "No"}
-            />
-          </div>
-        </div>
+        <Switch
+          name="businessDetails.sale.askingPrice.isNegotiable"
+          label="Price Negotiable"
+          description="Whether you're open to negotiating the asking price"
+        />
 
         {/* Reason for Selling */}
         <div className="space-y-2">
@@ -1092,6 +1293,9 @@ export default function BusinessForm({ submitAttempted = false }) {
               errors.businessDetails?.sale?.reasonForSelling ? "border-red-300" : "border-gray-300"
             )}
             {...register("businessDetails.sale.reasonForSelling", {
+              required: "Reason for selling is required",
+              minLength: { value: 50, message: "Reason must be at least 50 characters" },
+              maxLength: { value: 500, message: "Reason cannot exceed 500 characters" },
               onBlur: () => trigger("businessDetails.sale.reasonForSelling")
             })}
           ></textarea>
@@ -1099,7 +1303,7 @@ export default function BusinessForm({ submitAttempted = false }) {
           {errors.businessDetails?.sale?.reasonForSelling ? (
             <p className="text-sm text-red-600 flex items-center mt-1">
               <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-              {errors.businessDetails.sale.reasonForSelling.message}
+              {getImprovedErrorMessage(errors, "businessDetails.sale.reasonForSelling")}
             </p>
           ) : (
             <p className="text-xs text-gray-500 mt-1">
@@ -1109,7 +1313,7 @@ export default function BusinessForm({ submitAttempted = false }) {
         </div>
 
         {/* Seller Financing */}
-        <div className="space-y-3 p-4 border border-gray-200 rounded-md">
+        <div className="space-y-3 p-4 border border-gray-200 rounded-md mb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <h4 className="text-sm font-semibold text-gray-800 mr-2">Seller Financing</h4>
@@ -1119,9 +1323,9 @@ export default function BusinessForm({ submitAttempted = false }) {
             </div>
 
             <Switch
-              checked={sellerFinancingAvailable || false}
-              onChange={(value) => setValue("businessDetails.sale.sellerFinancing.isAvailable", value)}
-              label={sellerFinancingAvailable ? "Available" : "Not available"}
+              name="businessDetails.sale.sellerFinancing.isAvailable"
+              label="Seller Financing Available"
+              description="Whether you're willing to finance part of the sale price"
             />
           </div>
 
@@ -1131,7 +1335,7 @@ export default function BusinessForm({ submitAttempted = false }) {
                 {/* Down Payment Percentage */}
                 <div className="space-y-2">
                   <div className="flex items-center">
-                    <label htmlFor="businessDetails.sale.sellerFinancing.downPaymentPercentage" className="block text-sm font-semibold text-gray-800 mr-2">
+                    <label htmlFor="businessDetails.sale.sellerFinancing.percentage" className="block text-sm font-semibold text-gray-800 mr-2">
                       Minimum Down Payment <span className="text-red-500">*</span>
                     </label>
                     <Tooltip content="Minimum percentage required as down payment">
@@ -1141,17 +1345,17 @@ export default function BusinessForm({ submitAttempted = false }) {
 
                   <div className="relative">
                     <input
-                      id="businessDetails.sale.sellerFinancing.downPaymentPercentage"
+                      id="businessDetails.sale.sellerFinancing.percentage"
                       type="number"
                       min="10"
                       max="100"
                       placeholder="e.g. 30"
                       className={cn(
                         "w-full pr-8 px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
-                        errors.businessDetails?.sale?.sellerFinancing?.downPaymentPercentage ? "border-red-300" : "border-gray-300"
+                        errors.businessDetails?.sale?.sellerFinancing?.percentage ? "border-red-300" : "border-gray-300"
                       )}
-                      {...register("businessDetails.sale.sellerFinancing.downPaymentPercentage", {
-                        onBlur: () => trigger("businessDetails.sale.sellerFinancing.downPaymentPercentage")
+                      {...register("businessDetails.sale.sellerFinancing.percentage", {
+                        onBlur: () => trigger("businessDetails.sale.sellerFinancing.percentage")
                       })}
                     />
                     <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
@@ -1159,10 +1363,10 @@ export default function BusinessForm({ submitAttempted = false }) {
                     </div>
                   </div>
 
-                  {errors.businessDetails?.sale?.sellerFinancing?.downPaymentPercentage ? (
+                  {errors.businessDetails?.sale?.sellerFinancing?.percentage ? (
                     <p className="text-sm text-red-600 flex items-center mt-1">
                       <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                      {errors.businessDetails.sale.sellerFinancing.downPaymentPercentage.message}
+                      {getImprovedErrorMessage(errors, "businessDetails.sale.sellerFinancing.percentage")}
                     </p>
                   ) : (
                     <p className="text-xs text-gray-500 mt-1">
@@ -1174,28 +1378,28 @@ export default function BusinessForm({ submitAttempted = false }) {
                 {/* Financing Details */}
                 <div className="space-y-2">
                   <div className="flex items-center">
-                    <label htmlFor="businessDetails.sale.sellerFinancing.details" className="block text-sm font-semibold text-gray-800 mr-2">
+                    <label htmlFor="businessDetails.sale.sellerFinancing.terms" className="block text-sm font-semibold text-gray-800 mr-2">
                       Financing Details <span className="text-red-500">*</span>
                     </label>
                   </div>
 
                   <input
-                    id="businessDetails.sale.sellerFinancing.details"
+                    id="businessDetails.sale.sellerFinancing.terms"
                     type="text"
                     placeholder="e.g. 5-year term at 8% interest"
                     className={cn(
                       "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
-                      errors.businessDetails?.sale?.sellerFinancing?.details ? "border-red-300" : "border-gray-300"
+                      errors.businessDetails?.sale?.sellerFinancing?.terms ? "border-red-300" : "border-gray-300"
                     )}
-                    {...register("businessDetails.sale.sellerFinancing.details", {
-                      onBlur: () => trigger("businessDetails.sale.sellerFinancing.details")
+                    {...register("businessDetails.sale.sellerFinancing.terms", {
+                      onBlur: () => trigger("businessDetails.sale.sellerFinancing.terms")
                     })}
                   />
 
-                  {errors.businessDetails?.sale?.sellerFinancing?.details ? (
+                  {errors.businessDetails?.sale?.sellerFinancing?.terms ? (
                     <p className="text-sm text-red-600 flex items-center mt-1">
                       <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                      {errors.businessDetails.sale.sellerFinancing.details.message}
+                      {getImprovedErrorMessage(errors, "businessDetails.sale.sellerFinancing.terms")}
                     </p>
                   ) : (
                     <p className="text-xs text-gray-500 mt-1">
@@ -1239,7 +1443,7 @@ export default function BusinessForm({ submitAttempted = false }) {
             {errors.businessDetails?.sale?.transitionPeriod ? (
               <p className="text-sm text-red-600 flex items-center mt-1">
                 <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.businessDetails.sale.transitionPeriod.message}
+                {getImprovedErrorMessage(errors, "businessDetails.sale.transitionPeriod")}
               </p>
             ) : (
               <p className="text-xs text-gray-500 mt-1">
@@ -1269,6 +1473,9 @@ export default function BusinessForm({ submitAttempted = false }) {
               errors.businessDetails?.sale?.trainingIncluded ? "border-red-300" : "border-gray-300"
             )}
             {...register("businessDetails.sale.trainingIncluded", {
+              required: "Training details are required",
+              minLength: { value: 50, message: "Training details must be at least 50 characters" },
+              maxLength: { value: 500, message: "Training details cannot exceed 500 characters" },
               onBlur: () => trigger("businessDetails.sale.trainingIncluded")
             })}
           ></textarea>
@@ -1276,7 +1483,7 @@ export default function BusinessForm({ submitAttempted = false }) {
           {errors.businessDetails?.sale?.trainingIncluded ? (
             <p className="text-sm text-red-600 flex items-center mt-1">
               <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-              {errors.businessDetails.sale.trainingIncluded.message}
+              {getImprovedErrorMessage(errors, "businessDetails.sale.trainingIncluded")}
             </p>
           ) : (
             <p className="text-xs text-gray-500 mt-1">
@@ -1305,6 +1512,9 @@ export default function BusinessForm({ submitAttempted = false }) {
               errors.businessDetails?.sale?.assetsIncluded ? "border-red-300" : "border-gray-300"
             )}
             {...register("businessDetails.sale.assetsIncluded", {
+              required: "Assets included description is required",
+              minLength: { value: 100, message: "Assets description must be at least 100 characters" },
+              maxLength: { value: 1000, message: "Assets description cannot exceed 1000 characters" },
               onBlur: () => trigger("businessDetails.sale.assetsIncluded")
             })}
           ></textarea>
@@ -1312,7 +1522,7 @@ export default function BusinessForm({ submitAttempted = false }) {
           {errors.businessDetails?.sale?.assetsIncluded ? (
             <p className="text-sm text-red-600 flex items-center mt-1">
               <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-              {errors.businessDetails.sale.assetsIncluded.message}
+              {getImprovedErrorMessage(errors, "businessDetails.sale.assetsIncluded")}
             </p>
           ) : (
             <p className="text-xs text-gray-500 mt-1">
@@ -1320,7 +1530,7 @@ export default function BusinessForm({ submitAttempted = false }) {
             </p>
           )}
         </div>
-      </div>
+      </FormSection>
     </div>
   );
 }

@@ -1,18 +1,25 @@
-import { useState, useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
-import Header from './Header';
+import React, { useState, useEffect } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import Header from './Header';
+import { useAuth } from '@/context/AuthContext';
+import { useLoading } from '@/context/LoadingContext';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
-export default function MainLayout() {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+const MainLayout: React.FC = () => {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
-
+  const { user } = useAuth();
+  const { isLoading, loadingMessage } = useLoading();
+  const location = useLocation();
+  
+  // Handle responsive behavior
   useEffect(() => {
     const checkScreenSize = () => {
       const mobile = window.innerWidth < 1024;
       setIsMobile(mobile);
-      setIsSidebarOpen(!mobile);
+      setSidebarOpen(!mobile);
     };
 
     const handleScroll = () => {
@@ -29,9 +36,10 @@ export default function MainLayout() {
       window.removeEventListener('scroll', handleScroll);
     };
   }, []);
-
+  
+  // Toggle sidebar
   const toggleSidebar = () => {
-    setIsSidebarOpen(!isSidebarOpen);
+    setSidebarOpen(!sidebarOpen);
   };
 
   return (
@@ -39,15 +47,15 @@ export default function MainLayout() {
       {/* Mobile sidebar overlay */}
       <div 
         className={`fixed inset-0 bg-gray-900/50 z-20 lg:hidden transition-opacity duration-300 ${
-          isSidebarOpen && isMobile ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          sidebarOpen && isMobile ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
-        onClick={() => setIsSidebarOpen(false)}
+        onClick={() => setSidebarOpen(false)}
       />
 
       {/* Sidebar */}
       <div 
         className={`fixed inset-y-0 left-0 z-30 w-64 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
-          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         } lg:static lg:inset-auto lg:z-auto`}
       >
         <Sidebar />
@@ -57,13 +65,24 @@ export default function MainLayout() {
       <div className="flex-1 flex flex-col w-0 overflow-hidden">
         <Header 
           toggleSidebar={toggleSidebar} 
-          isSidebarOpen={isSidebarOpen} 
+          isSidebarOpen={sidebarOpen} 
           isScrolled={isScrolled} 
         />
         
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto relative">
           <div className="container mx-auto px-4 py-6 sm:px-6 lg:px-8 max-w-none">
-            <div className="bg-white rounded-lg shadow border border-gray-100 p-6 min-h-[calc(100vh-8rem)]">
+            {/* Page loading overlay - only covers the main content area */}
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-10">
+                <LoadingSpinner 
+                  size="lg" 
+                  text={loadingMessage || "Loading..."} 
+                />
+              </div>
+            )}
+            
+            {/* Page content */}
+            <div className={`bg-white rounded-lg shadow border border-gray-100 p-6 min-h-[calc(100vh-8rem)] ${isLoading ? "opacity-50 transition-opacity duration-300" : ""}`}>
               <Outlet />
             </div>
           </div>
@@ -71,4 +90,6 @@ export default function MainLayout() {
       </div>
     </div>
   );
-}
+};
+
+export default MainLayout;

@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
-import { File, FileText, Download, Eye, Clock, CheckCircle, XCircle, Search } from 'lucide-react';
+import { File, FileText, Download, Eye, Clock, CheckCircle, XCircle, Search, WifiOff, AlertTriangle } from 'lucide-react';
 import { DocumentObject } from '@/types/listings';
 import { cn, formatDate } from '@/lib/utils';
 import Button from '@/components/ui/Button';
 
 interface DocumentListProps {
-  documents: DocumentObject[];
+  documents?: DocumentObject[];
+  isOffline?: boolean;
 }
 
-const DocumentList: React.FC<DocumentListProps> = ({ documents }) => {
+const DocumentList: React.FC<DocumentListProps> = ({ documents = [], isOffline = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [previewDocument, setPreviewDocument] = useState<DocumentObject | null>(null);
+  const [documentErrors, setDocumentErrors] = useState<{ [key: string]: boolean }>({});
   
   if (!documents || documents.length === 0) {
     return (
@@ -91,8 +93,41 @@ const DocumentList: React.FC<DocumentListProps> = ({ documents }) => {
     }
   };
   
+  const handleDocumentClick = (doc: DocumentObject) => {
+    if (isOffline) {
+      // Show error or notification that downloading is not available offline
+      setDocumentErrors(prev => ({
+        ...prev,
+        [doc.id]: true
+      }));
+      
+      // Clear error after a few seconds
+      setTimeout(() => {
+        setDocumentErrors(prev => {
+          const newErrors = {...prev};
+          delete newErrors[doc.id];
+          return newErrors;
+        });
+      }, 3000);
+      
+      return;
+    }
+    
+    window.open(doc.url, '_blank');
+  };
+  
   return (
     <div>
+      {isOffline && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 flex items-center">
+          <WifiOff className="h-5 w-5 text-yellow-500 mr-3 flex-shrink-0" />
+          <div>
+            <h4 className="text-yellow-800 font-medium">You are currently offline</h4>
+            <p className="text-yellow-700 text-sm">Document previews and downloads are unavailable while offline.</p>
+          </div>
+        </div>
+      )}
+    
       {/* Search input */}
       <div className="relative mb-6">
         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -101,7 +136,7 @@ const DocumentList: React.FC<DocumentListProps> = ({ documents }) => {
         <input
           type="text"
           placeholder="Search documents by name or type..."
-          className="pl-10 pr-4 py-2 w-full form-input"
+          className="pl-10 pr-4 py-2 w-full form-input rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
@@ -151,7 +186,7 @@ const DocumentList: React.FC<DocumentListProps> = ({ documents }) => {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {documentsByType[type].map((doc) => (
-                    <tr key={doc.id} className="table-row-hover">
+                    <tr key={doc.id} className={cn("hover:bg-gray-50 transition-colors", documentErrors[doc.id] && "bg-red-50")}>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="flex-shrink-0 h-10 w-10 flex items-center justify-center">
@@ -164,6 +199,12 @@ const DocumentList: React.FC<DocumentListProps> = ({ documents }) => {
                             {doc.description && (
                               <div className="text-xs text-gray-500 max-w-xs truncate">
                                 {doc.description}
+                              </div>
+                            )}
+                            {documentErrors[doc.id] && (
+                              <div className="text-xs text-red-600 mt-1 flex items-center">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                Document unavailable offline
                               </div>
                             )}
                           </div>
@@ -188,7 +229,9 @@ const DocumentList: React.FC<DocumentListProps> = ({ documents }) => {
                             variant="outline"
                             size="sm"
                             leftIcon={<Eye className="h-4 w-4" />}
-                            onClick={() => setPreviewDocument(doc)}
+                            onClick={() => isOffline ? handleDocumentClick(doc) : setPreviewDocument(doc)}
+                            disabled={isOffline}
+                            className={isOffline ? "opacity-50 cursor-not-allowed" : ""}
                           >
                             Preview
                           </Button>
@@ -196,7 +239,9 @@ const DocumentList: React.FC<DocumentListProps> = ({ documents }) => {
                             variant="outline"
                             size="sm"
                             leftIcon={<Download className="h-4 w-4" />}
-                            onClick={() => window.open(doc.url, '_blank')}
+                            onClick={() => handleDocumentClick(doc)}
+                            disabled={isOffline}
+                            className={isOffline ? "opacity-50 cursor-not-allowed" : ""}
                           >
                             Download
                           </Button>
@@ -212,7 +257,7 @@ const DocumentList: React.FC<DocumentListProps> = ({ documents }) => {
       ))}
       
       {/* Document preview modal */}
-      {previewDocument && (
+      {previewDocument && !isOffline && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] flex flex-col">
             {/* Modal header */}
@@ -250,27 +295,28 @@ const DocumentList: React.FC<DocumentListProps> = ({ documents }) => {
                 ></iframe>
               ) : previewDocument.format.includes('image') ? (
                 <div className="flex items-center justify-center h-full">
-                  <img
-                    src={previewDocument.url}
+                  <img 
+                    src={previewDocument.url} 
                     alt={previewDocument.name}
                     className="max-w-full max-h-[70vh] object-contain"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.src = '/placeholder-image.jpg';
+                      target.onerror = null;
+                    }}
                   />
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center h-full text-center p-8">
-                  <div className="mb-4">
-                    {getDocumentIcon(previewDocument.format)}
-                  </div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">{previewDocument.name}</h4>
-                  <p className="text-gray-500 mb-4">
-                    This file type cannot be previewed directly. Please download the file to view its contents.
-                  </p>
+                <div className="bg-gray-50 p-8 rounded-lg text-center">
+                  <FileText className="h-12 w-12 mx-auto text-gray-400 mb-3" />
+                  <h4 className="text-gray-700 font-medium mb-2">Preview Not Available</h4>
+                  <p className="text-sm text-gray-500 mb-4">This document type cannot be previewed in the browser.</p>
                   <Button
                     variant="primary"
                     leftIcon={<Download className="h-4 w-4" />}
                     onClick={() => window.open(previewDocument.url, '_blank')}
                   >
-                    Download File
+                    Download to View
                   </Button>
                 </div>
               )}

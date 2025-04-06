@@ -10,13 +10,20 @@ import {
   Briefcase,
   FlaskConical,
   Users,
-  Globe
+  Globe,
+  Mail,
+  Phone,
+  MapPin,
+  Building,
+  Check
 } from 'lucide-react';
 import { ListingType, ListingStatus, ListingPlan } from '@/types/listings';
 import Button from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
-import { toast } from 'react-hot-toast';
+import ToastManager, { TOAST_IDS } from "@/utils/ToastManager";
 import IndustryClassifications from './IndustryClassifications';
+import FormField, { FormSection, FormRow } from '@/components/ui/FormField';
+import ErrorBanner from '@/components/ui/ErrorBanner';
 
 // Tooltip component
 const Tooltip = ({ content, children }) => {
@@ -151,42 +158,53 @@ export default function BasicInfo() {
   const selectStyles = {
     control: (base, state) => ({
       ...base,
-      minHeight: '42px', // Increased height for more professional look
-      fontSize: '0.875rem', // Slightly larger font size
-      borderRadius: '0.5rem', // Slightly more rounded corners
+      minHeight: '42px',
+      fontSize: '0.875rem',
+      borderRadius: '0.5rem',
       borderColor: state.isFocused ? '#0031ac' : errors.location?.country ? '#fca5a5' : '#D1D5DB',
       boxShadow: state.isFocused ? '0 0 0 1px #0031ac' : 'none',
       '&:hover': {
         borderColor: state.isFocused ? '#0031ac' : '#9CA3AF'
       },
-      "&:focus": {
-        borderColor: '#0031ac',
-        boxShadow: '0 0 0 1px #0031ac'
-      }
+      backgroundColor: 'white'
     }),
     option: (base, state) => ({
       ...base,
-      padding: '8px 12px', // Increased padding
-      fontSize: '0.875rem', // Slightly larger font size
-      backgroundColor: state.isSelected ? '#0031ac' : state.isFocused ? '#E6EEFF' : null,
+      padding: '8px 12px',
+      paddingLeft: '44px',
+      fontSize: '0.875rem',
+      backgroundColor: state.isSelected ? '#0031ac' : state.isFocused ? '#E6EEFF' : 'white',
       color: state.isSelected ? 'white' : '#333333'
     }),
     placeholder: base => ({
       ...base,
-      fontSize: '0.875rem' // Slightly larger font size
+      fontSize: '0.875rem',
+      marginLeft: '32px',
+      color: '#6B7280'
     }),
     singleValue: base => ({
       ...base,
-      fontSize: '0.875rem' // Slightly larger font size
+      fontSize: '0.875rem',
+      marginLeft: '32px'
     }),
     valueContainer: base => ({
       ...base,
-      padding: '0 12px' // Increased padding
+      padding: '2px 12px'
     }),
     input: base => ({
       ...base,
       margin: '0',
-      padding: '0'
+      paddingTop: '2px',
+      paddingBottom: '2px',
+      marginLeft: '32px'
+    }),
+    menuPortal: base => ({
+      ...base,
+      zIndex: 9999,
+      backgroundColor: 'white',
+      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+      border: '1px solid rgba(0, 0, 0, 0.1)',
+      borderRadius: '0.375rem'
     })
   };
 
@@ -195,492 +213,352 @@ export default function BasicInfo() {
     {
       value: ListingType.BUSINESS,
       label: 'Business',
-      icon: <Store className="h-5 w-5" />, // Slightly larger icon
+      icon: <Store className="h-5 w-5" />,
       description: 'Established businesses for sale with proven revenue and operations.',
       color: 'bg-blue-50 border-blue-200 text-blue-700'
     },
     {
       value: ListingType.FRANCHISE,
       label: 'Franchise',
-      icon: <Briefcase className="h-5 w-5" />, // Slightly larger icon
-      description: 'Franchise opportunities with established brands and systems.',
-      color: 'bg-purple-50 border-purple-200 text-purple-700'
+      icon: <Briefcase className="h-5 w-5" />,
+      description: 'Franchise opportunities for entrepreneurs looking to join established brands.',
+      color: 'bg-green-50 border-green-200 text-green-700'
     },
     {
       value: ListingType.STARTUP,
       label: 'Startup',
-      icon: <FlaskConical className="h-5 w-5" />, // Slightly larger icon
-      description: 'Early-stage ventures seeking investment or partnerships.',
-      color: 'bg-green-50 border-green-200 text-green-700'
+      icon: <FlaskConical className="h-5 w-5" />,
+      description: 'Early-stage companies seeking investment or acquisition.',
+      color: 'bg-purple-50 border-purple-200 text-purple-700'
     },
     {
       value: ListingType.INVESTOR,
       label: 'Investor',
-      icon: <Users className="h-5 w-5" />, // Slightly larger icon
-      description: 'Investors looking to fund businesses, startups, or franchises.',
+      icon: <Users className="h-5 w-5" />,
+      description: 'Investor profiles looking for business opportunities.',
       color: 'bg-amber-50 border-amber-200 text-amber-700'
     },
     {
       value: ListingType.DIGITAL_ASSET,
       label: 'Digital Asset',
-      icon: <Globe className="h-5 w-5" />, // Slightly larger icon
-      description: 'Online businesses, websites, apps, or digital properties for sale.',
-      color: 'bg-indigo-50 border-indigo-200 text-indigo-700'
+      icon: <Globe className="h-5 w-5" />,
+      description: 'Websites, apps, domains and other digital assets for sale.',
+      color: 'bg-red-50 border-red-200 text-red-700'
     }
   ];
 
   return (
-    <div className="space-y-6">
-      {/* Info Message */}
+    <div className="space-y-5">
+      {/* Info Alert Message */}
       <div className="p-4 border border-blue-200 bg-blue-50 rounded-lg flex items-start">
         <Info className="h-5 w-5 text-blue-500 mr-3 mt-0.5 flex-shrink-0" />
         <div className="text-sm text-blue-700">
           <p className="font-semibold mb-1">Basic Information</p>
           <p>
-            Start by selecting your listing type and entering essential information.
-            All fields marked with an asterisk (*) are required.
+            Provide basic details about your listing. The information you provide here will be used to categorize
+            and display your listing to potential buyers or investors. Fields marked with an asterisk (*) are required.
           </p>
         </div>
       </div>
 
-      {/* Listing Type */}
-      <div className="space-y-3">
-        <div className="flex items-center">
-          <label className="block text-sm font-semibold text-gray-800 mr-2">
-            Listing Type <span className="text-red-500">*</span>
-          </label>
-          <Tooltip content="Select the type that best describes what you're listing. This determines the specific details you'll need to provide.">
-            <HelpCircle className="h-4 w-4 text-gray-500" />
-          </Tooltip>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+      {/* Listing Type Section */}
+      <FormSection 
+        title="Listing Type" 
+        description="Select the type of listing you want to create. This will determine the specific details we'll collect."
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
           {typeOptions.map((type) => (
             <div
               key={type.value}
               className={cn(
-                "relative border rounded-lg p-3 cursor-pointer transition-all duration-200 hover:shadow-md",
+                'border rounded-lg p-4 cursor-pointer transition-all hover:shadow-md relative',
                 selectedType === type.value
-                  ? `${type.color} border-2`
-                  : "border-gray-200 hover:border-gray-300"
+                  ? 'border-[#0031ac] bg-blue-50 ring-1 ring-[#0031ac]'
+                  : 'border-gray-200 hover:border-gray-300'
               )}
-              onClick={() => {
-                setValue('type', type.value, { shouldValidate: true });
-                clearErrors('type');
-              }}
+              onClick={() => setValue('type', type.value)}
             >
-              <div className="flex flex-col h-full">
-                <div className="flex items-center mb-2">
-                  <div className={cn(
-                    "p-2 rounded-full mr-2.5",
-                    selectedType === type.value ? type.color : "bg-gray-100"
-                  )}>
+              <div className={cn('w-10 h-10 rounded-full flex items-center justify-center mb-2', type.color.split(' ')[0])}>
                     {type.icon}
                   </div>
-                  <h3 className="font-semibold text-sm">{type.label}</h3>
-                </div>
-                <p className="text-xs text-gray-600 flex-grow">{type.description}</p>
-
-                <div className={cn(
-                  "absolute top-2 right-2 w-4 h-4 rounded-full border flex items-center justify-center transition-colors duration-200",
-                  selectedType === type.value
-                    ? "bg-[#0031ac] border-[#0031ac]"
-                    : "border-gray-300"
-                )}>
+              <h3 className="font-medium text-gray-900">{type.label}</h3>
+              <p className="text-xs text-gray-500 mt-1">{type.description}</p>
+              
                   {selectedType === type.value && (
-                    <div className="w-2 h-2 bg-white rounded-full"></div>
-                  )}
+                <div className="absolute top-2 right-2 w-5 h-5 bg-[#0031ac] rounded-full flex items-center justify-center">
+                  <Check className="h-3 w-3 text-white" />
                 </div>
-              </div>
+              )}
             </div>
           ))}
         </div>
-
-        {errors.type && errors.type.message ? (
+        {errors.type && (
           <p className="mt-2 text-sm text-red-600 flex items-center">
-            <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+            <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
             {errors.type.message}
           </p>
-        ) : null}
-      </div>
+        )}
+      </FormSection>
 
-      {/* Listing Name */}
-      <div className="space-y-2">
-        <div className="flex items-center">
-          <label htmlFor="name" className="block text-sm font-semibold text-gray-800 mr-2">
-            Listing Name <span className="text-red-500">*</span>
-          </label>
-          <Tooltip content="Provide a clear, descriptive name for your listing. This is what people will see first.">
-            <HelpCircle className="h-4 w-4 text-gray-500" />
-          </Tooltip>
-        </div>
-
-        <input
-          id="name"
-          type="text"
-          placeholder="e.g. Profitable Coffee Shop in Mumbai"
-          className={cn(
-            "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
-            errors.name ? "border-red-300" : "border-gray-300"
-          )}
-          {...register("name")}
+      {/* Basic Details Section */}
+      <FormSection 
+        title="Basic Details" 
+        description="Enter key information about your listing"
+      >
+        <FormRow>
+          <FormField
+            name="name"
+            label="Listing Title"
+            placeholder="Enter a descriptive title"
+            required={true}
+            tooltip="A clear, concise title helps your listing stand out"
+            icon={<Building className="h-5 w-5 text-gray-400" />}
+          />
+        </FormRow>
+        
+        <FormField
+          name="description"
+          label="Description"
+          type="textarea"
+          placeholder="Provide a detailed description of your listing"
+          required={true}
+          tooltip="A comprehensive description increases interest in your listing"
         />
+      </FormSection>
 
-        {errors.name ? (
-          <p className="text-sm text-red-600 flex items-center mt-1">
-            <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-            {errors.name.message}
-          </p>
-        ) : (
-          <p className="text-xs text-gray-500 mt-1">
-            3-100 characters. Be specific and include key details like location or industry.
-          </p>
-        )}
-      </div>
-
-      {/* Industry Classifications */}
+      {/* Industry Classification */}
+      <FormSection 
+        title="Industry Classification" 
+        description="Select the industry and categories that best describe your listing"
+      >
       <IndustryClassifications />
+      </FormSection>
 
-      {/* Description */}
-      <div className="space-y-2">
-        <div className="flex items-center">
-          <label htmlFor="description" className="block text-sm font-semibold text-gray-800 mr-2">
-            Description <span className="text-red-500">*</span>
+      {/* Location Section */}
+      <FormSection 
+        title="Location Information" 
+        description="Specify where your business, franchise, or opportunity is located"
+      >
+        <FormRow>
+          <div className="mb-4">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <label className="text-sm font-medium text-gray-800 flex-shrink-0">
+                Country <span className="text-red-500">*</span>
           </label>
-          <Tooltip content="Provide a comprehensive overview of your listing. Be detailed but concise, highlighting key features and benefits.">
-            <HelpCircle className="h-4 w-4 text-gray-500" />
-          </Tooltip>
-        </div>
-        <textarea
-          id="description"
-          rows="5"
-          placeholder="Describe your listing in detail..."
-          className={cn(
-            "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
-            errors.description ? "border-red-300" : "border-gray-300"
-          )}
-          {...register("description")}
-        ></textarea>
-
-        {errors.description ? (
-          <p className="text-sm text-red-600 flex items-center mt-1">
-            <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-            {errors.description.message}
-          </p>
-        ) : (
-          <p className="text-xs text-gray-500 mt-1">
-            100-5000 characters. Provide a detailed overview of what you're offering.
-          </p>
-        )}
-      </div>
-
-      {/* Status and Plan */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* Status */}
-        <div className="space-y-2">
+              <Tooltip content="Select the country where your opportunity is primarily located.">
           <div className="flex items-center">
-            <label htmlFor="status" className="block text-sm font-semibold text-gray-800 mr-2">
-              Status <span className="text-red-500">*</span>
-            </label>
-            <Tooltip content="Set the current status of your listing. Draft is only visible to you until you're ready to submit.">
-              <HelpCircle className="h-4 w-4 text-gray-500" />
+                  <HelpCircle className="h-4 w-4 text-gray-400 flex-shrink-0" />
+        </div>
             </Tooltip>
           </div>
-
-          <select
-            id="status"
-            className={cn(
-              "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
-              errors.status ? "border-red-300" : "border-gray-300"
-            )}
-            {...register("status")}
-          >
-            <option value={ListingStatus.DRAFT}>Draft</option>
-            <option value={ListingStatus.PENDING}>Submit for Review</option>
-          </select>
-
-          {errors.status && errors.status.message ? (
-            <p className="text-sm text-red-600 flex items-center mt-1">
-              <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-              {errors.status.message}
-            </p>
-          ) : null}
-        </div>
-
-        {/* Plan */}
-        <div className="space-y-2">
-          <div className="flex items-center">
-            <label htmlFor="plan" className="block text-sm font-semibold text-gray-800 mr-2">
-              Plan Type <span className="text-red-500">*</span>
-            </label>
-            <Tooltip content="Select your subscription plan. Different plans offer different visibility and features.">
-              <HelpCircle className="h-4 w-4 text-gray-500" />
-            </Tooltip>
-          </div>
-
-          <select
-            id="plan"
-            className={cn(
-              "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
-              errors.plan ? "border-red-300" : "border-gray-300"
-            )}
-            {...register("plan")}
-          >
-            <option value={ListingPlan.FREE}>Free Plan</option>
-            <option value={ListingPlan.BASIC}>Basic Plan</option>
-            <option value={ListingPlan.ADVANCED}>Advanced Plan</option>
-            <option value={ListingPlan.PREMIUM}>Premium Plan</option>
-            <option value={ListingPlan.PLATINUM}>Platinum Plan</option>
-          </select>
-
-          {errors.plan && errors.plan.message ? (
-            <p className="text-sm text-red-600 flex items-center mt-1">
-              <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-              {errors.plan.message}
-            </p>
-          ) : null}
-        </div>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-20">
+                <Globe className="h-5 w-5 text-gray-400" />
       </div>
-
-      {/* Location Information */}
-      <div className="space-y-3">
-        <h3 className="text-base font-semibold text-gray-800">Location Information</h3>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Country */}
-          <div className="space-y-2">
-            <label htmlFor="location.country" className="block text-sm font-semibold text-gray-800">
-              Country <span className="text-red-500">*</span>
-            </label>
-
             <Select
-              inputId="location.country"
-              options={countries}
               value={findSelectedCountry()}
               onChange={handleCountryChange}
-              placeholder="Select country"
-              styles={selectStyles}
-              className={cn(
-                errors.location?.country ? "select-error" : ""
-              )}
-            />
-
-            {errors.location?.country && errors.location?.country.message ? (
-              <p className="text-sm text-red-600 flex items-center mt-1">
-                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                options={countries}
+                placeholder="Select Country"
+                className="country-select"
+                menuPortalTarget={document.body}
+                menuPosition="fixed"
+                styles={selectStyles}
+              />
+              {errors.location?.country && (
+                <p className="mt-1 text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                 {errors.location.country.message}
               </p>
-            ) : null}
-
-            {/* Hidden inputs for form validation */}
-            <input
-              type="hidden"
-              {...register("location.country")}
-            />
-            <input
-              type="hidden"
-              {...register("location.countryName")}
-            />
+              )}
+            </div>
           </div>
 
-          {/* State */}
-          <div className="space-y-2">
-            <label htmlFor="location.state" className="block text-sm font-semibold text-gray-800">
+          <div className="mb-4">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <label className="text-sm font-medium text-gray-800 flex-shrink-0">
               State <span className="text-red-500">*</span>
             </label>
-
+              <Tooltip content="Select the state where your opportunity is primarily located.">
+                <div className="flex items-center">
+                  <HelpCircle className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                </div>
+              </Tooltip>
+            </div>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-20">
+                <MapPin className="h-5 w-5 text-gray-400" />
+              </div>
             <Select
-              inputId="location.state"
-              options={states}
               value={findSelectedState()}
               onChange={handleStateChange}
-              placeholder="Select state"
-              styles={selectStyles}
-              isDisabled={!selectedCountry || states.length === 0}
-              className={cn(
-                errors.location?.state ? "select-error" : ""
-              )}
-            />
-
-            {errors.location?.state && errors.location?.state.message ? (
-              <p className="text-sm text-red-600 flex items-center mt-1">
-                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                options={states}
+                placeholder="Select State"
+                isDisabled={!selectedCountry}
+                className="state-select"
+                menuPortalTarget={document.body}
+                menuPosition="fixed"
+                styles={selectStyles}
+              />
+              {errors.location?.state && (
+                <p className="mt-1 text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                 {errors.location.state.message}
               </p>
-            ) : null}
-
-            {/* Hidden inputs for form validation */}
-            <input
-              type="hidden"
-              {...register("location.state")}
-            />
-            <input
-              type="hidden"
-              {...register("location.stateName")}
-            />
+              )}
+            </div>
           </div>
+        </FormRow>
 
-          {/* City */}
-          <div className="space-y-2">
-            <label htmlFor="location.city" className="block text-sm font-semibold text-gray-800">
+        <div className="mb-4">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <label className="text-sm font-medium text-gray-800 flex-shrink-0">
               City <span className="text-red-500">*</span>
             </label>
-
+              <Tooltip content="Select the city where your opportunity is primarily located.">
+                <div className="flex items-center">
+                  <HelpCircle className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                </div>
+              </Tooltip>
+            </div>
+            <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-20">
+              <Building className="h-5 w-5 text-gray-400" />
+              </div>
             <Select
-              inputId="location.city"
-              options={cities}
               value={findSelectedCity()}
               onChange={handleCityChange}
-              placeholder="Select city"
+                options={cities}
+                placeholder="Select City"
+                isDisabled={!selectedState}
+              className="city-select"
+              menuPortalTarget={document.body}
+              menuPosition="fixed"
               styles={selectStyles}
-              isDisabled={!selectedState || cities.length === 0}
-              className={cn(
-                errors.location?.city ? "select-error" : ""
-              )}
-            />
-
-            {errors.location?.city && errors.location?.city.message ? (
-              <p className="text-sm text-red-600 flex items-center mt-1">
-                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+              />
+              {errors.location?.city && (
+                <p className="mt-1 text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-3.5 w-3.5 mr-1 flex-shrink-0" />
                 {errors.location.city.message}
               </p>
-            ) : null}
-
-            {/* Hidden inputs for form validation */}
-            <input
-              type="hidden"
-              {...register("location.city")}
-            />
-            <input
-              type="hidden"
-              {...register("location.cityName")}
-            />
-          </div>
-        </div>
-
-        {/* Address & Pincode (optional) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label htmlFor="location.address" className="block text-sm font-semibold text-gray-800">
-              Address (Optional)
-            </label>
-
-            <input
-              id="location.address"
-              type="text"
-              placeholder="e.g. 123 Main Street"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
-              {...register("location.address")}
-            />
-
-            <p className="text-xs text-gray-500 mt-1">
-              This will not be displayed publicly for privacy reasons.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="location.pincode" className="block text-sm font-semibold text-gray-800">
-              Pincode (Optional)
-            </label>
-
-            <input
-              id="location.pincode"
-              type="text"
-              placeholder="e.g. 400001"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
-              {...register("location.pincode")}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Contact Information */}
-      <div className="space-y-3">
-        <h3 className="text-base font-semibold text-gray-800">Contact Information</h3>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Email */}
-          <div className="space-y-2">
-            <label htmlFor="contactInfo.email" className="block text-sm font-semibold text-gray-800">
-              Contact Email <span className="text-red-500">*</span>
-            </label>
-
-            <input
-              id="contactInfo.email"
-              type="email"
-              placeholder="e.g. contact@example.com"
-              className={cn(
-                "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
-                errors.contactInfo?.email ? "border-red-300" : "border-gray-300"
               )}
-              {...register("contactInfo.email")}
-            />
-
-            {errors.contactInfo?.email && errors.contactInfo?.email.message ? (
-              <p className="text-sm text-red-600 flex items-center mt-1">
-                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.contactInfo.email.message}
-              </p>
-            ) : null}
           </div>
-
-          {/* Phone */}
-          <div className="space-y-2">
-            <label htmlFor="contactInfo.phone" className="block text-sm font-semibold text-gray-800">
-              Contact Phone (Optional)
-            </label>
-
-            <input
-              id="contactInfo.phone"
-              type="tel"
-              placeholder="e.g. +91 9876543210"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
-              {...register("contactInfo.phone")}
-            />
           </div>
-        </div>
+      </FormSection>
 
-        {/* Website & Contact Name (optional) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label htmlFor="contactInfo.website" className="block text-sm font-semibold text-gray-800">
-              Website (Optional)
-            </label>
+      {/* Contact Information Section */}
+      <FormSection 
+        title="Contact Information" 
+        description="How potential buyers or investors can reach you"
+      >
+        <FormRow>
+          <FormField
+            name="contactInfo.email"
+            label="Email Address"
+            type="email"
+            placeholder="Enter your email address"
+            required={true}
+            tooltip="Your business contact email"
+            icon={<Mail className="h-5 w-5 text-gray-400" />}
+          />
 
-            <input
-              id="contactInfo.website"
-              type="url"
-              placeholder="e.g. https://www.example.com"
-              className={cn(
-                "w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors",
-                errors.contactInfo?.website ? "border-red-300" : "border-gray-300"
-              )}
-              {...register("contactInfo.website")}
-            />
-
-            {errors.contactInfo?.website && errors.contactInfo?.website.message ? (
-              <p className="text-sm text-red-600 flex items-center mt-1">
-                <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                {errors.contactInfo.website.message}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="contactInfo.contactName" className="block text-sm font-semibold text-gray-800">
-              Contact Person (Optional)
-            </label>
-
-            <input
-              id="contactInfo.contactName"
-              type="text"
-              placeholder="e.g. John Doe"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0031ac] focus:border-[#0031ac] transition-colors"
-              {...register("contactInfo.contactName")}
+          <div>
+          <FormField
+            name="contactInfo.phone"
+            label="Phone Number"
+            placeholder="Enter your phone number"
+            required={true}
+            tooltip="Your business contact phone number"
+            icon={<Phone className="h-5 w-5 text-gray-400" />}
+              registerOptions={{
+                required: "Phone number is required",
+                pattern: {
+                  value: /^[0-9]{10,}$/,
+                  message: "Please enter a valid phone number with at least 10 digits"
+                },
+                validate: {
+                  validType: (value) => {
+                    // Handle both string and number types
+                    if (value === undefined || value === null) {
+                      return "Phone number is required";
+                    }
+                    if (typeof value === 'number') {
+                      // Convert number to string for validation
+                      value = value.toString();
+                    }
+                    // Then validate that it's numbers only
+                    return /^[0-9]+$/.test(value) || "Only numbers are allowed";
+                  }
+                },
+                onBlur: () => trigger("contactInfo.phone")
+              }}
             />
           </div>
-        </div>
-      </div>
+        </FormRow>
+      </FormSection>
     </div>
   );
 }
+
+// Add CSS to prevent icon leakage between dropdowns
+const styles = `
+  /* Base styles for dropdown containers */
+  .country-select,
+  .state-select,
+  .city-select {
+    position: relative;
+  }
+
+  /* Icon positioning */
+  .country-select .absolute,
+  .state-select .absolute,
+  .city-select .absolute {
+    z-index: 20;
+  }
+
+  /* Ensure dropdown menu is above other elements */
+  .select__menu-portal {
+    z-index: 9999 !important;
+    background-color: white !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* Hide icons from other dropdowns in the menu */
+  .select__menu-portal .absolute {
+    display: none !important;
+  }
+
+  /* Ensure proper padding in dropdown options */
+  .select__option {
+    position: relative !important;
+    padding-left: 44px !important;
+    background-color: white !important;
+  }
+
+  /* Ensure dropdown has solid background */
+  .select__menu {
+    background-color: white !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* Ensure menu list has solid background */
+  .select__menu-list {
+    background-color: white !important;
+  }
+
+  /* Style focused and selected options */
+  .select__option--is-focused {
+    background-color: #E6EEFF !important;
+  }
+
+  .select__option--is-selected {
+    background-color: #0031ac !important;
+  }
+`;
+
+// Add the styles to the document
+const styleSheet = document.createElement("style");
+styleSheet.innerText = styles;
+document.head.appendChild(styleSheet);

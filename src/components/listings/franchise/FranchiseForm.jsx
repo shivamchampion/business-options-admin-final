@@ -4,6 +4,7 @@ import { Transition, Listbox, Disclosure } from '@headlessui/react';
 import { Info, HelpCircle, X, Check, ChevronDown, AlertCircle } from 'lucide-react';
 import { FranchiseType } from '@/types/listings';
 import { cn } from '@/lib/utils';
+import { FormSection, Switch, Checkbox } from '@/components/ui/FormField';
 
 // Create a tooltip component
 const Tooltip = ({ content, children }) => {
@@ -64,6 +65,23 @@ export default function FranchiseForm({ submitAttempted = false }) {
   // Watch for values that affect conditional rendering or calculations
   const siteSelection = watch("franchiseDetails.support.siteSelection");
   const availableTerritories = watch("franchiseDetails.availableTerritories") || [];
+
+  // Initialize franchiseDetails.support if it's undefined
+  useEffect(() => {
+    const franchiseDetails = getValues('franchiseDetails');
+    if (franchiseDetails && !franchiseDetails.support) {
+      setValue('franchiseDetails.support', {
+        siteSelection: false,
+        initialTraining: '',
+        trainingDuration: '',
+        trainingLocation: '',
+        ongoingSupport: '',
+        fieldSupport: '',
+        marketingSupport: '',
+        technologySystems: ''
+      }, { shouldValidate: false });
+    }
+  }, [getValues, setValue]);
 
   // Update the useEffect in your FranchiseForm component to trigger validation for all fields
 useEffect(() => {
@@ -974,23 +992,47 @@ const registerWithValidation = (name, options) => {
           )}
         </div>
 
-    {/* Site Selection - Improved Checkbox */}
-<div className="p-4 border border-gray-200 rounded-md bg-gray-50 hover:bg-gray-100 transition-colors">
-  <div className="flex items-center space-x-2">
-    <input
-      type="checkbox"
-      id="franchiseDetails.support.siteSelection"
-      className="h-5 w-5 text-[#0031ac] focus:ring-[#0031ac] border-gray-300 rounded cursor-pointer"
-      {...register("franchiseDetails.support.siteSelection")}
-    />
-    <label htmlFor="franchiseDetails.support.siteSelection" className="text-sm font-semibold text-gray-800 cursor-pointer">
-      Site Selection Assistance
-    </label>
-  </div>
-  <p className="text-xs text-gray-500 mt-1 ml-7">
-    Franchisor provides help with location selection
-  </p>
-</div>
+        {/* Site Selection - Updated with Checkbox */}
+        <div className="space-y-2">
+          <div className="flex items-center">
+            <label className="block text-sm font-semibold text-gray-800 mr-2">
+              Site Selection Assistance
+            </label>
+            <Tooltip content="Franchisor provides help with location selection">
+              <HelpCircle className="h-4 w-4 text-gray-500" />
+            </Tooltip>
+          </div>
+          
+          <div className="mt-1">
+            <input
+              type="checkbox"
+              id="franchiseDetails.support.siteSelection"
+              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              checked={siteSelection ?? false}
+              onChange={(e) => {
+                // Initialize support object if it doesn't exist
+                if (!getValues('franchiseDetails.support')) {
+                  setValue('franchiseDetails.support', {
+                    siteSelection: e.target.checked,
+                    initialTraining: '',
+                    trainingDuration: '',
+                    trainingLocation: '',
+                    ongoingSupport: '',
+                    fieldSupport: '',
+                    marketingSupport: '',
+                    technologySystems: ''
+                  }, { shouldValidate: false });
+                } else {
+                  setValue("franchiseDetails.support.siteSelection", e.target.checked);
+                }
+              }}
+              {...register("franchiseDetails.support.siteSelection")}
+            />
+            <label htmlFor="franchiseDetails.support.siteSelection" className="ml-2 text-sm text-gray-700">
+              Franchisor provides help with location selection
+            </label>
+          </div>
+        </div>
       </div>
 
       {/* Performance Metrics Section */}
@@ -1251,6 +1293,20 @@ const registerWithValidation = (name, options) => {
               </p>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Franchise Agreement Section */}
+      <div className="space-y-6 mt-8">
+        <h3 className="text-base font-semibold text-gray-800">Franchise Agreement</h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Auto-Renewal - Updated with Switch */}
+          <Switch
+            name="franchiseDetails.agreement.autoRenewal"
+            label="Auto-Renewal Available"
+            description="Whether the franchise agreement can be automatically renewed"
+          />
         </div>
       </div>
     </div>

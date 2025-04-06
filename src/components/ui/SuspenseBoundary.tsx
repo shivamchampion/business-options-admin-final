@@ -1,4 +1,4 @@
-import React, { Suspense, ReactNode } from 'react';
+import React, { Suspense, ReactNode, useMemo } from 'react';
 import LoadingSpinner from './LoadingSpinner';
 
 interface SuspenseBoundaryProps {
@@ -6,6 +6,10 @@ interface SuspenseBoundaryProps {
   fallback?: ReactNode;
 }
 
+/**
+ * Enhanced Suspense boundary that prevents unnecessary remounts
+ * Memoizes children to help with stability
+ */
 const SuspenseBoundary: React.FC<SuspenseBoundaryProps> = ({ 
   children, 
   fallback 
@@ -15,9 +19,17 @@ const SuspenseBoundary: React.FC<SuspenseBoundaryProps> = ({
       <LoadingSpinner size="md" color="primary" text="Loading..." />
     </div>
   );
-
+  
+  // Memoize the fallback content to avoid recreation on remounts
+  const memoizedFallback = useMemo(() => fallback || defaultFallback, [fallback]);
+  
+  // Console log to help debug mounting issues
+  console.log('[SuspenseBoundary] Rendering component', {
+    timestamp: new Date().toISOString()
+  });
+  
   return (
-    <Suspense fallback={fallback || defaultFallback}>
+    <Suspense fallback={memoizedFallback}>
       {children}
     </Suspense>
   );
