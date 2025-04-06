@@ -1788,7 +1788,7 @@ const Documents = ({
     if (!doc) {
       console.log('[DEBUG] Documents: Null document provided, creating empty object');
       return { 
-        id: uuidv4(), 
+        id: `doc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`, 
         type: 'other', 
         name: 'Unnamed Document', 
         category: 'essential',
@@ -1862,8 +1862,12 @@ const Documents = ({
     
     // Make sure required fields are present with valid values (not undefined)
     if (!sanitized.id) {
-      sanitized.id = uuidv4();
+      sanitized.id = `doc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       console.log('[DEBUG] Documents: Added missing id:', sanitized.id);
+    } else if (typeof sanitized.id === 'string' && sanitized.id.length < 10) {
+      // If ID is too short, append uniqueness to it
+      sanitized.id = `${sanitized.id}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      console.log('[DEBUG] Documents: Enhanced existing id for uniqueness:', sanitized.id);
     }
     
     if (!sanitized.type) {

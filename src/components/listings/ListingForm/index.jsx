@@ -748,8 +748,24 @@ function ListingForm({ isEdit = false, externalOnSubmit }) {
     const currentImages = [...uploadedImages];
     const wasEmpty = currentImages.length === 0;
     
-    // Add the new images
-    const newImages = [...currentImages, ...files];
+    // Add the new images with ensured unique IDs
+    const newImages = [
+      ...currentImages, 
+      ...files.map(file => {
+        // Ensure each image has a unique ID
+        if (!file.id || typeof file.id !== 'string' || file.id.length < 10) {
+          const timestamp = Date.now();
+          const random = Math.random().toString(36).substring(2, 8);
+          const uniqueId = `img_${timestamp}_${random}`;
+          
+          return {
+            ...file,
+            id: uniqueId
+          };
+        }
+        return file;
+      })
+    ];
     
     // Update state
     setUploadedImages(newImages);
